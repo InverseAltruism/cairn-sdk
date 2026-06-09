@@ -22,8 +22,11 @@ cairn.attachWallet(wallet);
 
 h.section("setup");
 const addr = await wallet.connect();
-const before = (await cairn.chain.utxos(addr)).confirmed_balance;
-h.ok("node-signer connected + funded", before > 30_000_000, `${addr.slice(0, 10)}… ${(before / 1e8).toFixed(4)} CSD`);
+// Wait for spendable funds — a prior pending tx may have the big UTXO reserved until it
+// mines (mainnet blocks are slow/erratic). Poll up to 25 min so this run self-sequences.
+const before = await until(async () => { const b = (await cairn.chain.utxos(addr)).confirmed_balance; return b > 1_00000000 ? b : null; }, { timeoutMs: 1500000, everyMs: 10000, label: "spendable funds (≥1 CSD)" });
+h.ok("node-signer connected + funded", before && before > 1_00000000, before ? `${addr.slice(0, 10)}… ${(before / 1e8).toFixed(4)} CSD` : "no funds");
+if (!before) process.exit(h.done() ? 0 : 1);
 
 // unique content so this run is distinguishable on-chain
 const stamp = `${Math.floor(Date.now() / 1000)}-${Math.floor(Math.random() * 1e6)}`;
