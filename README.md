@@ -103,6 +103,17 @@ new Cairn({
 });
 ```
 
+## Testing
+
+```bash
+pnpm build && pnpm test         # unit (offline): error mapping, client paths, content+merkle verify
+pnpm test:e2e:read              # live reads vs mainnet + adversarial (free)
+pnpm test:e2e:wallet            # real extension + real connector under Xvfb: connect/consent/sign (free)
+pnpm test:e2e:write             # full pipeline incl. a real on-chain Propose+Attest (spends ~0.3 CSD)
+```
+
+See [`test/e2e/README.md`](test/e2e/README.md) for coverage, requirements, and cost of each layer. The unit + live-read + wallet-connector suites are CI-friendly and free; the write suite needs a funded key and is opt-in.
+
 ## License
 
 MIT

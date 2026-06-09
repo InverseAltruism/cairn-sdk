@@ -53,18 +53,24 @@
     "test": "tsx test/sdk.test.ts && tsx test/connect.test.ts",
     "test:live": "node examples/read-only.mjs",
     "build:example": "node scripts/build-example.mjs",
-    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "test:e2e:read": "node test/e2e/e2e-read.mjs",
+    "test:e2e:wallet": "xvfb-run -a node test/e2e/e2e-wallet-connect.mjs",
+    "test:e2e:write": "node test/e2e/e2e-write.mjs",
+    "test:e2e": "node test/e2e/e2e-read.mjs && xvfb-run -a node test/e2e/e2e-wallet-connect.mjs",
+    "test:all": "pnpm test && pnpm test:e2e"
   },
   "dependencies": {
+    "@inversealtruism/csd-client": "^0.1.3",
     "@inversealtruism/csd-codec": "^0.1.3",
     "@inversealtruism/csd-crypto": "^0.1.3",
-    "@inversealtruism/csd-tx": "^0.1.3",
-    "@inversealtruism/csd-client": "^0.1.3",
     "@inversealtruism/csd-light": "^0.1.3",
-    "@inversealtruism/csd-registry": "^0.1.3"
+    "@inversealtruism/csd-registry": "^0.1.3",
+    "@inversealtruism/csd-tx": "^0.1.3"
   },
   "devDependencies": {
     "esbuild": "^0.27.0",
+    "playwright-core": "^1.49.0",
     "tsup": "^8.5.1",
     "tsx": "^4.19.2",
     "typescript": "^5.6.0"
