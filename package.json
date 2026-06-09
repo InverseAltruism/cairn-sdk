@@ -1,0 +1,97 @@
+{
+  "name": "@inversealtruism/cairn-sdk",
+  "version": "0.1.0",
+  "description": "The Compute Substrate dApp kit — one cohesive toolkit to connect the Cairn Wallet, read the chain/board, publish self-certifying content, and resolve registries. Composes the published csd-* primitives.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./connect": {
+      "types": "./dist/connect.d.ts",
+      "import": "./dist/connect.js",
+      "require": "./dist/connect.cjs"
+    },
+    "./board": {
+      "types": "./dist/board.d.ts",
+      "import": "./dist/board.js",
+      "require": "./dist/board.cjs"
+    },
+    "./indexer": {
+      "types": "./dist/indexer.d.ts",
+      "import": "./dist/indexer.js",
+      "require": "./dist/indexer.cjs"
+    },
+    "./content": {
+      "types": "./dist/content.d.ts",
+      "import": "./dist/content.js",
+      "require": "./dist/content.cjs"
+    },
+    "./registry": {
+      "types": "./dist/registry.d.ts",
+      "import": "./dist/registry.js",
+      "require": "./dist/registry.cjs"
+    },
+    "./chain": {
+      "types": "./dist/chain.d.ts",
+      "import": "./dist/chain.js",
+      "require": "./dist/chain.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts src/connect.ts src/board.ts src/indexer.ts src/content.ts src/registry.ts src/chain.ts --format esm,cjs --dts --clean",
+    "test": "tsx test/sdk.test.ts && tsx test/connect.test.ts",
+    "test:live": "node examples/read-only.mjs",
+    "build:example": "node scripts/build-example.mjs",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@inversealtruism/csd-codec": "^0.1.3",
+    "@inversealtruism/csd-crypto": "^0.1.3",
+    "@inversealtruism/csd-tx": "^0.1.3",
+    "@inversealtruism/csd-client": "^0.1.3",
+    "@inversealtruism/csd-light": "^0.1.3",
+    "@inversealtruism/csd-registry": "^0.1.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.0"
+  },
+  "sideEffects": false,
+  "packageManager": "pnpm@10.32.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/InverseAltruism/cairn-sdk.git"
+  },
+  "homepage": "https://cairn-substrate.com",
+  "keywords": [
+    "compute-substrate",
+    "csd",
+    "cairn",
+    "wallet",
+    "dapp",
+    "sdk",
+    "blockchain"
+  ]
+}

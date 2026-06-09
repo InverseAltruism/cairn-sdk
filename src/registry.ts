@@ -1,0 +1,78 @@
+// RegistryClient — L3 self-certifying registries (peers / gateways / identity)
+// built on the Propose/Attest primitive. Wraps @inversealtruism/csd-registry's
+// indexer-discovery helpers, and re-exports the deterministic `fromRecords`
+// resolvers so a caller can recompute resolution locally from raw chain records.
+
+import {
+  discoverPeers,
+  discoverGateways,
+  resolveName,
+  reverseName,
+  fromRecords,
+  verifyPeer,
+  verifyGateway,
+  verifyIdentitySig,
+  DOMAINS,
+} from "@inversealtruism/csd-registry";
+import type { FetchLike } from "./http.js";
+
+// Re-export the deterministic resolvers + record builders + types for advanced use.
+export {
+  fromRecords,
+  verifyPeer,
+  verifyGateway,
+  verifyIdentitySig,
+  DOMAINS,
+  buildPeerRecord,
+  buildGatewayRecord,
+  buildIdentityCommit,
+  buildIdentityReveal,
+  epochOf,
+} from "@inversealtruism/csd-registry";
+export type {
+  RankedPeer,
+  RankedGateway,
+  ResolvedIdentity,
+  ChainRecord,
+  ResolveOpts,
+  BuiltRecord,
+} from "@inversealtruism/csd-registry";
+
+export interface RegistryClientOptions {
+  /** Indexer base URL exposing /registry/* + /identity/* (e.g. https://cairn-substrate.com/indexer). */
+  baseUrl: string;
+  fetch?: FetchLike;
+}
+
+export class RegistryClient {
+  private readonly src: { baseUrl: string; fetch?: FetchLike };
+
+  constructor(opts: RegistryClientOptions) {
+    this.src = { baseUrl: opts.baseUrl.replace(/\/+$/, ""), fetch: opts.fetch };
+  }
+
+  /** Discover ranked content/pin gateways (GET /registry/gateways). */
+  gateways() {
+    return discoverGateways(this.src);
+  }
+
+  /** Discover ranked libp2p peers (GET /registry/peers). */
+  peers() {
+    return discoverPeers(this.src);
+  }
+
+  /** Resolve a handle → identity (GET /identity/:handle). Returns null if unresolved. */
+  resolveName(handle: string) {
+    return resolveName(this.src, handle);
+  }
+
+  /** Reverse-resolve an address → identity (GET /address/:addr/identity). */
+  reverseName(address: string) {
+    return reverseName(this.src, address);
+  }
+
+  /** The deterministic, client-side resolvers (recompute from raw ChainRecord[]). */
+  get fromRecords() {
+    return fromRecords;
+  }
+}

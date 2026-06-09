@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>hello-csd · Cairn SDK example</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: #0b0f0c; color: #c8f5d0; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+  h1 { color: #4ade80; font-size: 18px; }
+  .dim { color: #6b8a72; }
+  button { font: inherit; background: #0b0f0c; color: #4ade80; border: 1px solid #2c5a3a; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  input { font: inherit; background: #07120b; color: #c8f5d0; border: 1px solid #2c5a3a; padding: 6px; border-radius: 4px; width: 100%; box-sizing: border-box; margin: 4px 0; }
+  .box { border: 1px solid #1c3a26; border-radius: 6px; padding: 12px; margin: 12px 0; }
+  #log { white-space: pre-wrap; background: #07120b; border: 1px solid #1c3a26; border-radius: 6px; padding: 10px; height: 160px; overflow: auto; font-size: 12px; }
+  code { color: #86efac; }
+</style>
+</head>
+<body>
+  <h1>hello-csd — Cairn SDK example</h1>
+  <p class="dim">Connect the Cairn Wallet, read the live board, and publish a note signed by your wallet. Serve this from <code>localhost</code> (the wallet injects there) with the extension installed.</p>
+
+  <div class="box">
+    <button id="btn-connect">Connect wallet</button>
+    <span class="dim">address:</span> <code id="addr">—</code>
+  </div>
+
+  <div class="box" id="board">loading board…</div>
+
+  <div class="box">
+    <input id="title" placeholder="post title" />
+    <input id="body" placeholder="description (optional)" />
+    <button id="btn-publish" disabled>Publish to csd:apps (wallet-signed)</button>
+  </div>
+
+  <div class="dim">live feed</div>
+  <div id="log"></div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
