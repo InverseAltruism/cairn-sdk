@@ -62,11 +62,11 @@
   },
   "dependencies": {
     "@inversealtruism/csd-client": "^0.1.3",
-    "@inversealtruism/csd-codec": "^0.1.3",
+    "@inversealtruism/csd-codec": "^0.1.4",
     "@inversealtruism/csd-crypto": "^0.1.3",
-    "@inversealtruism/csd-light": "^0.1.3",
+    "@inversealtruism/csd-light": "^0.1.4",
     "@inversealtruism/csd-registry": "^0.1.3",
-    "@inversealtruism/csd-tx": "^0.1.3"
+    "@inversealtruism/csd-tx": "^0.1.4"
   },
   "devDependencies": {
     "esbuild": "^0.27.0",
