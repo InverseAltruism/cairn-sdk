@@ -5,3 +5,10 @@ dist/
 .npmrc
 *.log
 examples/hello-csd/app.js
+
+# secrets — never commit env/keys
+.env
+.env.*
+**/*key*.json
+**/*.priv
+.claude/
