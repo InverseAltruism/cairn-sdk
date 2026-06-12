@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# pre-commit — block commits that would introduce a secret (scanned with gitleaks).
+#
+#   • Scans ONLY your staged changes — never edits or removes anything.
+#   • If gitleaks isn't installed, it WARNS and lets the commit through
+#     (a missing tool must never brick your workflow).
+#   • On a finding it BLOCKS and tells you how to proceed.
+#
+# Bypass a confirmed false positive:
+#   - add  #gitleaks:allow  on the offending line, OR
+#   - extend .gitleaks.toml [allowlist], OR
+#   - commit once with:  git commit --no-verify
+#
+set -uo pipefail
+
+# Locate the gitleaks binary (PATH, then ~/.local/bin).
+GL="$(command -v gitleaks 2>/dev/null || true)"
+if [ -z "$GL" ] && [ -x "$HOME/.local/bin/gitleaks" ]; then GL="$HOME/.local/bin/gitleaks"; fi
+if [ -z "$GL" ]; then
+  printf '\033[33m⚠ gitleaks not installed — skipping secret scan.\033[0m\n' >&2
+  printf '  Install it to enforce: https://github.com/gitleaks/gitleaks#installing\n' >&2
+  exit 0
+fi
+
+ROOT="$(git rev-parse --show-toplevel)"
+LOG="$(git rev-parse --git-dir)/gitleaks-precommit.log"
+
+if "$GL" protect --staged --redact -v --no-banner -c "$ROOT/.gitleaks.toml" >"$LOG" 2>&1; then
+  rm -f "$LOG"
+  exit 0
+fi
+
+# Non-zero: a finding (or a gitleaks error). Show the output, then guidance, then block.
+sed 's/^/  /' "$LOG" >&2
+rm -f "$LOG"
+printf '\n\033[31m✖ Potential secret detected in your staged changes (above).\033[0m\n' >&2
+printf '  • REAL secret?      remove it, then re-commit.\n' >&2
+printf '  • FALSE POSITIVE?   add \033[36m#gitleaks:allow\033[0m on that line, or extend \033[36m.gitleaks.toml\033[0m [allowlist].\n' >&2
+printf '  • Bypass once:      \033[36mgit commit --no-verify\033[0m\n\n' >&2
+exit 1
