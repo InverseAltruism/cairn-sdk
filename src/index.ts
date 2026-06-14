@@ -59,6 +59,11 @@ export interface CairnConfig {
 
 const DEFAULT_CAIRN = "https://cairn-substrate.com";
 
+/** Origin (scheme://host:port) of a URL, or the raw string if it isn't absolute. */
+function originOf(u: string): string {
+  try { return new URL(u).origin; } catch { return u; }
+}
+
 export class Cairn {
   readonly config: CairnConfig;
   readonly chain: Chain;
@@ -89,15 +94,21 @@ export class Cairn {
     this.chain = new Chain({ rpcUrl: rpc, fetch, timeoutMs });
     this.wallet = config.wallet;
     this.board = new BoardClient(this.cairnHttp, this.wallet);
+    // Cross-check the indexer's proof root against the node's header merkle — but ONLY when the
+    // node RPC is an INDEPENDENT origin from the indexer. Under the default same-origin wiring
+    // (both proxied by cairn-substrate.com) a single compromised server controls BOTH the proof
+    // AND the header it's checked against, so the check proves nothing; labeling that
+    // "verified-inclusion" overstates trust (audit M3) — we stay honest at "proof-consistent".
+    // With an independent node the indexer cannot unilaterally forge inclusion. For full
+    // trust-minimization against a lying node too, pass your own PoW-verifying `headerMerkleAt`
+    // (e.g. backed by `cairn.chain.light()`) via a directly-constructed IndexerClient.
+    const independentNode = originOf(rpc) !== originOf(indexer);
     this.index = new IndexerClient(indexerHttp, {
       fetch,
       WebSocketImpl: config.WebSocketImpl,
-      // Upgrade inclusion proofs to fully trust-minimized by cross-checking the
-      // proof root against the on-chain header merkle at that height.
-      headerMerkleAt: async (h: number) => {
-        const block = await this.chain.client.blockByHeight(h);
-        return String(block.header.merkle);
-      },
+      ...(independentNode
+        ? { headerMerkleAt: async (h: number) => String((await this.chain.client.blockByHeight(h)).header.merkle) }
+        : {}),
     });
     // Content sources tried in order: direct swarm (if set) → indexer (fronts swarm) → cairn origin.
     this.content = new ContentClient({ swarm: swarmHttp, indexer: indexerHttp, cairn: this.cairnHttp });
