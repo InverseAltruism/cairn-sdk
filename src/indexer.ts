@@ -36,9 +36,13 @@ export interface IndexerClientOptions {
   /** A WebSocket implementation (defaults to globalThis.WebSocket). */
   WebSocketImpl?: typeof WebSocket;
   /**
-   * Optional: given a block height, return its on-chain header merkle root. Wire
-   * this from the chain/light client to upgrade verifyInclusion() from
-   * "proof-consistent" to fully trust-minimized "verified-inclusion".
+   * Optional: given a block height, return its on-chain header merkle root. verifyInclusion()
+   * cross-checks the indexer's proof root against this and, on a match, labels the result
+   * "verified-inclusion". IMPORTANT: that label is only as strong as THIS source — it is fully
+   * trust-minimized ONLY if the header is independently verified (e.g. a PoW-checking light client,
+   * or at least a node on a DIFFERENT trust domain than the indexer). A header fetched by raw RPC
+   * from the SAME server that serves the proof proves nothing (one compromised server controls
+   * both); for that case prefer no headerMerkleAt → an honest "proof-consistent".
    */
   headerMerkleAt?: (height: number) => Promise<string>;
 }
@@ -143,9 +147,12 @@ export class IndexerClient {
   /**
    * Verify a tx is included in a block by folding its merkle branch to the root
    * with csd-codec.verifyMerkleProof. If `headerMerkleAt` was provided, the
-   * proof's root is cross-checked against the ON-CHAIN header merkle at that
-   * height → trustLevel "verified-inclusion". Otherwise the proof is only
-   * internally consistent → "proof-consistent" (still useful, but the indexer is trusted).
+   * proof's root is cross-checked against the header merkle at that height →
+   * trustLevel "verified-inclusion" (only as trustworthy as that header source —
+   * see headerMerkleAt). Otherwise the proof is only internally consistent →
+   * "proof-consistent" (still useful, but the indexer is trusted). The Cairn
+   * facade wires headerMerkleAt ONLY when the node RPC is an independent origin
+   * from the indexer, so the default same-origin setup stays at "proof-consistent".
    */
   async verifyInclusion(txid: string): Promise<InclusionResult> {
     let proof: MerkleProof;
