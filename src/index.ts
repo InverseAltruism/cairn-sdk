@@ -16,7 +16,7 @@
 //   await cairn.board.propose({ domain: "csd:apps", title: "My dApp", body: "…" });
 
 import { Http, type FetchLike } from "./http.js";
-import { Chain } from "./chain.js";
+import { Chain, LightClient } from "./chain.js";
 import { BoardClient } from "./board.js";
 import { IndexerClient } from "./indexer.js";
 import { ContentClient } from "./content.js";
@@ -55,14 +55,24 @@ export interface CairnConfig {
   wallet?: WalletConnection;
   /** WebSocket implementation for indexer subscriptions (defaults to global). */
   WebSocketImpl?: typeof WebSocket;
+  /**
+   * SPV trust anchor for genuine "verified-inclusion" (audit M3). A merkle inclusion proof is only
+   * "verified-inclusion" when its block header is PoW-verified — otherwise a lying node can serve a
+   * fake header whose merkle matches a fake proof. The light client verifies the header chain
+   * (PoW + LWMA + chainwork) forward from this pinned checkpoint; inclusion at a height ≥ the
+   * checkpoint is then trust-minimized. Defaults to the ecosystem checkpoint (same hash swapguard
+   * ships). Pin your own for full control. Txs BELOW the checkpoint degrade to "proof-consistent".
+   */
+  spvCheckpoint?: { height: number; hash: string };
 }
+
+// The ecosystem SPV checkpoint (identical to cairn /trade swapguard's baked anchor). A consensus
+// block hash, not a trusted server's word — the light client re-verifies every header forward from
+// here. Pin a newer one via config.spvCheckpoint as the chain grows.
+const DEFAULT_SPV_CHECKPOINT = { height: 31310, hash: "0x000000000000138bd3eee4b8d2fbacb8d5433ac3040ddbf1c45a5e3e0cc9e814" };
 
 const DEFAULT_CAIRN = "https://cairn-substrate.com";
 
-/** Origin (scheme://host:port) of a URL, or the raw string if it isn't absolute. */
-function originOf(u: string): string {
-  try { return new URL(u).origin; } catch { return u; }
-}
 
 export class Cairn {
   readonly config: CairnConfig;
@@ -74,6 +84,10 @@ export class Cairn {
   wallet?: WalletConnection;
 
   private readonly cairnHttp: Http;
+  // Lazily-seeded SPV light client + its checkpoint (audit M3 — PoW-verified header source).
+  private _spvLight: LightClient | null = null;
+  private _spvSeeded = false;
+  private readonly _spvCp: { height: number; hash: string };
 
   constructor(config: CairnConfig = {}) {
     this.config = config;
@@ -91,28 +105,46 @@ export class Cairn {
       ? new Http({ baseUrl: config.baseUrls.swarm.replace(/\/+$/, ""), fetch, timeoutMs })
       : undefined;
 
+    this._spvCp = config.spvCheckpoint ?? DEFAULT_SPV_CHECKPOINT;
     this.chain = new Chain({ rpcUrl: rpc, fetch, timeoutMs });
     this.wallet = config.wallet;
     this.board = new BoardClient(this.cairnHttp, this.wallet);
-    // Cross-check the indexer's proof root against the node's header merkle — but ONLY when the
-    // node RPC is an INDEPENDENT origin from the indexer. Under the default same-origin wiring
-    // (both proxied by cairn-substrate.com) a single compromised server controls BOTH the proof
-    // AND the header it's checked against, so the check proves nothing; labeling that
-    // "verified-inclusion" overstates trust (audit M3) — we stay honest at "proof-consistent".
-    // With an independent node the indexer cannot unilaterally forge inclusion. For full
-    // trust-minimization against a lying node too, pass your own PoW-verifying `headerMerkleAt`
-    // (e.g. backed by `cairn.chain.light()`) via a directly-constructed IndexerClient.
-    const independentNode = originOf(rpc) !== originOf(indexer);
+    // "verified-inclusion" requires a PoW-VERIFIED header to check the proof root against (audit M3).
+    // A raw `blockByHeight(h).header.merkle` read is NOT that — a lying node serves a fake header
+    // whose merkle matches a fake proof (and the same-origin case lets ONE server control both). So
+    // we wire a headerMerkleAt backed by the verifying light client: it returns a header merkle only
+    // after re-verifying the chain (PoW + LWMA + chainwork) forward from a pinned checkpoint, and
+    // THROWS otherwise — the IndexerClient then degrades to the honest "proof-consistent" (never an
+    // over-claimed "verified-inclusion"). Heights ≥ the checkpoint are genuinely trust-minimized.
     this.index = new IndexerClient(indexerHttp, {
       fetch,
       WebSocketImpl: config.WebSocketImpl,
-      ...(independentNode
-        ? { headerMerkleAt: async (h: number) => String((await this.chain.client.blockByHeight(h)).header.merkle) }
-        : {}),
+      headerMerkleAt: (h: number) => this.verifiedHeaderMerkleAt(h),
     });
     // Content sources tried in order: direct swarm (if set) → indexer (fronts swarm) → cairn origin.
     this.content = new ContentClient({ swarm: swarmHttp, indexer: indexerHttp, cairn: this.cairnHttp });
     this.registry = new RegistryClient({ baseUrl: indexer, fetch });
+  }
+
+  /**
+   * PoW-VERIFIED header merkle at a height (audit M3 — the no-PoW half). Lazily seeds a light
+   * client from the pinned SPV checkpoint and verifies the header chain FORWARD (PoW + LWMA +
+   * chainwork) to `height`, then returns that header's merkle root. THROWS for a height below the
+   * checkpoint (can't verify backward) or if verification fails — the IndexerClient then degrades
+   * to the honest "proof-consistent" instead of over-claiming "verified-inclusion". The verified
+   * header chain is cached across calls; the first call near tip syncs the post-checkpoint span.
+   */
+  private async verifiedHeaderMerkleAt(height: number): Promise<string> {
+    if (!Number.isInteger(height) || height < this._spvCp.height)
+      throw new Error(`height ${height} is below the SPV checkpoint ${this._spvCp.height} (cannot PoW-verify backward)`);
+    if (!this._spvLight) this._spvLight = new LightClient({ client: this.chain.client, checkpoints: { [this._spvCp.height]: this._spvCp.hash } });
+    const lc = this._spvLight;
+    if (!this._spvSeeded) { await lc.syncFromCheckpoint(this._spvCp.height, this._spvCp.hash); this._spvSeeded = true; }
+    const haveTo = lc.baseHeight + lc.chain.length - 1;
+    if (haveTo < height) await lc.sync(height);
+    const vh = lc.chain[height - lc.baseHeight];
+    if (!vh) throw new Error(`light client has no verified header at ${height}`);
+    return String(vh.header.merkle);
   }
 
   /**
