@@ -158,6 +158,15 @@ console.log("=== IndexerClient: merkle inclusion (real fixture) ===");
   const idx4 = new IndexerClient(new Http({ baseUrl: "https://i.com", fetch: proofFetch("0x" + "ab".repeat(32)) }));
   const r4 = await idx4.verifyInclusion(target);
   ok("branch not folding to claimed root → rejected", r4.included === false);
+
+  // (e) M3: a headerMerkleAt that THROWS (e.g. the PoW light client can't verify this height —
+  //     below the SPV checkpoint, or unreachable) must DEGRADE to the honest "proof-consistent",
+  //     never crash and never silently claim "verified-inclusion". This is the guarantee the M3
+  //     fix relies on: the facade wires a PoW-verifying headerMerkleAt that throws when it cannot
+  //     PoW-verify, so the over-claim is impossible.
+  const idx5 = new IndexerClient(new Http({ baseUrl: "https://i.com", fetch: proofFetch() }), { headerMerkleAt: async () => { throw new Error("below SPV checkpoint"); } });
+  const r5 = await idx5.verifyInclusion(target);
+  ok("M3: headerMerkleAt throwing → degrades to proof-consistent (no over-claim, no crash)", r5.included === true && r5.trustLevel === "proof-consistent");
 }
 
 console.log(`\nsdk.test: ${pass} passed, ${fail} failed`);
