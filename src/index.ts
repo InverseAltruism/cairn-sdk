@@ -206,6 +206,8 @@ export type {
   SealClaimParams,
   DetectOptions,
 } from "./connect.js";
+export { CairnController } from "./controller.js";
+export type { CairnState, CairnControllerOptions } from "./controller.js";
 export {
   CairnError,
   NotInstalledError,
@@ -214,4 +216,8 @@ export {
   UnsupportedMethodError,
   HttpError,
   ContentVerificationError,
+  mapProviderError,
+  errorCode,
+  SDK_VERSION,
 } from "./errors.js";
+export type { CairnErrorCode, CairnErrorOptions } from "./errors.js";

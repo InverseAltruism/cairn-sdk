@@ -41,6 +41,16 @@
       "types": "./dist/chain.d.ts",
       "import": "./dist/chain.js",
       "require": "./dist/chain.cjs"
+    },
+    "./controller": {
+      "types": "./dist/controller.d.ts",
+      "import": "./dist/controller.js",
+      "require": "./dist/controller.cjs"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
     }
   },
   "files": [
@@ -49,8 +59,8 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/connect.ts src/board.ts src/indexer.ts src/content.ts src/registry.ts src/chain.ts --format esm,cjs --dts --clean",
-    "test": "tsx test/sdk.test.ts && tsx test/connect.test.ts",
+    "build": "tsup src/index.ts src/connect.ts src/board.ts src/indexer.ts src/content.ts src/registry.ts src/chain.ts src/controller.ts src/react.ts --format esm,cjs --dts --clean",
+    "test": "tsx test/sdk.test.ts && tsx test/connect.test.ts && tsx test/errors.test.ts && tsx test/controller.test.ts && tsx test/react.test.ts",
     "test:live": "node examples/read-only.mjs",
     "build:example": "node scripts/build-example.mjs",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
