@@ -185,6 +185,7 @@ export {
   connect,
   getWallet,
   detectProvider,
+  discoverProviders,
   isInstalled,
 } from "./connect.js";
 export type {
@@ -192,12 +193,21 @@ export type {
   ConnectResult,
   TxResult,
   SignInResult,
+  SiwcParams,
+  SiwcResult,
+  FillParams,
+  WalletCapabilities,
+  WalletPermission,
+  ProviderInfo,
+  ProviderDetail,
   ProposeParams,
   AttestParams,
   SendParams,
   SealClaimParams,
   DetectOptions,
 } from "./connect.js";
+export { CairnController } from "./controller.js";
+export type { CairnState, CairnControllerOptions } from "./controller.js";
 export {
   CairnError,
   NotInstalledError,
@@ -206,4 +216,8 @@ export {
   UnsupportedMethodError,
   HttpError,
   ContentVerificationError,
+  mapProviderError,
+  errorCode,
+  SDK_VERSION,
 } from "./errors.js";
+export type { CairnErrorCode, CairnErrorOptions } from "./errors.js";
