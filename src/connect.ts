@@ -67,18 +67,80 @@ export interface SealClaimParams {
   fee?: number;
 }
 
+/** Atomic fill (CairnX delivery-vs-payment): an Attest + payment outputs in ONE tx. */
+export interface FillParams {
+  proposalId: string;
+  outputs: { to: string; value: number }[];
+  score?: number;
+  confidence?: number;
+  fee?: number;
+}
+
+/**
+ * Audience-bound "Sign in with CSD" (SIWC) params — the secure third-party login. The wallet binds
+ * the REAL requesting origin as the message `domain` (from the unforgeable sender.origin, NEVER this
+ * field) plus your server `nonce`, chain id, and a validity window, and returns only the signed
+ * artifact. The relying party MUST verify it server-side (see below).
+ */
+export interface SiwcParams {
+  /** Server-issued, single-use, >=8 alphanumeric (use `generateNonce()` from @inversealtruism/csd-siwc). */
+  nonce: string;
+  /** Optional one-line human statement shown in the wallet (no newline). */
+  statement?: string;
+  /** Subject URI; defaults to the origin root. If given, MUST be on the requesting site. */
+  uri?: string;
+  /** Validity window in seconds (wallet clamps 60..3600, default 600). */
+  expirationSecs?: number;
+  notBeforeSecs?: number;
+  requestId?: string;
+  resources?: string[];
+  /** Optional cross-check only — if set it MUST equal the requesting origin's host, else refused. */
+  domain?: string;
+}
+
+/**
+ * SIWC result — the signed artifact. VERIFY SERVER-SIDE with `verifySiwc` from
+ * `@inversealtruism/csd-siwc` (check domain==your-origin, nonce==your-issued-single-use-nonce,
+ * chainId, time window, signature, hash160(pub33)==account), THEN issue your OWN session. The
+ * signature is proof-of-control, NEVER a bearer token.
+ */
+export interface SiwcResult {
+  account: string;
+  pub33: string;
+  sig64: string;
+  /** The exact canonical SIWC message that was signed (verify the signature over this). */
+  message: string;
+  /** CAIP-2 chain id the sign-in is bound to. */
+  chainId: string;
+}
+
+/** Wallet feature/capability descriptor (feature-detection; older wallets may not expose it). */
+export interface WalletCapabilities {
+  version: string;
+  /** SIWC byte-contract version, e.g. "1", when audience-bound sign-in is supported. */
+  siwc?: string;
+  methods?: string[];
+  [k: string]: unknown;
+}
+
 /** The raw provider object the extension injects at `window.cairn`. */
 export interface CairnProvider {
   isCairn: true;
   version: string;
   connect(): Promise<ProviderReply<ConnectResult>>;
   getAddress(): Promise<ProviderReply<ConnectResult>>;
+  /** @deprecated First-party-only legacy login. Third parties MUST use `signInWithCsd`. */
   signIn(): Promise<ProviderReply<SignInResult>>;
+  /** Audience-bound "Sign in with CSD" — the secure third-party login. */
+  signInWithCsd(p: SiwcParams): Promise<ProviderReply<SiwcResult>>;
   propose(p: ProposeParams): Promise<ProviderReply<TxResult>>;
   attest(p: AttestParams): Promise<ProviderReply<TxResult>>;
   send(p: SendParams): Promise<ProviderReply<TxResult>>;
+  fillOffer(p: FillParams): Promise<ProviderReply<TxResult>>;
   sealClaim(p: SealClaimParams): Promise<ProviderReply<TxResult>>;
   revealClaim(txid: string): Promise<ProviderReply<TxResult>>;
+  /** Feature/capability detection (optional; absent on older wallets). */
+  getCapabilities?(): Promise<WalletCapabilities>;
 }
 
 /** Every provider call resolves to this discriminated reply (never rejects). */
@@ -183,9 +245,46 @@ export class WalletConnection {
     return addr;
   }
 
-  /** Passwordless sign-in: a signature over a login nonce (always prompts; structurally cannot sign a tx). */
+  /**
+   * @deprecated First-party-only legacy login (it authenticates against the wallet's own configured
+   * server and is rejected from third-party origins). Use {@link signInWithCsd} for any site.
+   * Passwordless sign-in: a signature over a login nonce (always prompts; structurally cannot sign a tx).
+   */
   signIn(): Promise<SignInResult> {
     return Promise.resolve(this.provider.signIn()).then(unwrap);
+  }
+
+  /**
+   * Audience-bound "Sign in with CSD" (SIWC) — the secure, replay-resistant third-party login.
+   * The wallet binds the REAL requesting origin + your single-use server `nonce` into the signed
+   * message and returns the artifact; it never mints a session. VERIFY the result SERVER-SIDE with
+   * `verifySiwc` from `@inversealtruism/csd-siwc` (domain/nonce/chain/time/signature/account), then
+   * issue your OWN session. The signature is proof-of-control, NOT a bearer token. Always prompts.
+   */
+  signInWithCsd(params: SiwcParams): Promise<SiwcResult> {
+    if (!params || typeof params.nonce !== "string" || !params.nonce) {
+      return Promise.reject(new UnsupportedMethodError("signInWithCsd requires a server-issued { nonce }"));
+    }
+    if (typeof this.provider.signInWithCsd !== "function") {
+      return Promise.reject(new UnsupportedMethodError("this wallet predates Sign-in-with-CSD — ask the user to update the Cairn Wallet"));
+    }
+    return Promise.resolve(this.provider.signInWithCsd(params)).then(unwrap);
+  }
+
+  /** True if this wallet supports audience-bound SIWC (safe to call `signInWithCsd`). */
+  get supportsSiwc(): boolean {
+    return typeof this.provider.signInWithCsd === "function";
+  }
+
+  /** Feature/capability detection. Returns null if the wallet predates `getCapabilities`. */
+  async getCapabilities(): Promise<WalletCapabilities | null> {
+    if (typeof this.provider.getCapabilities !== "function") return null;
+    try { return await this.provider.getCapabilities(); } catch { return null; }
+  }
+
+  /** Atomic fill (CairnX DvP): pay + attest in ONE tx. Always prompts with clear-signing. */
+  fillOffer(params: FillParams): Promise<TxResult> {
+    return Promise.resolve(this.provider.fillOffer(params)).then(unwrap);
   }
 
   /** Send CSD (always prompts with clear-signing; wallet picks inputs + returns change to itself). */

@@ -41,6 +41,9 @@ function mockProvider(over: Partial<CairnProvider> = {}): CairnProvider {
     propose: () => reply({ ok: true, result: { ok: true, txid: "0xtx" } }),
     attest: () => reply({ ok: true, result: { ok: true, txid: "0xtx" } }),
     send: () => reply({ ok: true, result: { ok: true, txid: "0xtx" } }),
+    fillOffer: () => reply({ ok: true, result: { ok: true, txid: "0xfill" } }),
+    signInWithCsd: () => reply({ ok: true, result: { account: "0xabc", pub33: "0xpub", sig64: "0xsig", message: "casino.example wants you to sign in with your Compute Substrate account:\n0xabc", chainId: "csd:00000052c2821f71b19c3d79dfabfb12" } }),
+    getCapabilities: () => Promise.resolve({ version: "0.2.23", siwc: "1", methods: ["connect", "signInWithCsd"] }),
     sealClaim: () => reply({ ok: true, result: { ok: true, txid: "0xtx" } }),
     revealClaim: () => reply({ ok: true, result: { ok: true, txid: "0xtx" } }),
     ...over,
@@ -88,6 +91,31 @@ console.log("=== connector: method wrappers + error mapping ===");
   await okThrows("'unsupported dApp method' → UnsupportedMethodError", () => unsupW.attest({ proposalId: "p", score: 1, confidence: 1, fee: 1 }), UnsupportedMethodError);
 
   await okThrows("revealClaim('') rejects", () => new WalletConnection(mockProvider()).revealClaim(""), UnsupportedMethodError);
+}
+
+console.log("=== connector: SIWC + fillOffer + capability detection ===");
+{
+  const w = new WalletConnection(mockProvider());
+  const s = await w.signInWithCsd({ nonce: "abc123def456", statement: "Sign in" });
+  ok("signInWithCsd unwraps the signed artifact", s.account === "0xabc" && s.sig64 === "0xsig" && typeof s.message === "string" && s.chainId.startsWith("csd:"));
+  ok("supportsSiwc is true when the provider exposes it", w.supportsSiwc === true);
+  await okThrows("signInWithCsd without a nonce rejects", () => w.signInWithCsd({} as any), UnsupportedMethodError);
+
+  const fr = await w.fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 10 }] });
+  ok("fillOffer unwraps the txid", fr.txid === "0xfill");
+
+  const caps = await w.getCapabilities();
+  ok("getCapabilities returns the wallet caps", !!caps && caps.siwc === "1");
+
+  // an older wallet that predates SIWC / getCapabilities
+  const old = mockProvider(); delete (old as any).signInWithCsd; delete (old as any).getCapabilities;
+  const wo = new WalletConnection(old);
+  ok("supportsSiwc is false on an old wallet", wo.supportsSiwc === false);
+  await okThrows("signInWithCsd on an old wallet rejects (UnsupportedMethod)", () => wo.signInWithCsd({ nonce: "abc123def456" }), UnsupportedMethodError);
+  ok("getCapabilities returns null on an old wallet", (await wo.getCapabilities()) === null);
+
+  const rej = new WalletConnection(mockProvider({ signInWithCsd: () => Promise.resolve({ ok: false, error: "rejected by user" }) }));
+  await okThrows("SIWC 'rejected by user' → UserRejectedError", () => rej.signInWithCsd({ nonce: "abc123def456" }), UserRejectedError);
 }
 
 clearWindow();
