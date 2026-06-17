@@ -185,6 +185,7 @@ export {
   connect,
   getWallet,
   detectProvider,
+  discoverProviders,
   isInstalled,
 } from "./connect.js";
 export type {
@@ -196,6 +197,9 @@ export type {
   SiwcResult,
   FillParams,
   WalletCapabilities,
+  WalletPermission,
+  ProviderInfo,
+  ProviderDetail,
   ProposeParams,
   AttestParams,
   SendParams,

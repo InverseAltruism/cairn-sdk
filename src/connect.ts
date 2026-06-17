@@ -123,6 +123,13 @@ export interface WalletCapabilities {
   [k: string]: unknown;
 }
 
+/** An EIP-2255-style per-origin permission grant. */
+export interface WalletPermission {
+  invoker: string;     // the origin the grant belongs to
+  accounts: string[];  // accounts this origin is permitted to see
+  grantedAt: number;   // ms epoch
+}
+
 /** The raw provider object the extension injects at `window.cairn`. */
 export interface CairnProvider {
   isCairn: true;
@@ -141,6 +148,13 @@ export interface CairnProvider {
   revealClaim(txid: string): Promise<ProviderReply<TxResult>>;
   /** Feature/capability detection (optional; absent on older wallets). */
   getCapabilities?(): Promise<WalletCapabilities>;
+  /** EIP-2255-style per-origin permissions (optional; absent on older wallets). */
+  getPermissions?(): Promise<ProviderReply<WalletPermission[]>>;
+  requestPermissions?(): Promise<ProviderReply<WalletPermission[]>>;
+  revokePermissions?(): Promise<ProviderReply<{ revoked: boolean }>>;
+  /** Event subscription (accountsChanged / disconnect) (optional; absent on older wallets). */
+  on?(event: string, handler: (data: unknown) => void): void;
+  removeListener?(event: string, handler: (data: unknown) => void): void;
 }
 
 /** Every provider call resolves to this discriminated reply (never rejects). */
@@ -162,6 +176,43 @@ export interface DetectOptions {
  * content script hasn't injected yet. Throws `NotInstalledError` on timeout or
  * outside a browser.
  */
+/** EIP-6963-style announced wallet info (Cairn's own `csd:` discovery namespace). */
+export interface ProviderInfo {
+  uuid: string;
+  name: string;
+  icon: string; // data: URI
+  rdns: string; // reverse-DNS id, e.g. "com.cairn-substrate.wallet"
+}
+/** A discovered provider + its display info. */
+export interface ProviderDetail {
+  info: ProviderInfo;
+  provider: CairnProvider;
+}
+
+/**
+ * Enumerate all wallets that announce via the `csd:` discovery handshake (EIP-6963 analog) — for a
+ * multi-wallet picker. Resolves with everything announced within `timeoutMs` (default 1000ms).
+ */
+export function discoverProviders(opts: DetectOptions = {}): Promise<ProviderDetail[]> {
+  const timeoutMs = opts.timeoutMs ?? 1000;
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") { resolve([]); return; }
+    const found = new Map<string, ProviderDetail>();
+    const onAnnounce = (ev: any) => {
+      const d = ev?.detail;
+      if (d?.info?.uuid && d?.provider?.isCairn) found.set(d.info.uuid, d as ProviderDetail);
+    };
+    window.addEventListener("csd:announceProvider", onAnnounce as EventListener);
+    window.dispatchEvent(new CustomEvent("csd:requestProvider"));
+    setTimeout(() => { window.removeEventListener("csd:announceProvider", onAnnounce as EventListener); resolve([...found.values()]); }, timeoutMs);
+  });
+}
+
+/**
+ * Resolve `window.cairn`, via three paths that race: an immediate global, the legacy
+ * `cairn#initialized` event, or the `csd:announceProvider` discovery handshake (we dispatch
+ * `csd:requestProvider`). Throws `NotInstalledError` on timeout or outside a browser.
+ */
 export function detectProvider(opts: DetectOptions = {}): Promise<CairnProvider> {
   const timeoutMs = opts.timeoutMs ?? 3000;
   return new Promise((resolve, reject) => {
@@ -169,32 +220,21 @@ export function detectProvider(opts: DetectOptions = {}): Promise<CairnProvider>
       reject(new NotInstalledError("Not running in a browser — `window.cairn` is unavailable."));
       return;
     }
-    if (window.cairn?.isCairn) {
-      resolve(window.cairn);
-      return;
-    }
     let done = false;
-    const onInit = () => {
-      if (done) return;
-      if (window.cairn?.isCairn) {
-        done = true;
-        cleanup();
-        resolve(window.cairn);
-      }
-    };
-    const timer = setTimeout(() => {
-      if (done) return;
-      done = true;
-      cleanup();
-      reject(new NotInstalledError());
-    }, timeoutMs);
+    const finish = (p: CairnProvider) => { if (done) return; done = true; cleanup(); resolve(p); };
+    const onInit = () => { if (!done && window.cairn?.isCairn) finish(window.cairn); };
+    const onAnnounce = (ev: any) => { const p = ev?.detail?.provider; if (p?.isCairn) finish(p); };
+    const timer = setTimeout(() => { if (done) return; done = true; cleanup(); reject(new NotInstalledError()); }, timeoutMs);
     const cleanup = () => {
       clearTimeout(timer);
       window.removeEventListener("cairn#initialized", onInit);
+      window.removeEventListener("csd:announceProvider", onAnnounce as EventListener);
     };
     window.addEventListener("cairn#initialized", onInit);
-    // Race: the event may have fired before this listener attached.
-    onInit();
+    window.addEventListener("csd:announceProvider", onAnnounce as EventListener);
+    if (window.cairn?.isCairn) { finish(window.cairn); return; }
+    window.dispatchEvent(new CustomEvent("csd:requestProvider")); // ask any installed wallet to announce
+    onInit(); // race: the global/event may already be present
   });
 }
 
@@ -285,6 +325,40 @@ export class WalletConnection {
   /** Atomic fill (CairnX DvP): pay + attest in ONE tx. Always prompts with clear-signing. */
   fillOffer(params: FillParams): Promise<TxResult> {
     return Promise.resolve(this.provider.fillOffer(params)).then(unwrap);
+  }
+
+  /** This origin's current permission grant (EIP-2255-style). Silent; [] if none / unsupported. */
+  async getPermissions(): Promise<WalletPermission[]> {
+    if (typeof this.provider.getPermissions !== "function") return [];
+    return unwrap(await this.provider.getPermissions());
+  }
+
+  /** Explicitly request permission to see the address (prompts, like connect). */
+  requestPermissions(): Promise<WalletPermission[]> {
+    if (typeof this.provider.requestPermissions !== "function") {
+      return Promise.reject(new UnsupportedMethodError("this wallet predates requestPermissions — use connect()"));
+    }
+    return Promise.resolve(this.provider.requestPermissions()).then(unwrap);
+  }
+
+  /** Revoke THIS origin's own access (silent). Returns { revoked }. Safe no-op on older wallets. */
+  async revokePermissions(): Promise<{ revoked: boolean }> {
+    if (typeof this.provider.revokePermissions !== "function") return { revoked: false };
+    return unwrap(await this.provider.revokePermissions());
+  }
+
+  /**
+   * Subscribe to provider events. `accountsChanged` fires with `[]` when this site loses access
+   * (wallet lock / account switch / revoke) — re-call connect() to (re)share; `disconnect` likewise.
+   * No-op if the wallet predates events. Use the SAME handler reference with off() to unsubscribe.
+   */
+  on(event: "accountsChanged" | "disconnect" | (string & {}), handler: (data: any) => void): void {
+    this.provider.on?.(event, handler);
+  }
+
+  /** Remove a previously-added event handler (must be the same reference passed to on()). */
+  off(event: string, handler: (data: any) => void): void {
+    this.provider.removeListener?.(event, handler);
   }
 
   /** Send CSD (always prompts with clear-signing; wallet picks inputs + returns change to itself). */

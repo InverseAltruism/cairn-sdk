@@ -3,6 +3,7 @@
 import {
   WalletConnection,
   detectProvider,
+  discoverProviders,
   isInstalled,
   NotInstalledError,
   UserRejectedError,
@@ -32,6 +33,7 @@ function clearWindow() { delete (globalThis as any).window; }
 
 function mockProvider(over: Partial<CairnProvider> = {}): CairnProvider {
   const reply = <T>(r: ProviderReply<T>) => Promise.resolve(r);
+  const events: Record<string, ((d: any) => void)[]> = {};
   return {
     isCairn: true,
     version: "0.2.7",
@@ -43,7 +45,13 @@ function mockProvider(over: Partial<CairnProvider> = {}): CairnProvider {
     send: () => reply({ ok: true, result: { ok: true, txid: "0xtx" } }),
     fillOffer: () => reply({ ok: true, result: { ok: true, txid: "0xfill" } }),
     signInWithCsd: () => reply({ ok: true, result: { account: "0xabc", pub33: "0xpub", sig64: "0xsig", message: "casino.example wants you to sign in with your Compute Substrate account:\n0xabc", chainId: "csd:00000052c2821f71b19c3d79dfabfb12" } }),
-    getCapabilities: () => Promise.resolve({ version: "0.2.23", siwc: "1", methods: ["connect", "signInWithCsd"] }),
+    getCapabilities: () => Promise.resolve({ version: "0.2.24", siwc: "1", methods: ["connect", "signInWithCsd"] }),
+    getPermissions: () => reply({ ok: true, result: [{ invoker: "casino.example", accounts: ["0xabc"], grantedAt: 1 }] }),
+    requestPermissions: () => reply({ ok: true, result: [{ invoker: "casino.example", accounts: ["0xabc"], grantedAt: 2 }] }),
+    revokePermissions: () => reply({ ok: true, result: { revoked: true } }),
+    on(ev: string, h: (d: any) => void) { (events[ev] ||= []).push(h); },
+    removeListener(ev: string, h: (d: any) => void) { if (events[ev]) events[ev] = events[ev].filter((x) => x !== h); },
+    _emit(ev: string, d: any) { (events[ev] || []).forEach((h) => h(d)); },
     sealClaim: () => reply({ ok: true, result: { ok: true, txid: "0xtx" } }),
     revealClaim: () => reply({ ok: true, result: { ok: true, txid: "0xtx" } }),
     ...over,
@@ -70,6 +78,25 @@ console.log("=== connector: detection ===");
 
   installWindow(undefined);
   await okThrows("detectProvider times out → NotInstalled", () => detectProvider({ timeoutMs: 60 }), NotInstalledError);
+}
+
+console.log("=== connector: EIP-6963-style discovery ===");
+{
+  // No window.cairn global — the wallet announces only when asked (csd:requestProvider).
+  const et = installWindow(undefined);
+  const prov = mockProvider();
+  const announce = () => et.dispatchEvent(new CustomEvent("csd:announceProvider", { detail: { info: { uuid: "u1", name: "Cairn Wallet", icon: "data:,", rdns: "com.cairn-substrate.wallet" }, provider: prov } }));
+  et.addEventListener("csd:requestProvider", announce);
+  const p = await detectProvider({ timeoutMs: 300 });
+  ok("detectProvider resolves via csd:announceProvider (no global)", p === prov);
+  const list = await discoverProviders({ timeoutMs: 80 });
+  ok("discoverProviders enumerates announced wallets", list.length === 1 && list[0].info.rdns === "com.cairn-substrate.wallet" && list[0].provider === prov);
+
+  // a non-Cairn announce (isCairn=false) is ignored
+  const et2 = installWindow(undefined);
+  et2.addEventListener("csd:requestProvider", () => et2.dispatchEvent(new CustomEvent("csd:announceProvider", { detail: { info: { uuid: "x", name: "Other", icon: "", rdns: "com.other" }, provider: { isCairn: false } } })));
+  const list2 = await discoverProviders({ timeoutMs: 80 });
+  ok("discoverProviders ignores non-Cairn announces", list2.length === 0);
 }
 
 console.log("=== connector: method wrappers + error mapping ===");
@@ -116,6 +143,35 @@ console.log("=== connector: SIWC + fillOffer + capability detection ===");
 
   const rej = new WalletConnection(mockProvider({ signInWithCsd: () => Promise.resolve({ ok: false, error: "rejected by user" }) }));
   await okThrows("SIWC 'rejected by user' → UserRejectedError", () => rej.signInWithCsd({ nonce: "abc123def456" }), UserRejectedError);
+}
+
+console.log("=== connector: permissions (EIP-2255-style) + events ===");
+{
+  const w = new WalletConnection(mockProvider());
+  ok("getPermissions returns this origin's grant", (await w.getPermissions())[0]?.invoker === "casino.example");
+  ok("requestPermissions returns the grant", (await w.requestPermissions())[0]?.accounts[0] === "0xabc");
+  ok("revokePermissions returns { revoked:true }", (await w.revokePermissions()).revoked === true);
+
+  // events: on() delegates + fires; off() unsubscribes
+  let got: any = "none";
+  const h = (d: any) => { got = d; };
+  w.on("accountsChanged", h);
+  (w.provider as any)._emit("accountsChanged", []);
+  ok("on('accountsChanged') fires with [] (lost-access signal)", Array.isArray(got) && got.length === 0);
+  w.off("accountsChanged", h);
+  got = "none";
+  (w.provider as any)._emit("accountsChanged", ["0xnew"]);
+  ok("off() unsubscribes (handler no longer fires)", got === "none");
+
+  // older wallet without permissions/events → graceful degradation, never throws on read/no-op
+  const old: any = mockProvider();
+  delete old.getPermissions; delete old.requestPermissions; delete old.revokePermissions; delete old.on; delete old.removeListener;
+  const wo = new WalletConnection(old);
+  ok("getPermissions → [] on an old wallet", (await wo.getPermissions()).length === 0);
+  ok("revokePermissions → {revoked:false} on an old wallet", (await wo.revokePermissions()).revoked === false);
+  await okThrows("requestPermissions throws on an old wallet", () => wo.requestPermissions(), UnsupportedMethodError);
+  wo.on("accountsChanged", () => {}); wo.off("accountsChanged", () => {}); // no-op, must not throw
+  ok("on/off are safe no-ops on an old wallet", true);
 }
 
 clearWindow();
