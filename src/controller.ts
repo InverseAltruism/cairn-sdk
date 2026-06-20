@@ -3,8 +3,11 @@
 // the wallet's provider events. Exposes a useSyncExternalStore-compatible subscribe/getSnapshot, so a
 // React/Vue/Svelte adapter (or vanilla JS) is a thin veneer — all the logic lives + is tested here.
 //
-// F11-safe by construction: the wallet only ever emits `accountsChanged([])` (lock / account-switch /
-// revoke), so this store drops to "disconnected" on those — it never silently adopts a new address.
+// F11-safe by construction: the genuine wallet only ever emits `accountsChanged([])` (lock / account-switch
+// / revoke), so this store drops to "disconnected" on those. It NEVER silently adopts a different address —
+// a `accountsChanged([x])` is honored only when x equals the address we connected to (CONNECT-1/CTRL-ADOPT-1);
+// any other value (e.g. a forged event from a spoofed provider) drops to disconnected, requiring a fresh
+// consented connect(). disconnect() also detaches the provider listeners so a later event can't ghost-reconnect.
 import { getWallet, type WalletConnection, type SiwcParams, type SiwcResult, type DetectOptions } from "./connect.js";
 
 export interface CairnState {
@@ -51,10 +54,23 @@ export class CairnController {
   }
 
   private onAccounts = (accounts: unknown): void => {
-    if (!Array.isArray(accounts) || accounts.length === 0) this.setState({ status: "disconnected", account: null });
-    else this.setState({ status: "connected", account: String(accounts[0]), error: null });
+    if (!Array.isArray(accounts) || accounts.length === 0) { this.setState({ status: "disconnected", account: null }); return; }
+    const next = String(accounts[0]);
+    // CONNECT-1/CTRL-ADOPT-1: only TRACK accountsChanged when it matches the address we connected to. Never
+    // silently adopt a different/forged address — a spoofed provider emitting accountsChanged([attacker])
+    // must NOT switch the dApp's account view; drop to disconnected and require a fresh consented connect().
+    if (this.state.status === "connected" && this.state.account && next.toLowerCase() === this.state.account.toLowerCase()) {
+      this.setState({ status: "connected", account: next, error: null });
+    } else {
+      this.setState({ status: "disconnected", account: null });
+    }
   };
   private onDisconnect = (): void => { this.setState({ status: "disconnected", account: null }); };
+
+  // Detach the provider listeners (ghost-reconnect fix). Idempotent + best-effort.
+  private detach(): void {
+    try { this.conn?.off?.("accountsChanged", this.onAccounts); this.conn?.off?.("disconnect", this.onDisconnect); } catch { /* best-effort */ }
+  }
 
   /** Detect + connect (prompts the user the first time per origin). Resolves the connected address. */
   connect = async (): Promise<string> => {
@@ -77,6 +93,10 @@ export class CairnController {
   /** Forget the connection locally AND revoke this origin's wallet-side permission (best-effort). */
   disconnect = async (): Promise<void> => {
     try { await this.conn?.revokePermissions(); } catch { /* best-effort; still drop local state */ }
+    // Ghost-reconnect fix: detach listeners + drop the connection so a later (possibly forged)
+    // accountsChanged([addr]) can't resurrect this torn-down session. A fresh connect() re-attaches them.
+    this.detach();
+    this.conn = null;
     this.setState({ status: "disconnected", account: null, error: null });
   };
 

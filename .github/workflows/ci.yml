@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+# cairn-sdk had NO CI (audit CAIRN-SDK-CI-NONE-1) — every drift (SDK_VERSION, the stale csd-* pin, the
+# tautological version test) shipped unnoticed. This builds + typechecks + tests on every push/PR and gates
+# the publish on a dep-freshness check (the exact-pinned csd-* must be the ecosystem lockstep version). The
+# csd-* are PUBLIC npm packages, so no sibling checkout/token is needed (unlike cairn).
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: typecheck
+        run: pnpm exec tsc --noEmit
+      - name: build (all 9 subpaths emit ESM+CJS+dts)
+        run: pnpm build
+      - name: test (sdk/connect/errors/controller/react/hardening)
+        run: pnpm test
+      - name: dep-freshness — every csd-* pin must equal the ecosystem lockstep version
+        run: |
+          node -e '
+            const p = require("./package.json");
+            const pins = Object.entries(p.dependencies).filter(([k]) => k.startsWith("@inversealtruism/csd-"));
+            const vers = [...new Set(pins.map(([, v]) => v))];
+            if (vers.length !== 1) { console.error("::error::csd-* pins are not uniform:", JSON.stringify(pins)); process.exit(1); }
+            if (/^[\^~]/.test(vers[0])) { console.error("::error::csd-* must be EXACT-pinned (no caret/tilde):", vers[0]); process.exit(1); }
+            console.log("csd-* exact-pinned uniformly at", vers[0]);
+          '

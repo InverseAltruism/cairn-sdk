@@ -38,10 +38,15 @@ async function main() {
   ok("state → connected + account set", c.getSnapshot().status === "connected" && c.getSnapshot().account === "0xabc");
   ok("subscribers were notified on connect", notifies > 0);
 
+  // CONNECT-1/CTRL-ADOPT-1: a matching accountsChanged is tracked; a DIFFERENT (forged) one is NEVER adopted.
+  prov._emit("accountsChanged", ["0xABC"]); // same addr (case-insensitive) → stays connected
+  ok("accountsChanged([same]) → stays connected (matching addr tracked)", c.getSnapshot().status === "connected" && c.getSnapshot().account === "0xABC");
+  prov._emit("accountsChanged", ["0xattacker"]); // mismatched → MUST NOT silently adopt
+  ok("accountsChanged([different]) → disconnected (never silently adopts a forged addr)", c.getSnapshot().status === "disconnected" && c.getSnapshot().account === null);
+  await c.connect();
   prov._emit("accountsChanged", []);
-  ok("accountsChanged([]) → disconnected (F11: never adopts a new addr silently)", c.getSnapshot().status === "disconnected" && c.getSnapshot().account === null);
-  prov._emit("accountsChanged", ["0xnew"]);
-  ok("accountsChanged([new]) → connected to the new account", c.getSnapshot().account === "0xnew" && c.getSnapshot().status === "connected");
+  ok("accountsChanged([]) → disconnected (F11)", c.getSnapshot().status === "disconnected" && c.getSnapshot().account === null);
+  await c.connect();
   prov._emit("disconnect", null);
   ok("disconnect event → disconnected", c.getSnapshot().status === "disconnected");
 
@@ -59,6 +64,10 @@ async function main() {
   const p3 = mockProvider(); p3.revokePermissions = () => { revoked = true; return Promise.resolve({ ok: true, result: { revoked: true } }); };
   const c3 = over(p3); await c3.connect(); await c3.disconnect();
   ok("disconnect() revokes the wallet permission AND clears local state", revoked === true && c3.getSnapshot().status === "disconnected");
+  // ghost-reconnect: after disconnect, a (possibly forged) accountsChanged must NOT resurrect the session.
+  p3._emit("accountsChanged", ["0xabc"]);
+  ok("post-disconnect accountsChanged does NOT ghost-reconnect (listeners detached)", c3.getSnapshot().status === "disconnected");
+  ok("disconnect() nulls the connection", c3.connection === null);
 
   const before = notifies; unsub(); prov._emit("accountsChanged", ["0xz"]);
   ok("unsubscribe() stops notifications", notifies === before);

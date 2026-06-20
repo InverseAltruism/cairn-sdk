@@ -23,6 +23,25 @@ export interface InclusionResult {
   pos?: number;
   merkleRoot?: string;
   reason?: string;
+  /** CAIRN-SPV-3: set true when a folding proof's root conflicts with the PoW-verified on-chain header
+   *  merkle (active indexer↔chain equivocation/tamper) — distinct from an honest tx-absence. Consumers that
+   *  retry on `not-found` MUST check this and treat it as a detected attack, NOT a benign miss. */
+  equivocation?: boolean;
+}
+
+// CAIRNSDK-DESER-3 / CAIRN-SPV-2: validate an indexer-supplied merkle proof BEFORE folding it. The proof
+// source is untrusted; csd-codec's verifyMerkleProof THROWS (not returns false) on wrong-typed fields, and
+// the fold is outside the fetch try/catch — so a malformed proof escaped as an unhandled rejection (fail-
+// BROKEN) instead of a clean {trustLevel:"not-found"} (fail-closed). This never affects a VALID proof.
+const HEX64 = /^0x[0-9a-fA-F]{64}$/;
+const MAX_SSE_BUF = 1024 * 1024; // CAIRNSDK-DESER-1: cap the SSE inter-frame buffer (untrusted source → OOM)
+function isValidMerkleProof(p: unknown): p is MerkleProof {
+  if (!p || typeof p !== "object") return false;
+  const m = p as Record<string, unknown>;
+  return Number.isInteger(m.block_height) && (m.block_height as number) >= 0
+    && Number.isInteger(m.pos) && (m.pos as number) >= 0
+    && typeof m.merkle_root === "string" && HEX64.test(m.merkle_root)
+    && Array.isArray(m.merkle) && m.merkle.every((x) => typeof x === "string" && HEX64.test(x));
 }
 
 /** A live index event ({ kind: "block" | "proposal" | "attestation" | "reorg", ... }). */
@@ -74,40 +93,43 @@ export class IndexerClient {
     return this.http.getJson<string>(`/block-height/${h}`);
   }
 
+  // CAIRNSDK-CONTENT-HASH-PATH-1: encode every caller-supplied id segment. Raw interpolation let an id like
+  // `../../api/rpc/tip` walk `new URL` to a DIFFERENT same-origin endpoint whose body was then returned
+  // verbatim as the requested object (worse than the content case, which discards the walked-to response).
   block(hash: string): Promise<unknown> {
-    return this.http.getJson(`/block/${hash}`);
+    return this.http.getJson(`/block/${encodeURIComponent(hash)}`);
   }
 
   blockTxids(hash: string): Promise<string[]> {
-    return this.http.getJson<string[]>(`/block/${hash}/txids`);
+    return this.http.getJson<string[]>(`/block/${encodeURIComponent(hash)}/txids`);
   }
 
   tx(id: string): Promise<unknown> {
-    return this.http.getJson(`/tx/${id}`);
+    return this.http.getJson(`/tx/${encodeURIComponent(id)}`);
   }
 
   txStatus(id: string): Promise<{ confirmed: boolean; block_height: number; confirmations: number; final: boolean }> {
-    return this.http.getJson(`/tx/${id}/status`);
+    return this.http.getJson(`/tx/${encodeURIComponent(id)}/status`);
   }
 
   txMerkleProof(id: string): Promise<MerkleProof> {
-    return this.http.getJson<MerkleProof>(`/tx/${id}/merkle-proof`);
+    return this.http.getJson<MerkleProof>(`/tx/${encodeURIComponent(id)}/merkle-proof`);
   }
 
   address(a: string): Promise<unknown> {
-    return this.http.getJson(`/address/${a}`);
+    return this.http.getJson(`/address/${encodeURIComponent(a)}`);
   }
 
   addressTxs(a: string): Promise<unknown[]> {
-    return this.http.getJson<unknown[]>(`/address/${a}/txs`);
+    return this.http.getJson<unknown[]>(`/address/${encodeURIComponent(a)}/txs`);
   }
 
   addressUtxo(a: string): Promise<unknown[]> {
-    return this.http.getJson<unknown[]>(`/address/${a}/utxo`);
+    return this.http.getJson<unknown[]>(`/address/${encodeURIComponent(a)}/utxo`);
   }
 
   reputation(a: string): Promise<unknown> {
-    return this.http.getJson(`/address/${a}/reputation`);
+    return this.http.getJson(`/address/${encodeURIComponent(a)}/reputation`);
   }
 
   domains(): Promise<unknown[]> {
@@ -119,11 +141,11 @@ export class IndexerClient {
   }
 
   proposal(id: string): Promise<unknown> {
-    return this.http.getJson(`/proposal/${id}`);
+    return this.http.getJson(`/proposal/${encodeURIComponent(id)}`);
   }
 
   attestations(id: string): Promise<unknown[]> {
-    return this.http.getJson<unknown[]>(`/proposal/${id}/attestations`);
+    return this.http.getJson<unknown[]>(`/proposal/${encodeURIComponent(id)}/attestations`);
   }
 
   registryPeers(): Promise<unknown[]> {
@@ -139,7 +161,7 @@ export class IndexerClient {
   }
 
   reverseIdentity(addr: string): Promise<unknown> {
-    return this.http.getJson(`/address/${addr}/identity`);
+    return this.http.getJson(`/address/${encodeURIComponent(addr)}/identity`);
   }
 
   // ---- trust-minimized inclusion ----------------------------------------
@@ -150,9 +172,11 @@ export class IndexerClient {
    * proof's root is cross-checked against the header merkle at that height →
    * trustLevel "verified-inclusion" (only as trustworthy as that header source —
    * see headerMerkleAt). Otherwise the proof is only internally consistent →
-   * "proof-consistent" (still useful, but the indexer is trusted). The Cairn
-   * facade wires headerMerkleAt ONLY when the node RPC is an independent origin
-   * from the indexer, so the default same-origin setup stays at "proof-consistent".
+   * "proof-consistent" (still useful, but the indexer is trusted). INDEXER-DOC-STALE-1: the Cairn facade now
+   * wires headerMerkleAt UNCONDITIONALLY via a PoW-verifying checkpoint light client (index.ts), so the
+   * default reaches "verified-inclusion" when the proof root matches the PoW-verified header — what makes a
+   * same-origin RPC safe is the forward PoW re-verification, not an origin gate (which no longer exists).
+   * Fails closed: a malformed proof or a chain-disagreement returns "not-found" (the latter with equivocation:true).
    */
   async verifyInclusion(txid: string): Promise<InclusionResult> {
     let proof: MerkleProof;
@@ -161,7 +185,17 @@ export class IndexerClient {
     } catch {
       return { included: false, trustLevel: "not-found", reason: "no merkle proof (tx not indexed)" };
     }
-    const folds = verifyMerkleProof(txid, proof.pos, proof.merkle, proof.merkle_root);
+    // CAIRNSDK-DESER-3 / CAIRN-SPV-2: fail CLOSED on a malformed proof (validate before folding) — never let
+    // verifyMerkleProof throw past the documented Promise<InclusionResult> contract.
+    if (!isValidMerkleProof(proof)) {
+      return { included: false, trustLevel: "not-found", reason: "malformed merkle proof" };
+    }
+    let folds = false;
+    try {
+      folds = verifyMerkleProof(txid, proof.pos, proof.merkle, proof.merkle_root);
+    } catch {
+      return { included: false, trustLevel: "not-found", blockHeight: proof.block_height, reason: "malformed merkle proof" };
+    }
     if (!folds) {
       return { included: false, trustLevel: "not-found", blockHeight: proof.block_height, reason: "merkle branch does not fold to the claimed root" };
     }
@@ -169,7 +203,9 @@ export class IndexerClient {
       try {
         const onchain = await this.opts.headerMerkleAt(proof.block_height);
         if (norm(onchain) !== norm(proof.merkle_root)) {
-          return { included: false, trustLevel: "not-found", blockHeight: proof.block_height, reason: "proof root != on-chain header merkle (indexer disagrees with chain)" };
+          // CAIRN-SPV-3: a folding proof whose root != the PoW-verified header is active equivocation, not
+          // absence — flag it distinctly so chain↔indexer disagreement monitoring isn't lost in "not-found".
+          return { included: false, trustLevel: "not-found", equivocation: true, blockHeight: proof.block_height, reason: "proof root != on-chain header merkle (indexer disagrees with chain)" };
         }
         return { included: true, trustLevel: "verified-inclusion", blockHeight: proof.block_height, pos: proof.pos, merkleRoot: proof.merkle_root };
       } catch {
@@ -199,6 +235,11 @@ export class IndexerClient {
   /**
    * Subscribe over WebSocket with selective tracking. Returns a handle with
    * `.close()`. `onEvent` receives every matching IndexEvent (incl. reorgs).
+   *
+   * WS-NORECONNECT-1: unlike the SSE feeds (streamAll/streamBlocks/streamDomain, which auto-reconnect with
+   * backoff), this WebSocket subscription does NOT auto-reconnect — it surfaces a terminal error via
+   * `onError` (when provided) and stops. A consumer tracking reorgs over WS MUST re-`subscribe()` on error
+   * to avoid a silently-stale view; for built-in reconnect prefer the SSE `stream*` methods.
    */
   subscribe(sub: { all?: boolean; domains?: string[]; addresses?: string[]; proposals?: string[] }, onEvent: (e: IndexEvent) => void, onError?: (err: unknown) => void): StreamHandle {
     const WS = this.opts.WebSocketImpl ?? (globalThis as { WebSocket?: typeof WebSocket }).WebSocket;
@@ -262,6 +303,10 @@ export class IndexerClient {
               buf = buf.slice(idx + 2);
               dispatchFrame(frame, handlers);
             }
+            // CAIRNSDK-DESER-1: cap the inter-delimiter buffer. The SSE source is untrusted (indexer.ts header);
+            // a source that withholds "\n\n" otherwise grows `buf` to the full byte count sent → client OOM.
+            // Abort (→ caught below → onError + reconnect) instead of buffering unboundedly.
+            if (buf.length > MAX_SSE_BUF) { try { await reader.cancel(); } catch { /* ignore */ } throw new Error(`SSE buffer exceeded ${MAX_SSE_BUF} bytes with no frame delimiter — aborting`); }
           }
         } catch (err) {
           if (closed) return;

@@ -3,8 +3,10 @@ import {
   CairnError, NotInstalledError, UserRejectedError, WalletLockedError, UnsupportedMethodError,
   HttpError, ContentVerificationError, mapProviderError, errorCode, SDK_VERSION,
 } from "../src/index.js";
+import { readFileSync } from "node:fs";
 
 declare const process: { exit(code: number): void };
+const pkgVersion = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version as string;
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n)); };
 
@@ -13,6 +15,8 @@ const e = new CairnError("something went wrong", { code: "HTTP_ERROR", docsPath:
 ok("has the stable code", e.code === "HTTP_ERROR");
 ok("shortMessage is the bare message (no footer)", e.shortMessage === "something went wrong");
 ok("version is the SDK version", e.version === SDK_VERSION);
+// SDK-VERSION-DRIFT: SDK_VERSION MUST equal package.json (was a tautology comparing the constant to itself).
+ok("SDK_VERSION === package.json version (no drift)", SDK_VERSION === pkgVersion);
 ok("full message appends docs + version footer", e.message.includes("something went wrong") && e.message.includes("Docs:") && e.message.includes(`cairn-sdk@${SDK_VERSION}`));
 ok("is an Error + a CairnError", e instanceof Error && e instanceof CairnError);
 

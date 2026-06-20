@@ -61,12 +61,21 @@ export class RegistryClient {
     return discoverPeers(this.src);
   }
 
-  /** Resolve a handle → identity (GET /identity/:handle). Returns null if unresolved. */
+  /**
+   * Resolve a handle → identity (GET /identity/:handle). Returns null if unresolved.
+   *
+   * ⚠ TRUST (CAIRN-SDK-RESOLVE-VERIFIED-FOOTGUN): the returned `verified` flag is the INDEXER's assertion,
+   * NOT a client-side proof. A hostile/compromised indexer (or a MITM of the read proxy) can return
+   * `verified:true` for a wrong address. Do NOT use this directly as a payee/login target without either (a)
+   * recomputing from raw records via `fromRecords.name(...)`, or (b) cross-checking a second independent
+   * source (the wallet's namespv union cure). Treat `verified` here as a hint, not a guarantee.
+   */
   resolveName(handle: string) {
     return resolveName(this.src, handle);
   }
 
-  /** Reverse-resolve an address → identity (GET /address/:addr/identity). */
+  /** Reverse-resolve an address → identity (GET /address/:addr/identity).
+   *  ⚠ Same indexer-trust caveat as resolveName — `verified` is the indexer's claim, not a client proof. */
   reverseName(address: string) {
     return reverseName(this.src, address);
   }

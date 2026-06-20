@@ -66,10 +66,11 @@ export interface CairnConfig {
   spvCheckpoint?: { height: number; hash: string };
 }
 
-// The ecosystem SPV checkpoint (identical to cairn /trade swapguard's baked anchor). A consensus
-// block hash, not a trusted server's word — the light client re-verifies every header forward from
-// here. Pin a newer one via config.spvCheckpoint as the chain grows.
-const DEFAULT_SPV_CHECKPOINT = { height: 31310, hash: "0x000000000000138bd3eee4b8d2fbacb8d5433ac3040ddbf1c45a5e3e0cc9e814" };
+// The ecosystem SPV checkpoint (CAIRN-SDK-SPV-CKPT-DUP-1: MUST stay identical to cairn /trade swapguard's
+// baked anchor — `cairn/public/trade/swapguard.js` CP; test/spv-checkpoint.test.ts asserts equality so the
+// two literals can't silently drift). A consensus block hash, not a trusted server's word — the light client
+// re-verifies every header forward from here. Pin a newer one via config.spvCheckpoint as the chain grows.
+export const DEFAULT_SPV_CHECKPOINT = { height: 31310, hash: "0x000000000000138bd3eee4b8d2fbacb8d5433ac3040ddbf1c45a5e3e0cc9e814" };
 
 const DEFAULT_CAIRN = "https://cairn-substrate.com";
 

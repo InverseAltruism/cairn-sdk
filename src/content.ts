@@ -100,6 +100,9 @@ export class ContentClient {
 }
 
 function normalizeHash(hash: string): string {
-  const h = hash.startsWith("0x") || hash.startsWith("0X") ? hash : `0x${hash}`;
-  return h.toLowerCase();
+  const h = (hash.startsWith("0x") || hash.startsWith("0X") ? hash : `0x${hash}`).toLowerCase();
+  // CAIRNSDK-CONTENT-HASH-PATH-1: a content hash is interpolated raw into `/content/${h}`. Reject anything
+  // that isn't a 0x+64-hex hash so a "hash" like `x/../../api/treasury` can't path-walk to another endpoint.
+  if (!/^0x[0-9a-f]{64}$/.test(h)) throw new Error(`invalid content hash: ${hash}`);
+  return h;
 }

@@ -133,7 +133,10 @@ export class Chain {
     });
     if (!built.ok || p.broadcast === false) return built;
     const submitResult = await this.client.submit(built.nodeJson);
-    return { ...built, submitResult };
+    // CAIRNSDK-VP-4: reflect the node's accept/reject in the top-level `ok`. The node returns {ok:false} at
+    // HTTP 200 on rejection (fee floor / double-spend / malformed) WITH a populated txid; without this a
+    // caller doing `if (r.ok) use(r.txid)` would read a build-level ok + a computed txid for a REJECTED tx.
+    return { ...built, ok: built.ok && submitResult.ok !== false, submitResult };
   }
 
   /** A verifying light client over the same RPC (built once, reused). */

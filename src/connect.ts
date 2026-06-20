@@ -252,6 +252,12 @@ function unwrap<T>(reply: ProviderReply<T>): T {
 /**
  * High-level, typed wallet handle. Construct via `connect()` or `new WalletConnection(provider)`.
  * Methods throw `UserRejectedError` / `WalletLockedError` / `UnsupportedMethodError` on failure.
+ *
+ * Note (typed-error contract): the genuine Cairn Wallet always RESOLVES a `{ok,result|error}` reply, so a
+ * failure is mapped to a typed `CairnError` via `unwrap`. A non-conformant or SPOOFED provider that instead
+ * REJECTS its promise will surface that raw rejection un-mapped (it bypasses `unwrap`), so a dApp's
+ * `catch (e) { errorCode(e) }` may see `UNKNOWN` from such a provider. The real auth boundary is server-side
+ * SIWC verification, never a client-side error code.
  */
 export class WalletConnection {
   readonly provider: CairnProvider;

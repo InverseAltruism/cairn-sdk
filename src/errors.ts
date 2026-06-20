@@ -14,8 +14,9 @@ export type CairnErrorCode =
   | "CONTENT_VERIFICATION"
   | "UNKNOWN";
 
-// Kept in sync with package.json (the build has no JSON import; bump both together).
-export const SDK_VERSION = "0.1.2";
+// Kept in sync with package.json `version` (the build has no JSON import; bump both together). SDK-VERSION-DRIFT:
+// errors.test.ts now asserts SDK_VERSION === package.json.version (the old test compared the constant to itself).
+export const SDK_VERSION = "0.1.4";
 const DOCS_BASE = "https://cairn-substrate.com/docs/sdk";
 
 export interface CairnErrorOptions {
