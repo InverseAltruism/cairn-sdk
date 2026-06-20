@@ -8,6 +8,7 @@ export {
   CsdClient,
   rpcTxToTx,
   rpcHeaderToHeader,
+  verifyInputValues,
 } from "@inversealtruism/csd-client";
 export type {
   ClientOptions,
@@ -27,10 +28,11 @@ export {
   txToNodeJson,
   signTx,
   buildSend,
+  buildSendVerified,
   buildPropose,
   buildAttest,
 } from "@inversealtruism/csd-tx";
-export type { Utxo, Selection, Signed, BuildResult } from "@inversealtruism/csd-tx";
+export type { Utxo, Selection, Signed, BuildResult, InputVerifier } from "@inversealtruism/csd-tx";
 
 // Codec: canonical content hashing, tx/header serialization, merkle proof verification.
 export {
@@ -72,8 +74,10 @@ export {
 export { LightClient, expectedBits, expectedBitsFromWindow } from "@inversealtruism/csd-light";
 export type { VerifiedHeader, InclusionResult, ReorgResult, TrustLevel } from "@inversealtruism/csd-light";
 
-import { CsdClient } from "@inversealtruism/csd-client";
+import { CsdClient, verifyInputValues } from "@inversealtruism/csd-client";
 import { LightClient } from "@inversealtruism/csd-light";
+import { buildSendVerified, type Utxo, type BuildResult } from "@inversealtruism/csd-tx";
+import { addrFromPriv } from "@inversealtruism/csd-crypto";
 import type { FetchLike } from "./http.js";
 
 export interface ChainOptions {
@@ -110,6 +114,26 @@ export class Chain {
   /** Submit a signed transaction (node-shaped JSON from `signTx().nodeJson`). */
   submit(nodeJsonTx: unknown) {
     return this.client.submit(nodeJsonTx);
+  }
+
+  /**
+   * Build + sign (+ optionally broadcast) a transfer with INPUT-VALUE VERIFICATION (the H2-safe send).
+   * Fetches the signer's UTXOs, selects, then re-verifies each selected input's REAL value against the
+   * chain (`verifyInputValues` recomputes each source tx's txid, so a lying RPC can't under-report) and
+   * computes change from the VERIFIED total — closing the UTXO-VALUE-1 implicit-fee-burn. Fail-closed:
+   * if any source can't be verified it signs nothing. Prefer this over the pure `buildSend`. Pass
+   * `broadcast:false` to get the signed tx back without submitting.
+   */
+  async send(p: { priv: string; outputs: { to: string; value: number }[]; fee: number; maxFee?: number; broadcast?: boolean }): Promise<BuildResult & { submitResult?: import("@inversealtruism/csd-client").RpcSubmit }> {
+    const from = addrFromPriv(p.priv);
+    const u = await this.client.utxos(from);
+    const built = await buildSendVerified({
+      outputs: p.outputs, fee: p.fee, utxos: u.utxos as Utxo[], priv: p.priv, maxFee: p.maxFee,
+      verify: (inputs) => verifyInputValues(this.client, inputs),
+    });
+    if (!built.ok || p.broadcast === false) return built;
+    const submitResult = await this.client.submit(built.nodeJson);
+    return { ...built, submitResult };
   }
 
   /** A verifying light client over the same RPC (built once, reused). */
