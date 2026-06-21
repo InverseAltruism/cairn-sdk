@@ -5,10 +5,15 @@ on:
     branches: [master, main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 # cairn-sdk had NO CI (audit CAIRN-SDK-CI-NONE-1) — every drift (SDK_VERSION, the stale csd-* pin, the
-# tautological version test) shipped unnoticed. This builds + typechecks + tests on every push/PR and gates
-# the publish on a dep-freshness check (the exact-pinned csd-* must be the ecosystem lockstep version). The
-# csd-* are PUBLIC npm packages, so no sibling checkout/token is needed (unlike cairn).
+# tautological version test) shipped unnoticed. This is a push/PR test + dep-freshness gate (there is no
+# publish job): it builds + typechecks + tests on every push/PR and checks that every exact-pinned csd-*
+# (in both dependencies AND devDependencies) is the ecosystem lockstep version. The csd-* are PUBLIC npm
+# packages, so no sibling checkout/token is needed (unlike cairn).
 
 jobs:
   test:
@@ -31,7 +36,8 @@ jobs:
         run: |
           node -e '
             const p = require("./package.json");
-            const pins = Object.entries(p.dependencies).filter(([k]) => k.startsWith("@inversealtruism/csd-"));
+            const all = { ...(p.dependencies || {}), ...(p.devDependencies || {}) };
+            const pins = Object.entries(all).filter(([k]) => k.startsWith("@inversealtruism/csd-"));
             const vers = [...new Set(pins.map(([, v]) => v))];
             if (vers.length !== 1) { console.error("::error::csd-* pins are not uniform:", JSON.stringify(pins)); process.exit(1); }
             if (/^[\^~]/.test(vers[0])) { console.error("::error::csd-* must be EXACT-pinned (no caret/tilde):", vers[0]); process.exit(1); }
