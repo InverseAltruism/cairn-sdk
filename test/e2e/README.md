@@ -15,8 +15,8 @@ Four layers, fastest → most involved. All exercise the **built `dist/`** (run 
 
 - **read**: network access to `cairn-substrate.com`.
 - **wallet**: a built `../cairn-wallet/dist` (`node build.mjs` in the wallet repo), cached Chromium, and `Xvfb`. Override the browser with `CHROME=/path/to/chrome`.
-- **write**: a funded CSD key at `~/.config/cairn/key.json` (`{ "privkey": "0x…" }`) or `CAIRN_KEY=/path`. Spends real fees. Depends on chain mining speed — the mine-waits allow up to 20 min because block times are variable; if the chain is congested the run may time out with the tx still pending in the mempool (funds are not lost; the change confirms once it mines). `verify-pending-write.mjs [txidPrefix]` re-verifies an already-submitted propose once it mines, without spending again.
+- **write**: a funded CSD key at `~/.config/cairn/key.json` (`{ "privkey": "0x…" }`) or `CAIRN_KEY=/path`. Spends real fees. Depends on chain mining speed, the mine-waits allow up to 20 min because block times are variable; if the chain is congested the run may time out with the tx still pending in the mempool (funds are not lost; the change confirms once it mines). `verify-pending-write.mjs [txidPrefix]` re-verifies an already-submitted propose once it mines, without spending again.
 
 ## The node-signer
 
-`examples/node-signer.mjs` is a server/bot `CairnProvider` backed by a raw key (built on the SDK's own `chain` primitives). The write e2e uses it to drive the exact same `cairn.board.propose()/support()` code paths a browser dApp drives through the wallet — so one pipeline is proven for both the browser and backend developer paths.
+`examples/node-signer.mjs` is a server/bot `CairnProvider` backed by a raw key (built on the SDK's own `chain` primitives). The write e2e uses it to drive the exact same `cairn.board.propose()/support()` code paths a browser dApp drives through the wallet, so one pipeline is proven for both the browser and backend developer paths.
