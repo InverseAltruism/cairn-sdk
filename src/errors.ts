@@ -12,11 +12,18 @@ export type CairnErrorCode =
   | "UNSUPPORTED_METHOD"
   | "HTTP_ERROR"
   | "CONTENT_VERIFICATION"
+  // native wallet codes (0.2.46+): relayed verbatim when the provider supplies them
+  | "ACCOUNT_CHANGED"
+  | "FIRST_PARTY_ONLY"
+  | "RATE_LIMITED"
+  | "APPROVAL_CLOSED"
+  | "FORBIDDEN"
+  | "INTERNAL"
   | "UNKNOWN";
 
 // Kept in sync with package.json `version` (the build has no JSON import; bump both together). SDK-VERSION-DRIFT:
 // errors.test.ts now asserts SDK_VERSION === package.json.version (the old test compared the constant to itself).
-export const SDK_VERSION = "0.1.4";
+export const SDK_VERSION = "0.2.0";
 const DOCS_BASE = "https://cairn-substrate.com/docs/sdk";
 
 export interface CairnErrorOptions {
@@ -116,10 +123,16 @@ export class ContentVerificationError extends CairnError {
 }
 
 /**
- * Map a provider error string (from the wallet's `{ ok:false, error }`) onto a typed error. The
- * wallet's strings are stable: "rejected by user", "wallet locked", "unsupported dApp method: …".
+ * Map a provider error reply onto a typed error. Wallet 0.2.46+ sends a stable machine `code`
+ * next to the human `error` string — that is the PREFERRED branch (B10; UX copy may change).
+ * The string matching below stays as the fallback for pre-0.2.46 wallets.
  */
-export function mapProviderError(error: string): CairnError {
+const NATIVE_CODES = new Set<CairnErrorCode>(["ACCOUNT_CHANGED", "FIRST_PARTY_ONLY", "RATE_LIMITED", "APPROVAL_CLOSED", "FORBIDDEN", "INTERNAL"]);
+export function mapProviderError(error: string, code?: string): CairnError {
+  if (code === "USER_REJECTED" || code === "APPROVAL_CLOSED") return new UserRejectedError(error);
+  if (code === "WALLET_LOCKED") return new WalletLockedError(error);
+  if (code === "UNSUPPORTED_METHOD" || code === "UNKNOWN_KIND") return new UnsupportedMethodError(error);
+  if (code && NATIVE_CODES.has(code as CairnErrorCode)) return new CairnError(error || code, { code: code as CairnErrorCode });
   const e = String(error || "").toLowerCase();
   if (e.includes("rejected by user")) return new UserRejectedError(error);
   if (e.includes("wallet locked")) return new WalletLockedError(error);

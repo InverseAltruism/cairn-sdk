@@ -158,7 +158,7 @@ export interface CairnProvider {
 }
 
 /** Every provider call resolves to this discriminated reply (never rejects). */
-export type ProviderReply<T> = { ok: true; result: T } | { ok: false; error: string };
+export type ProviderReply<T> = { ok: true; result: T } | { ok: false; error: string; code?: string };
 
 declare global {
   interface Window {
@@ -246,7 +246,7 @@ export function isInstalled(): boolean {
 /** Unwrap a provider reply, throwing a typed error on `{ ok:false }`. */
 function unwrap<T>(reply: ProviderReply<T>): T {
   if (reply && reply.ok) return reply.result;
-  throw mapProviderError(reply?.error ?? "Unknown wallet error");
+  throw mapProviderError(reply?.error ?? "Unknown wallet error", reply?.code);
 }
 
 /**
@@ -297,6 +297,9 @@ export class WalletConnection {
    * Passwordless sign-in: a signature over a login nonce (always prompts; structurally cannot sign a tx).
    */
   signIn(): Promise<SignInResult> {
+    if (typeof this.provider.signIn !== "function") {
+      return Promise.reject(new UnsupportedMethodError("this wallet does not expose signIn()"));
+    }
     return Promise.resolve(this.provider.signIn()).then(unwrap);
   }
 
@@ -330,6 +333,9 @@ export class WalletConnection {
 
   /** Atomic fill (CairnX DvP): pay + attest in ONE tx. Always prompts with clear-signing. */
   fillOffer(params: FillParams): Promise<TxResult> {
+    if (typeof this.provider.fillOffer !== "function") {
+      return Promise.reject(new UnsupportedMethodError("this wallet predates fillOffer() — ask the user to update the Cairn Wallet"));
+    }
     return Promise.resolve(this.provider.fillOffer(params)).then(unwrap);
   }
 

@@ -313,7 +313,7 @@ export class IndexerClient {
           handlers.onError?.(err);
         }
         if (closed) return;
-        await new Promise((r) => setTimeout(r, 2000)); // reconnect backoff
+        await new Promise((r) => setTimeout(r, 1000 + Math.floor(Math.random() * 2000))); // jittered reconnect backoff (B10: a fixed 2s made every dropped client reconnect in lockstep)
       }
     };
     void run();

@@ -21,6 +21,7 @@ import { BoardClient } from "./board.js";
 import { IndexerClient } from "./indexer.js";
 import { ContentClient } from "./content.js";
 import { RegistryClient } from "./registry.js";
+import { NamesClient } from "./names.js";
 import { WalletConnection, connect as connectWallet, type DetectOptions } from "./connect.js";
 
 export interface CairnBaseUrls {
@@ -70,7 +71,7 @@ export interface CairnConfig {
 // baked anchor — `cairn/public/trade/swapguard.js` CP; test/spv-checkpoint.test.ts asserts equality so the
 // two literals can't silently drift). A consensus block hash, not a trusted server's word — the light client
 // re-verifies every header forward from here. Pin a newer one via config.spvCheckpoint as the chain grows.
-export const DEFAULT_SPV_CHECKPOINT = { height: 31310, hash: "0x000000000000138bd3eee4b8d2fbacb8d5433ac3040ddbf1c45a5e3e0cc9e814" };
+export const DEFAULT_SPV_CHECKPOINT = { height: 38142, hash: "0x00000000000140f023cc0ee1457a40833f2fcb4de44291b9d373e50f17b97232" };
 
 const DEFAULT_CAIRN = "https://cairn-substrate.com";
 
@@ -81,6 +82,8 @@ export class Cairn {
   readonly index: IndexerClient;
   readonly content: ContentClient;
   readonly registry: RegistryClient;
+  /** .csd names + CairnX market READS (server-trusted display reads; see names.ts trust note). */
+  readonly names: NamesClient;
   board: BoardClient;
   wallet?: WalletConnection;
 
@@ -125,6 +128,7 @@ export class Cairn {
     // Content sources tried in order: direct swarm (if set) → indexer (fronts swarm) → cairn origin.
     this.content = new ContentClient({ swarm: swarmHttp, indexer: indexerHttp, cairn: this.cairnHttp });
     this.registry = new RegistryClient({ baseUrl: indexer, fetch });
+    this.names = new NamesClient(this.cairnHttp);
   }
 
   /**
@@ -174,6 +178,8 @@ export class Cairn {
 export { Http } from "./http.js";
 export type { FetchLike, HttpOptions } from "./http.js";
 export { Chain } from "./chain.js";
+export { NamesClient } from "./names.js";
+export type { NameResolution, NameDetail, TokenInfo, PrimaryName } from "./names.js";
 export { BoardClient } from "./board.js";
 export type { BoardWindow, RankedItem, BoardItemContent, ProposeInput, ProposeResult, SupportInput } from "./board.js";
 export { IndexerClient } from "./indexer.js";

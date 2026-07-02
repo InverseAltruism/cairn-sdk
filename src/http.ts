@@ -18,6 +18,10 @@ export interface HttpOptions {
   maxBytes?: number;
   /** Extra headers sent on every request. */
   headers?: Record<string, string>;
+  /** Opt-in retry budget for IDEMPOTENT GETs only (default 0 = today's behavior). Retries fire on
+   *  network errors/timeouts and 5xx, never on 4xx (mirrors csd-client's posture), with full-jitter
+   *  backoff. POSTs are never retried (they may not be idempotent). */
+  retries?: number;
 }
 
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024;
@@ -59,6 +63,7 @@ export class Http {
   private readonly timeoutMs: number;
   private readonly maxBytes: number;
   private readonly headers: Record<string, string>;
+  private readonly retries: number;
 
   constructor(opts: HttpOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
@@ -69,6 +74,7 @@ export class Http {
     this.timeoutMs = opts.timeoutMs ?? 15000;
     this.maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
     this.headers = opts.headers ?? {};
+    this.retries = Math.min(10, Math.max(0, Math.floor(opts.retries ?? 0))); // clamped: an Infinity budget must not loop forever
   }
 
   /** Build an absolute URL from a path + optional query params. */
@@ -112,16 +118,39 @@ export class Http {
     }
   }
 
+  // A malformed 2xx body must surface as a TYPED HttpError, not a leaked SyntaxError (B10: dApp
+  // code branches on `instanceof CairnError`; a raw parse error escaped that contract).
+  private parseJson<T>(res: Response, text: string, url: string): T {
+    try { return JSON.parse(text) as T; }
+    catch (e) { throw new HttpError(res.status, url, `invalid JSON body: ${text.slice(0, 120)}`); }
+  }
+
   async getJson<T = unknown>(path: string, query?: Record<string, string | number | boolean | undefined>): Promise<T> {
-    const res = await this.raw("GET", path, { query });
-    if (!res.ok) throw new HttpError(res.status, this.url(path, query), await safeText(res));
-    return JSON.parse(new TextDecoder().decode(await readCapped(res, this.maxBytes))) as T;
+    const url = this.url(path, query);
+    // Opt-in GET retry (default 0): network errors/timeouts and 5xx only, full-jitter backoff.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const res = await this.raw("GET", path, { query });
+        if (!res.ok) {
+          const err = new HttpError(res.status, url, await safeText(res));
+          if (!(res.status >= 500 && attempt < this.retries)) throw err;
+          // else: fall through to the jittered sleep and retry
+        } else {
+          return this.parseJson<T>(res, new TextDecoder().decode(await readCapped(res, this.maxBytes)), url);
+        }
+      } catch (e) {
+        if (e instanceof HttpError && e.status < 500) throw e;      // 4xx: terminal, never retried
+        if (attempt >= this.retries) throw e;
+      }
+      await new Promise((r) => setTimeout(r, Math.floor(Math.random() * Math.min(4000, 250 * 2 ** attempt))));
+    }
   }
 
   async postJson<T = unknown>(path: string, body: unknown, headers?: Record<string, string>): Promise<T> {
+    const url = this.url(path);
     const res = await this.raw("POST", path, { body, headers });
-    if (!res.ok) throw new HttpError(res.status, this.url(path), await safeText(res));
-    return JSON.parse(new TextDecoder().decode(await readCapped(res, this.maxBytes))) as T;
+    if (!res.ok) throw new HttpError(res.status, url, await safeText(res));
+    return this.parseJson<T>(res, new TextDecoder().decode(await readCapped(res, this.maxBytes)), url);
   }
 
   /** GET raw bytes (for content retrieval). Returns null on 404. */
