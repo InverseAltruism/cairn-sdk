@@ -10,6 +10,7 @@ The **Compute Substrate dApp kit:** one cohesive toolkit for building apps on CS
 | `cairn.index` | The L2 **explorer/indexer**: REST + merkle proofs + live SSE/WS feeds. |
 | `cairn.content` | **Self-certifying content:** publish via the board, fetch with client-side verification. |
 | `cairn.registry` | L3 **peer / gateway / identity** resolution. |
+| `cairn.names` | **.csd names + CairnX reads:** name resolution, reverse/primary lookup, tokens, offers, bids, canonical state. |
 
 ```bash
 npm i @inversealtruism/cairn-sdk
@@ -65,6 +66,8 @@ try {
 
 **`cairn.index`:** `tipHeight()`, `block()/blockTxids()`, `tx()/txStatus()/txMerkleProof()`, `address()/addressTxs()/addressUtxo()`, `proposal()/attestations()`, `reputation()`, `registryPeers()/registryGateways()/identity()`, **`verifyInclusion(txid)`** (trust-minimized), `streamAll()/streamBlocks()/streamDomain()` (SSE), `subscribe()` (WS).
 
+**`cairn.names`:** `resolve(name)` (display-path name to address), `name(name)`/`nameHistory(name)`, `primary(addr)` (reverse lookup)/`namesOf(addr)`, `names()`, `tokens()/token(ticker)`, `offers()`, `bids()`, `state()` (the canonical CairnX state). Reads go through the public `/trade/api/cairnx/*` proxy; for payment-grade name resolution verify through the wallet or a replaying resolver, not a bare read (see `src/names.ts` header).
+
 **`cairn.content`:** `prepare(obj)`/`put(obj)` → `{ payloadHash, canonical, bytes }`; `get(hash)` / `getBytes(hash)` (fetch **and verify** `sha256(bytes) === hash`, throws `ContentVerificationError` on tamper); `hash(obj)`.
 
 **`cairn.chain`:** `tip()`, `utxos(addr)`, `submit(nodeJsonTx)`, `.client` (full `CsdClient`), `.light()` (verifying light client). The package also re-exports the primitives under the `/chain` subpath: `buildSend/buildPropose/buildAttest`, `signTx`, `keygen`, `payloadHash`, `verifyMerkleProof`, `LightClient`, etc.
@@ -84,7 +87,7 @@ Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{con
 - **Merkle inclusion is trust-minimized, to the strength of your header source.** `verifyInclusion()` folds the proof and, when a header-merkle source is wired, cross-checks the root against it → `trustLevel: "verified-inclusion"`; otherwise `"proof-consistent"` (indexer trusted). That cross-check only means something against an *independent* header, so the default `Cairn` wiring enables it ONLY when your node RPC is a different origin than the indexer (the default same-origin proxy stays at `"proof-consistent"`, a single compromised server can't be cross-checked against itself). For full trust-minimization against a lying node too, supply a PoW-verifying `headerMerkleAt` (e.g. backed by `cairn.chain.light()`).
 - **Balances are RPC-trusted.** Headers don't commit to the UTXO set; balance reads trust the node/proxy (same as every light client).
 - **Indexer/swarm run behind the cairn proxy.** By default `cairn.index` and content resolution use the cairn server's hardened, read-only, rate-limited `/explorer/api` reverse proxy (no separate public indexer needed). **SSE works through it; `subscribe()` (WebSocket) needs a direct indexer endpoint:** set `baseUrls.indexer` to a private/localhost indexer for WS.
-- **Today the wallet injects only on `cairn-substrate.com` + localhost.** Connecting from an arbitrary third-party origin requires the wallet's "connect anywhere" release (broadened injection), which ships after the per-origin consent layer is proven.
+- **The wallet injects on every site** (connect-anywhere shipped in 0.2.4x) behind a per-origin consent gate: a site sees nothing until the user approves the connection, and some request kinds stay first-party-only (the `FIRST_PARTY_ONLY` error code).
 
 ## Configuration
 

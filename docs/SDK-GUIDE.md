@@ -97,8 +97,8 @@ Codes: `NOT_INSTALLED`, `USER_REJECTED`, `WALLET_LOCKED`, `UNSUPPORTED_METHOD`, 
 
 - The SDK is **0.x** — minor versions may change the API until 1.0 (semver: 0.y.z makes no
   compatibility promise). Read the changelog before upgrading.
-- **In apps: pin exactly** (`"@inversealtruism/cairn-sdk": "0.1.2"`) and commit your lockfile.
-  **In libraries that depend on the SDK: use a range** (`^0.1.2`) to avoid duplicate installs.
+- **In apps: pin exactly** (`"@inversealtruism/cairn-sdk": "0.2.1"`) and commit your lockfile.
+  **In libraries that depend on the SDK: use a range** (`^0.2.1`) to avoid duplicate installs.
 - The low-level **`@inversealtruism/csd-*` set ships in lockstep at one identical version** — if you
   depend on more than one, pin them all to the SAME version (a codec that *signs* must match the one
   that *verifies*).
