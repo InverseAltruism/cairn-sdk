@@ -93,6 +93,14 @@ catch (e) {
 Codes: `NOT_INSTALLED`, `USER_REJECTED`, `WALLET_LOCKED`, `UNSUPPORTED_METHOD`, `HTTP_ERROR`,
 `CONTENT_VERIFICATION`, `UNKNOWN`.
 
+> **[2026-07-06] Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md`
+> (cairn-wallet) is the source of truth: 10 outer codes plus 13 nested `SubmitResult` codes as of
+> wallet 0.2.54 (`GHOST_INPUTS_SKIPPED`, `VERIFY_UNAVAILABLE`, `VERIFY_TAMPER`, `INSUFFICIENT`,
+> `FEE_TOO_LOW`, `FEE_CAP`, `BAD_FEE`, `ZERO_ADDR_REFUSED`, `BAD_OUTPUTS`, `NO_OUTPUTS`,
+> `BAD_REQUEST`, `FILL_UNSAFE`, `SUBMIT_REJECTED`). Honest note: the SDK's `mapProviderError`
+> maps the outer set above today and does NOT yet map the nested 0.2.54 codes; they surface as
+> generic errors with the original message preserved (mapping planned for the next SDK release).
+
 ## Versioning & dependency hygiene
 
 - The SDK is **0.x** — minor versions may change the API until 1.0 (semver: 0.y.z makes no
