@@ -32,14 +32,20 @@ jobs:
         run: pnpm build
       - name: test (sdk/connect/errors/controller/react/hardening)
         run: pnpm test
-      - name: dep-freshness — every csd-* pin must equal the ecosystem lockstep version
+      - name: dep-pin hygiene — every @inversealtruism/* pin is an exact semver
         run: |
           node -e '
+            // The csd-* / cairnx-core packages are versioned INDEPENDENTLY (cairnx-core tracks
+            // consensus heights and bumps ahead of the stable csd-* primitives), so a single uniform
+            // version is structurally impossible and the old uniform-version gate could never pass.
+            // What actually matters for a consumer is that every ecosystem dep is EXACT-pinned (no
+            // caret/tilde/range/tag), so the lockfile can never resolve two codec copies. Cross-repo
+            // freshness (is this pin the latest published?) is delegated to csd-sdk
+            // scripts/check-consumer-pins.mjs, which grades cairn-sdk as a helpers-only-lag advisory.
             const p = require("./package.json");
             const all = { ...(p.dependencies || {}), ...(p.devDependencies || {}) };
-            const pins = Object.entries(all).filter(([k]) => k.startsWith("@inversealtruism/csd-"));
-            const vers = [...new Set(pins.map(([, v]) => v))];
-            if (vers.length !== 1) { console.error("::error::csd-* pins are not uniform:", JSON.stringify(pins)); process.exit(1); }
-            if (/^[\^~]/.test(vers[0])) { console.error("::error::csd-* must be EXACT-pinned (no caret/tilde):", vers[0]); process.exit(1); }
-            console.log("csd-* exact-pinned uniformly at", vers[0]);
+            const pins = Object.entries(all).filter(([k]) => k.startsWith("@inversealtruism/"));
+            const bad = pins.filter(([, v]) => !/^\d+\.\d+\.\d+$/.test(v));
+            if (bad.length) { console.error("::error::@inversealtruism/* pins must be EXACT semver (no caret/tilde/range/tag):", JSON.stringify(bad)); process.exit(1); }
+            console.log(pins.length + " @inversealtruism/* deps exact-pinned:", JSON.stringify(Object.fromEntries(pins)));
           '

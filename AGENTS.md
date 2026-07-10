@@ -2,7 +2,7 @@
 
 > Onboarding briefing for coding agents and contributors working on this repo. `AGENTS.md` is the canonical briefing; `CLAUDE.md` imports it, so edit `AGENTS.md` only and keep them in sync that way. Production hosting and operations specifics are intentionally out of scope here and maintained privately.
 
-`@inversealtruism/cairn-sdk` (npm, v0.2.1) is the Compute Substrate dApp kit: the single umbrella package a third party installs to build on CSD/Cairn. It composes the published low-level `@inversealtruism/csd-*` primitives (from the csd-sdk monorepo) behind one `Cairn` facade:
+`@inversealtruism/cairn-sdk` (npm, v0.2.2) is the Compute Substrate dApp kit: the single umbrella package a third party installs to build on CSD/Cairn. It composes the published low-level `@inversealtruism/csd-*` primitives (from the csd-sdk monorepo) behind one `Cairn` facade:
 
 - `cairn.wallet`: connect the Cairn Wallet extension (window.cairn), clear-signed writes; keys never leave the extension
 - `cairn.chain`: node RPC, tx builders, verifying LightClient (re-exports csd-client/tx/codec/crypto/light)
@@ -33,7 +33,7 @@ src/ (12 files, ~2,200 lines), built by tsup to esm+cjs+dts with 9 subpath expor
 
 docs/SDK-GUIDE.md (third-party guide incl. the verifies-vs-trusts table), examples/ (read-only, wallet-connect, siwc-login, node-signer, hello-csd, register-swarm-peer [historical; swarm L1 is dead]), scripts/ (esbuild example build + 6 maintainer-run live E2E harnesses: scripts/live-wallet-ui.mjs, scripts/names-e2e.mjs, scripts/names-buy-e2e.mjs, scripts/ux-live-readonly.mjs, scripts/ux-openlane-buy.mjs, scripts/wallet-send-spv-e2e.mjs).
 
-Deps (exact-pinned): cairnx-core 0.1.34, csd-client/codec/crypto/light/tx 0.1.15, csd-registry 0.1.16; devDep csd-siwc 0.1.15. NOTE: cairnx-core and csd-tx pins are BEHIND published (0.1.35 / 0.1.16); see gotchas and the state snapshot before touching them.
+Deps (exact-pinned): cairnx-core 0.1.36, csd-tx 0.1.16, csd-light 0.1.17, csd-registry 0.1.16, csd-client/codec/crypto/siwc 0.1.15. Re-pinned to published in 0.2.2 (2026-07-10) alongside the CI gate rework.
 
 ## Invariants and red lines
 
@@ -75,12 +75,12 @@ scripts/*.mjs live harnesses are maintainer-run only (some spend CSD). scripts/l
 
 ## Release and publish
 
-Maintainers publish to npm (public access) manually, with a transient npm token via a mktemp --userconfig deleted immediately; tokens are never stored and CI has NO publish job on purpose. prepublishOnly = build + test. Release ritual: bump version + SDK_VERSION + re-pin csd-*/cairnx-core to published versions, tag vX.Y.Z, push. History: 0.1.0 -> 0.1.1 -> 0.1.2 (M3 PoW-verify) -> 0.1.4 -> 0.2.0 (names namespace, native wallet error codes, http hardening) -> 0.2.1 (truth pass + re-pins). In sync with npm as of 2026-07-09. Next release (0.2.2) is expected to re-pin cairnx-core 0.1.35 + csd-tx 0.1.16 AND rework the CI dep-freshness gate (see gotchas).
+Maintainers publish to npm (public access) manually, with a transient npm token via a mktemp --userconfig deleted immediately; tokens are never stored and CI has NO publish job on purpose. prepublishOnly = build + test. Release ritual: bump version + SDK_VERSION + re-pin csd-*/cairnx-core to published versions, tag vX.Y.Z, push. History: 0.1.0 -> 0.1.1 -> 0.1.2 (M3 PoW-verify) -> 0.1.4 -> 0.2.0 (names namespace, native wallet error codes, http hardening) -> 0.2.1 (truth pass + re-pins) -> 0.2.2 (re-pin cairnx-core 0.1.36 + csd-tx 0.1.16 + csd-light 0.1.17; CI gate reworked from uniform-version to per-package exact-pin hygiene). In sync with npm as of 2026-07-10.
 
 ## Gotchas and incident history
 
-- CI dep-freshness gate is BROKEN vs policy (currently red): ci.yml demands all @inversealtruism/csd-* pins (deps + devDeps; cairnx-core is excluded by the name filter) be ONE uniform version, but csd-* versions are now intentionally independent (registry/tx at 0.1.16 vs others 0.1.15), so no correct pin set can pass. The 0.2.2 release must rework the gate to per-package expected versions, not just re-pin.
-- Pin drift (open item): cairn-sdk pins cairnx-core 0.1.34 + csd-tx 0.1.15 while the published versions are 0.1.35 / 0.1.16. Not a bug; resolve via the 0.2.2 re-pin + gate rework together. Do NOT re-pin outside a release.
+- CI dep-pin gate (RESOLVED in 0.2.2, 2026-07-10): the old ci.yml gate demanded all @inversealtruism/csd-* pins be ONE uniform version, which is structurally impossible under independent per-package versioning, so it could never pass. Reworked to per-package EXACT-semver hygiene over every @inversealtruism/* (now including cairnx-core, which the old name filter excluded); cross-repo freshness is delegated to csd-sdk scripts/check-consumer-pins.mjs (which grades cairn-sdk as a helpers-only-lag advisory).
+- Pin drift (RESOLVED in 0.2.2): cairn-sdk now pins cairnx-core 0.1.36 + csd-tx 0.1.16 + csd-light 0.1.17 (the published versions). Do NOT re-pin outside a release.
 - The SDK originally shipped with no CI at all, and pin drift went unnoticed until review caught it. Don't remove the gates.
 - SSE through a buffering reverse proxy needs `X-Accel-Buffering: no` from the origin (the hosted proxy sets it); WS subscribe still needs a direct indexer URL because the hosted proxy is REST+SSE only.
 - esbuild CLI shim ELF-errors under pnpm; scripts/build-example.mjs uses the JS API, keep it that way.
@@ -90,10 +90,10 @@ Maintainers publish to npm (public access) manually, with a transient npm token 
 
 ## State snapshot (2026-07-09; verify with git log before trusting)
 
-Version 0.2.1, branch master, tags through v0.2.1. MIT.
+Version 0.2.2, branch master, tags through v0.2.2. MIT.
 
 Open items (do not act without a maintainer/release ask):
-- Pin drift: cairnx-core 0.1.34 -> published 0.1.35; csd-tx 0.1.15 -> published 0.1.16. A 0.2.2 re-pin resolves the drift; the CI uniform-version gate must be reworked in the same change or it stays red.
+- Pin drift + the uniform-version CI gate: RESOLVED in 0.2.2 (2026-07-10). See gotchas.
 - The hosted RPC proxy's large-submit body-cap raise (64KB -> 512KB on /api/rpc/tx/submit) may not be live yet; see gotchas.
 
 ## Cross-repo map

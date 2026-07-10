@@ -8,28 +8,31 @@ importers:
 
   .:
     dependencies:
+      '@inversealtruism/cairnx-core':
+        specifier: 0.1.36
+        version: 0.1.36
       '@inversealtruism/csd-client':
-        specifier: 0.1.14
-        version: 0.1.14
+        specifier: 0.1.15
+        version: 0.1.15
       '@inversealtruism/csd-codec':
-        specifier: 0.1.14
-        version: 0.1.14
+        specifier: 0.1.15
+        version: 0.1.15
       '@inversealtruism/csd-crypto':
-        specifier: 0.1.14
-        version: 0.1.14
+        specifier: 0.1.15
+        version: 0.1.15
       '@inversealtruism/csd-light':
-        specifier: 0.1.14
-        version: 0.1.14
+        specifier: 0.1.17
+        version: 0.1.17
       '@inversealtruism/csd-registry':
-        specifier: 0.1.14
-        version: 0.1.14
+        specifier: 0.1.16
+        version: 0.1.16
       '@inversealtruism/csd-tx':
-        specifier: 0.1.14
-        version: 0.1.14
+        specifier: 0.1.16
+        version: 0.1.16
     devDependencies:
       '@inversealtruism/csd-siwc':
-        specifier: 0.1.14
-        version: 0.1.14
+        specifier: 0.1.15
+        version: 0.1.15
       esbuild:
         specifier: ^0.27.0
         version: 0.27.7
@@ -360,26 +363,37 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@inversealtruism/csd-client@0.1.14':
-    resolution: {integrity: sha512-0QT0r3NoB/x0dRftOJvbyPLk71zOTl49V/2VJ39PSOOSDBeiTx1CGdkOtkD4aPHdm67D5/A33SL9RdMCDSjsjw==}
+  '@inversealtruism/cairnx-core@0.1.36':
+    resolution: {integrity: sha512-Ic9htmwAecRXKwcaqL840VycXE1NTwb4PrbJYafodmh//UBLvvq5sYmiICq6Qyve4yaz0O2EYMopNk7ybKnXvQ==}
+    engines: {node: '>=18'}
 
-  '@inversealtruism/csd-codec@0.1.14':
-    resolution: {integrity: sha512-sEZlWNHdOqhnQmalZ00rcSOWdHY5yEX8U7i9g3xzdJIjbtuSupSc9ArSulHZIc3pk6PDIikWG0elcrFMz73uVQ==}
+  '@inversealtruism/csd-client@0.1.15':
+    resolution: {integrity: sha512-UyS3zzk7edCvw3nkRSRjgr2j/J6DYbsI37ieZkCVkuUjZJyH1wvYx1mxzNr/JWA7r8NiLSBLK/xTWbDn0imH2g==}
+    engines: {node: '>=18'}
 
-  '@inversealtruism/csd-crypto@0.1.14':
-    resolution: {integrity: sha512-KGlHN4SuQWmakSxppWupN2lq1xH9bBrcAggvQoPIYLD3h/W1vXFR4UmsuvRQxfv/OHyAxwFXBEmXBqZO5rPAOg==}
+  '@inversealtruism/csd-codec@0.1.15':
+    resolution: {integrity: sha512-uvnqekVe50Q8bFibwaXYPM9anWm7y8mGCHZiKsS/Muvk6w4RfcghRNBXjF2qaLlC4ZhgCu1qpB7kh9WBZCVabg==}
+    engines: {node: '>=18'}
 
-  '@inversealtruism/csd-light@0.1.14':
-    resolution: {integrity: sha512-ihnitVhfdeg6bysAmBpicNeo/7ROYalhqm6zIlct8FeXYOcAryEfVie3MPMZWAs5Z+gBB+s8PInHsDfvjVoW6Q==}
+  '@inversealtruism/csd-crypto@0.1.15':
+    resolution: {integrity: sha512-9VUXoZ3BcQvC19wediD6ukC5d30hjfghkSR5x7vo//qxxdKyzXcnqrdnLpoovscBth+hllMgKZ0k8ypVBbHeGw==}
+    engines: {node: '>=18'}
 
-  '@inversealtruism/csd-registry@0.1.14':
-    resolution: {integrity: sha512-ZKkXds/ZWSNkfZIL6yf671oFWMiwocIywn7VGZsJdCYkaNv4rHJOl24g99gEsAy+9p0wFf59tMCk38NbfEVTIg==}
+  '@inversealtruism/csd-light@0.1.17':
+    resolution: {integrity: sha512-hnPTwT/4dS/jjoGNmXWwtHQZ/F1Wmegf6hwWqLg0yQDQM+ZzjN2v0XdVVJeNFVK2+fxnkLKDct7NMMFyhc2GvQ==}
+    engines: {node: '>=18'}
 
-  '@inversealtruism/csd-siwc@0.1.14':
-    resolution: {integrity: sha512-TqTdbBD6+0z7oIqToAJMO0D3mfXrzsw7pUCNRBc9B2FxbrsPJoVprO2KigrQkuYFL9aK3eWx38Ba2lAVUx8yjA==}
+  '@inversealtruism/csd-registry@0.1.16':
+    resolution: {integrity: sha512-XZXnHQVdKlQE5l8T20UUVl0K1f+O+WSEzeTXLMoC0XGmve+6DuWFxlBqErTOt/Fsy+HTRtBbVK2L9aJVlQcaBg==}
+    engines: {node: '>=18'}
 
-  '@inversealtruism/csd-tx@0.1.14':
-    resolution: {integrity: sha512-ph/jxpCRYYCqQA+lyylzRM+qZ+ENDUoQi32okv7Cv9nxiuC8HJsCPzXbNXIXycnQnmeAh4O5do+oPyCrkpKsqQ==}
+  '@inversealtruism/csd-siwc@0.1.15':
+    resolution: {integrity: sha512-Yr1C7c9y1xBGS0aNNj+haL3pLzanyVZaHXUGCL1AvXt0PuKLlcPp1kbaK2kiOhO5pY1r42jyBCDD6A8gwCAWuw==}
+    engines: {node: '>=18'}
+
+  '@inversealtruism/csd-tx@0.1.16':
+    resolution: {integrity: sha512-fCkunlgKOKBFuhlHR+GzEv9t3H6tyjMy0883OJCN51NK0zhC9iQfoip34fT4XBQ975WGu93OYu3sqhhuz+9t7w==}
+    engines: {node: '>=18'}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -916,40 +930,44 @@ snapshots:
   '@esbuild/win32-x64@0.28.0':
     optional: true
 
-  '@inversealtruism/csd-client@0.1.14':
+  '@inversealtruism/cairnx-core@0.1.36':
     dependencies:
-      '@inversealtruism/csd-codec': 0.1.14
+      '@inversealtruism/csd-codec': 0.1.15
 
-  '@inversealtruism/csd-codec@0.1.14':
+  '@inversealtruism/csd-client@0.1.15':
+    dependencies:
+      '@inversealtruism/csd-codec': 0.1.15
+
+  '@inversealtruism/csd-codec@0.1.15':
     dependencies:
       '@noble/hashes': 1.8.0
 
-  '@inversealtruism/csd-crypto@0.1.14':
+  '@inversealtruism/csd-crypto@0.1.15':
     dependencies:
-      '@inversealtruism/csd-codec': 0.1.14
+      '@inversealtruism/csd-codec': 0.1.15
       '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
 
-  '@inversealtruism/csd-light@0.1.14':
+  '@inversealtruism/csd-light@0.1.17':
     dependencies:
-      '@inversealtruism/csd-client': 0.1.14
-      '@inversealtruism/csd-codec': 0.1.14
+      '@inversealtruism/csd-client': 0.1.15
+      '@inversealtruism/csd-codec': 0.1.15
 
-  '@inversealtruism/csd-registry@0.1.14':
+  '@inversealtruism/csd-registry@0.1.16':
     dependencies:
-      '@inversealtruism/csd-codec': 0.1.14
-      '@inversealtruism/csd-crypto': 0.1.14
+      '@inversealtruism/csd-codec': 0.1.15
+      '@inversealtruism/csd-crypto': 0.1.15
 
-  '@inversealtruism/csd-siwc@0.1.14':
+  '@inversealtruism/csd-siwc@0.1.15':
     dependencies:
-      '@inversealtruism/csd-codec': 0.1.14
-      '@inversealtruism/csd-crypto': 0.1.14
+      '@inversealtruism/csd-codec': 0.1.15
+      '@inversealtruism/csd-crypto': 0.1.15
       '@noble/hashes': 1.8.0
 
-  '@inversealtruism/csd-tx@0.1.14':
+  '@inversealtruism/csd-tx@0.1.16':
     dependencies:
-      '@inversealtruism/csd-codec': 0.1.14
-      '@inversealtruism/csd-crypto': 0.1.14
+      '@inversealtruism/csd-codec': 0.1.15
+      '@inversealtruism/csd-crypto': 0.1.15
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
