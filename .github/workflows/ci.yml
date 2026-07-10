@@ -32,20 +32,32 @@ jobs:
         run: pnpm build
       - name: test (sdk/connect/errors/controller/react/hardening)
         run: pnpm test
-      - name: dep-pin hygiene — every @inversealtruism/* pin is an exact semver
+      - name: dep-pin hygiene — exact-pin every @inversealtruism/* AND enforce a single codec/crypto copy
         run: |
           node -e '
             // The csd-* / cairnx-core packages are versioned INDEPENDENTLY (cairnx-core tracks
             // consensus heights and bumps ahead of the stable csd-* primitives), so a single uniform
             // version is structurally impossible and the old uniform-version gate could never pass.
-            // What actually matters for a consumer is that every ecosystem dep is EXACT-pinned (no
-            // caret/tilde/range/tag), so the lockfile can never resolve two codec copies. Cross-repo
-            // freshness (is this pin the latest published?) is delegated to csd-sdk
-            // scripts/check-consumer-pins.mjs, which grades cairn-sdk as a helpers-only-lag advisory.
+            // Two things actually matter for a consumer: (1) every ecosystem dep is EXACT-pinned (no
+            // caret/tilde/range/tag), and (2) the RESOLVED tree contains exactly ONE copy of the
+            // consensus-critical primitives (csd-codec, csd-crypto) — two copies would let a tx be
+            // signed with one byte-encoding and verified with another. Exact-pinning DIRECT deps does
+            // not by itself dedupe TRANSITIVE copies, so we assert the resolved lockfile directly.
+            // Cross-repo freshness (is this pin the latest published?) is checked out-of-band by the
+            // maintainer-run csd-sdk scripts/check-consumer-pins.mjs (not wired into CI); it grades
+            // cairn-sdk as a helpers-only-lag advisory.
+            const fs = require("fs");
             const p = require("./package.json");
             const all = { ...(p.dependencies || {}), ...(p.devDependencies || {}) };
             const pins = Object.entries(all).filter(([k]) => k.startsWith("@inversealtruism/"));
             const bad = pins.filter(([, v]) => !/^\d+\.\d+\.\d+$/.test(v));
             if (bad.length) { console.error("::error::@inversealtruism/* pins must be EXACT semver (no caret/tilde/range/tag):", JSON.stringify(bad)); process.exit(1); }
-            console.log(pins.length + " @inversealtruism/* deps exact-pinned:", JSON.stringify(Object.fromEntries(pins)));
+            // resolved single-copy check over the pnpm lockfile (CI installs --frozen-lockfile)
+            const lock = fs.readFileSync("pnpm-lock.yaml", "utf8");
+            for (const pkg of ["csd-codec", "csd-crypto"]) {
+              const copies = [...lock.matchAll(new RegExp("@inversealtruism/" + pkg + "@([0-9]+\\.[0-9]+\\.[0-9]+)", "g"))];
+              const vers = [...new Set(copies.map((m) => m[1]))];
+              if (vers.length > 1) { console.error("::error::multiple @inversealtruism/" + pkg + " copies resolved (" + vers.join(", ") + ") — a sign-with-one/verify-with-another fork surface"); process.exit(1); }
+            }
+            console.log(pins.length + " @inversealtruism/* deps exact-pinned, single codec+crypto copy:", JSON.stringify(Object.fromEntries(pins)));
           '
