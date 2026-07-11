@@ -18,7 +18,7 @@ import { canonicalJson, addrFromPriv } from "../dist/chain.js";
 const priv = JSON.parse(readFileSync(process.env.CAIRN_KEY || `${process.env.HOME}/.config/cairn/key.json`, "utf8")).privkey;
 const addr = addrFromPriv(priv);
 const PEER_ID = process.env.PEER_ID || "12D3KooWCmgwHCmAZ6CJqTz81XPuPvCJenbQXEN5WUQoU51ZEty4";
-const MULTIADDR = process.env.MULTIADDR || "/ip4/162.55.132.151/tcp/8792";
+const MULTIADDR = process.env.MULTIADDR || "/ip4/198.51.100.10/tcp/8792"; // example IP (RFC 5737); set MULTIADDR to your own public address
 const GATEWAY_URL = process.env.GATEWAY_URL || "https://cairn-substrate.com/content/0x{hash}";
 
 const cairn = new Cairn({ network: "mainnet" });

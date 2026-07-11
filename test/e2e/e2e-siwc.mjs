@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { makeHarness, sleep } from "./harness.mjs";
 import { verifySiwc, generateNonce, parseSiwcMessage, CSD_CHAIN_MAINNET } from "/opt/cairn_substrate/csd-sdk/packages/siwc/dist/index.js";
 
-const EXE = process.env.CHROME || "/home/inverse/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome";
+const EXE = process.env.CHROME || `${process.env.HOME}/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome`;
 const DIST = "/opt/cairn_substrate/cairn-wallet/dist";
 const CONSOLE_WRITE = "/opt/cairn_substrate/cairn/public/console-write.js";
 const PW = "correct horse battery staple";

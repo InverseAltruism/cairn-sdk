@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import { makeHarness } from "./harness.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const EXE = process.env.CHROME || "/home/inverse/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome";
+const EXE = process.env.CHROME || `${process.env.HOME}/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome`;
 const DIST = "/opt/cairn_substrate/cairn-wallet/dist";
 const PW = "correct horse battery staple";
 const h = makeHarness("wallet-connect");
