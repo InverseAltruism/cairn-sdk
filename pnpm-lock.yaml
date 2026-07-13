@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@inversealtruism/cairnx-core':
-        specifier: 0.1.36
-        version: 0.1.36
+        specifier: 0.1.37
+        version: 0.1.37
       '@inversealtruism/csd-client':
         specifier: 0.1.15
         version: 0.1.15
@@ -21,8 +21,8 @@ importers:
         specifier: 0.1.15
         version: 0.1.15
       '@inversealtruism/csd-light':
-        specifier: 0.1.17
-        version: 0.1.17
+        specifier: 0.1.18
+        version: 0.1.18
       '@inversealtruism/csd-registry':
         specifier: 0.1.16
         version: 0.1.16
@@ -363,8 +363,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@inversealtruism/cairnx-core@0.1.36':
-    resolution: {integrity: sha512-Ic9htmwAecRXKwcaqL840VycXE1NTwb4PrbJYafodmh//UBLvvq5sYmiICq6Qyve4yaz0O2EYMopNk7ybKnXvQ==}
+  '@inversealtruism/cairnx-core@0.1.37':
+    resolution: {integrity: sha512-q26kl4HM5qXkHdQrV3L+tidBjM/pvkTaL0QsUggYnLPtzJZ/xvcXY+0x0wNbMLkeDelzlfd6zUFBDHBeKrnlwg==}
     engines: {node: '>=18'}
 
   '@inversealtruism/csd-client@0.1.15':
@@ -379,8 +379,8 @@ packages:
     resolution: {integrity: sha512-9VUXoZ3BcQvC19wediD6ukC5d30hjfghkSR5x7vo//qxxdKyzXcnqrdnLpoovscBth+hllMgKZ0k8ypVBbHeGw==}
     engines: {node: '>=18'}
 
-  '@inversealtruism/csd-light@0.1.17':
-    resolution: {integrity: sha512-hnPTwT/4dS/jjoGNmXWwtHQZ/F1Wmegf6hwWqLg0yQDQM+ZzjN2v0XdVVJeNFVK2+fxnkLKDct7NMMFyhc2GvQ==}
+  '@inversealtruism/csd-light@0.1.18':
+    resolution: {integrity: sha512-NET84PYLxl3L85xgz0BIYD2xGZAHHKkmQioyoDPyEvCPSxh4o7aCa+WNLwGnw9mnxfWRFOfaaDgrmVt+k+4mJA==}
     engines: {node: '>=18'}
 
   '@inversealtruism/csd-registry@0.1.16':
@@ -930,7 +930,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.0':
     optional: true
 
-  '@inversealtruism/cairnx-core@0.1.36':
+  '@inversealtruism/cairnx-core@0.1.37':
     dependencies:
       '@inversealtruism/csd-codec': 0.1.15
 
@@ -948,7 +948,7 @@ snapshots:
       '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
 
-  '@inversealtruism/csd-light@0.1.17':
+  '@inversealtruism/csd-light@0.1.18':
     dependencies:
       '@inversealtruism/csd-client': 0.1.15
       '@inversealtruism/csd-codec': 0.1.15
