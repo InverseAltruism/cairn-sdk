@@ -1,5 +1,6 @@
 // Connector tests — provider detection + typed error mapping. Runs under tsx in Node;
 // we stub a minimal `window` backed by a real EventTarget.
+import { readFileSync } from "node:fs";
 import {
   WalletConnection,
   detectProvider,
@@ -130,6 +131,26 @@ console.log("=== connector: SIWC + fillOffer + capability detection ===");
 
   const fr = await w.fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 10 }] });
   ok("fillOffer unwraps the txid", fr.txid === "0xfill");
+
+  // F13: the fillOffer/FillParams docs must NOT make an unqualified atomic/DvP PAYMENT-SAFETY claim (the SDK
+  // does not SPV-verify the payment recipient; it is resolver-trusted). Source-scan guard so a future edit
+  // cannot silently re-introduce the over-claim OR weaken the "MUST verify" instruction back to a soft
+  // "should". Anchored to EACH docstring block (the FillParams interface block and the method block) so a
+  // caveat surviving only in one place cannot pass. Mutation-sensitive: reverting either docstring fails this.
+  {
+    const src = readFileSync(new URL("../src/connect.ts", import.meta.url), "utf8");
+    // the FillParams interface docstring: the `/** ... */` block immediately above `export interface FillParams`
+    const ifaceAt = src.indexOf("export interface FillParams");
+    const ifaceDoc = src.slice(src.lastIndexOf("/**", ifaceAt), ifaceAt);
+    // the method docstring: the `/** ... */` block immediately above `fillOffer(params: FillParams)`
+    const methAt = src.indexOf("fillOffer(params: FillParams)");
+    const methDoc = src.slice(src.lastIndexOf("/**", methAt), methAt);
+    ok("F13: FillParams docstring carries the RESOLVER-TRUSTED payment caveat", /RESOLVER-TRUSTED/.test(ifaceDoc));
+    ok("F13: FillParams docstring MANDATES (MUST) an on-chain offer proof, not a soft 'should'", /MUST merkle-prove/.test(ifaceDoc));
+    ok("F13: fillOffer method docstring carries the RESOLVER-TRUSTED payment caveat", /RESOLVER-TRUSTED/.test(methDoc));
+    ok("F13: fillOffer method docstring MANDATES (MUST) corroborating the offer on-chain", /MUST corroborate/.test(methDoc));
+    ok("F13: no unqualified 'atomic DvP' payment-safety claim survives", !/Atomic fill \(CairnX DvP\): pay \+ attest in ONE tx\. Always prompts/.test(src));
+  }
 
   const caps = await w.getCapabilities();
   ok("getCapabilities returns the wallet caps", !!caps && caps.siwc === "1");
