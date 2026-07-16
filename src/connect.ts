@@ -67,7 +67,16 @@ export interface SealClaimParams {
   fee?: number;
 }
 
-/** Atomic fill (CairnX delivery-vs-payment): an Attest + payment outputs in ONE tx. */
+/**
+ * CairnX fill: an Attest plus the caller-supplied payment `outputs`, settled in ONE tx (both land or both
+ * revert). "Atomic" here describes only that single-tx SETTLEMENT SHAPE. It does NOT mean this SDK verifies
+ * that `outputs` pay the offer's true on-chain recipient: the payment legs are RESOLVER-TRUSTED unless the
+ * caller independently SPV-corroborates the offer. A lying/MITM'd resolver can return a wrong payment target,
+ * so a dApp settling real value MUST merkle-prove the offer and derive the recipient from its on-chain author
+ * before building `outputs`. Payment-grade offer verification is the wallet's on-device fill-SPV path (F13;
+ * added in cairn-wallet 0.2.60, which binds the fill payment/rebate/fee legs to the merkle-proven offer; see
+ * docs/SDK-GUIDE.md verifies-vs-trusts). An SPV pre-verify helper in this SDK is roadmapped.
+ */
 export interface FillParams {
   proposalId: string;
   outputs: { to: string; value: number }[];
@@ -331,7 +340,13 @@ export class WalletConnection {
     try { return await this.provider.getCapabilities(); } catch { return null; }
   }
 
-  /** Atomic fill (CairnX DvP): pay + attest in ONE tx. Always prompts with clear-signing. */
+  /**
+   * CairnX fill: pay + attest in ONE tx (atomic SETTLEMENT SHAPE, both revert together). Always prompts with
+   * clear-signing. The payment recipient in `params.outputs` is RESOLVER-TRUSTED here: this SDK does NOT
+   * SPV-verify it, so a lying resolver can redirect the payment. A dApp settling real value MUST corroborate
+   * the offer on-chain before building `outputs` (F13). The wallet's own fill-SPV boundary (cairn-wallet
+   * 0.2.60+, which binds payment/rebate/fee to the merkle-proven offer) is the payment-grade check; see FillParams.
+   */
   fillOffer(params: FillParams): Promise<TxResult> {
     if (typeof this.provider.fillOffer !== "function") {
       return Promise.reject(new UnsupportedMethodError("this wallet predates fillOffer() — ask the user to update the Cairn Wallet"));
