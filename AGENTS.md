@@ -53,7 +53,7 @@ Deps (exact-pinned): cairnx-core 0.1.36, csd-tx 0.1.16, csd-light 0.1.17, csd-re
 
 ## Dev workflow
 
-Package manager is pnpm (packageManager pnpm@10.32.1; a stray package-lock.json exists but CI uses pnpm).
+Package manager is pnpm (packageManager pnpm@10.32.1). `pnpm-lock.yaml` is the single authoritative lockfile: CI runs `pnpm install --frozen-lockfile` and the dep-pin gate parses `pnpm-lock.yaml` directly. The old stray `package-lock.json` (W-K1: a second, npm lockfile that had drifted to 0.2.3 while the package was 0.2.4, a supply-chain ambiguity) was removed 2026-07-17; do not re-add an npm lockfile. If you must inspect deps with npm, use `npm install --package-lock-only` in a scratch copy, never commit the result.
 
 ```bash
 pnpm install --frozen-lockfile
