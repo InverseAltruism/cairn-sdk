@@ -23,6 +23,7 @@ import { ContentClient } from "./content.js";
 import { RegistryClient } from "./registry.js";
 import { NamesClient } from "./names.js";
 import { WalletConnection, connect as connectWallet, type DetectOptions } from "./connect.js";
+import { preverifyOffer, type OfferFillCheck } from "./fillverify.js";
 
 export interface CairnBaseUrls {
   /** Cairn board server (board + /api/rpc proxy + /content origin). Default https://cairn-substrate.com */
@@ -142,14 +143,37 @@ export class Cairn {
   private async verifiedHeaderMerkleAt(height: number): Promise<string> {
     if (!Number.isInteger(height) || height < this._spvCp.height)
       throw new Error(`height ${height} is below the SPV checkpoint ${this._spvCp.height} (cannot PoW-verify backward)`);
-    if (!this._spvLight) this._spvLight = new LightClient({ client: this.chain.client, checkpoints: { [this._spvCp.height]: this._spvCp.hash } });
-    const lc = this._spvLight;
-    if (!this._spvSeeded) { await lc.syncFromCheckpoint(this._spvCp.height, this._spvCp.hash); this._spvSeeded = true; }
+    const lc = await this.seededSpvLight();
     const haveTo = lc.baseHeight + lc.chain.length - 1;
     if (haveTo < height) await lc.sync(height);
     const vh = lc.chain[height - lc.baseHeight];
     if (!vh) throw new Error(`light client has no verified header at ${height}`);
     return String(vh.header.merkle);
+  }
+
+  /** The PoW-verifying SPV light client, seeded ONCE from the pinned checkpoint (shared by the M3 header-merkle
+   *  bind and the F13 offer pre-verify). Reused across calls; the first call near tip syncs the post-checkpoint span. */
+  private async seededSpvLight(): Promise<LightClient> {
+    if (!this._spvLight) this._spvLight = new LightClient({ client: this.chain.client, checkpoints: { [this._spvCp.height]: this._spvCp.hash } });
+    if (!this._spvSeeded) { await this._spvLight.syncFromCheckpoint(this._spvCp.height, this._spvCp.hash); this._spvSeeded = true; }
+    return this._spvLight;
+  }
+
+  /**
+   * F13 — corroborate an offer ON-CHAIN before building a `fillOffer` payment's `outputs`. Merkle-proves the
+   * offer into the PoW-verified header chain (from the pinned SPV checkpoint), binds the record to its on-chain
+   * commitment, derives the payment recipient + seller from the offer's on-chain AUTHOR (the funding input's
+   * prevout owner, txid-committed, NOT the malleable scriptSig), and, if you pass the resolver-SERVED `offer`
+   * object, binds its payto/seller + fee/rebate/partial terms to the proven ones. Returns a TRUST-LABELED result
+   * (fail-closed on a positive mismatch, fail-soft `transient` on a lagging / below-checkpoint chain view).
+   *
+   * This is best-effort corroboration, NOT the payment-grade boundary: the Cairn Wallet's OWN on-device
+   * fill-SPV (0.2.60+, fails-closed before signing) is that. A dApp settling real value should still clear this
+   * before building `outputs`, so it never hands the wallet a payment a lying resolver would redirect.
+   */
+  async verifyOfferForFill(offerId: string, servedOffer?: unknown): Promise<OfferFillCheck> {
+    const light = await this.seededSpvLight();
+    return preverifyOffer({ light, client: this.chain.client, offerId, servedOffer });
   }
 
   /**
@@ -230,3 +254,8 @@ export {
   SDK_VERSION,
 } from "./errors.js";
 export type { CairnErrorCode, CairnErrorOptions } from "./errors.js";
+// F13 offer pre-verify (diligent-dApp on-chain corroboration before building a fillOffer's outputs). The
+// standalone `preverifyOffer` takes an injected light client + tx reader; `Cairn.verifyOfferForFill` wires the
+// checkpoint-anchored SPV light client for you. `bindOfferTerms`/`feeBpsAt` are the pure term-bind primitives.
+export { preverifyOffer, bindOfferTerms, feeBpsAt } from "./fillverify.js";
+export type { OfferFillCheck, ProvenOfferTerms } from "./fillverify.js";

@@ -60,7 +60,7 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts src/connect.ts src/board.ts src/indexer.ts src/content.ts src/registry.ts src/chain.ts src/controller.ts src/react.ts --format esm,cjs --dts --clean",
-    "test": "tsx test/sdk.test.ts && tsx test/connect.test.ts && tsx test/errors.test.ts && tsx test/controller.test.ts && tsx test/react.test.ts && tsx test/hardening.test.ts && tsx test/spv-checkpoint.test.ts && tsx test/names-b10.test.ts",
+    "test": "tsx test/sdk.test.ts && tsx test/connect.test.ts && tsx test/errors.test.ts && tsx test/controller.test.ts && tsx test/react.test.ts && tsx test/hardening.test.ts && tsx test/spv-checkpoint.test.ts && tsx test/names-b10.test.ts && tsx test/fillverify.test.ts",
     "test:live": "node examples/read-only.mjs",
     "build:example": "node scripts/build-example.mjs",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
