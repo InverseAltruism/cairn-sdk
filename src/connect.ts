@@ -15,6 +15,7 @@ import {
   NotInstalledError,
   UnsupportedMethodError,
   mapProviderError,
+  mapSubmitResultError,
 } from "./errors.js";
 
 /** Result of `connect()` / `getAddress()`. */
@@ -259,6 +260,24 @@ function unwrap<T>(reply: ProviderReply<T>): T {
 }
 
 /**
+ * Unwrap a WRITE (tx) reply. Two layers refuse here (F14):
+ *   1. the OUTER envelope (`{ ok:false }`) — user rejection / wallet locked / unsupported — via `unwrap`, and
+ *   2. the NESTED `SubmitResult` (`result.ok === false`) — a fund-safety / validation refusal the wallet
+ *      returns INSIDE an outer-ok reply. Left un-inspected this RESOLVES with `{ ok:false, txid:undefined }`,
+ *      so a dApp doing `const { txid } = await fillOffer(...); markPaid(txid)` would mark a REFUSED fill paid.
+ * We THROW a typed `CairnError` (matching the outer-ok unwrap, which also throws) built from the nested `code`
+ * so the refusal cannot masquerade as success. Only an EXPLICIT `ok === false` throws; an honest
+ * `{ ok:true, txid }` (or a legacy result with no `ok` field) resolves normally.
+ */
+function unwrapWrite(reply: ProviderReply<TxResult>): TxResult {
+  const result = unwrap(reply);
+  if (result && typeof result === "object" && (result as TxResult).ok === false) {
+    throw mapSubmitResultError(result as TxResult);
+  }
+  return result;
+}
+
+/**
  * High-level, typed wallet handle. Construct via `connect()` or `new WalletConnection(provider)`.
  * Methods throw `UserRejectedError` / `WalletLockedError` / `UnsupportedMethodError` on failure.
  *
@@ -351,7 +370,7 @@ export class WalletConnection {
     if (typeof this.provider.fillOffer !== "function") {
       return Promise.reject(new UnsupportedMethodError("this wallet predates fillOffer() — ask the user to update the Cairn Wallet"));
     }
-    return Promise.resolve(this.provider.fillOffer(params)).then(unwrap);
+    return Promise.resolve(this.provider.fillOffer(params)).then(unwrapWrite);
   }
 
   /** This origin's current permission grant (EIP-2255-style). Silent; [] if none / unsupported. */
@@ -390,22 +409,22 @@ export class WalletConnection {
 
   /** Send CSD (always prompts with clear-signing; wallet picks inputs + returns change to itself). */
   send(params: SendParams): Promise<TxResult> {
-    return Promise.resolve(this.provider.send(params)).then(unwrap);
+    return Promise.resolve(this.provider.send(params)).then(unwrapWrite);
   }
 
   /** Low-level Propose (always prompts). Prefer `cairn.board.propose()` which computes the hash/uri/expiry. */
   propose(params: ProposeParams): Promise<TxResult> {
-    return Promise.resolve(this.provider.propose(params)).then(unwrap);
+    return Promise.resolve(this.provider.propose(params)).then(unwrapWrite);
   }
 
   /** Attest/support a proposal (always prompts). */
   attest(params: AttestParams): Promise<TxResult> {
-    return Promise.resolve(this.provider.attest(params)).then(unwrap);
+    return Promise.resolve(this.provider.attest(params)).then(unwrapWrite);
   }
 
   /** Seal a commit-reveal claim (always prompts; salt stays inside the wallet). */
   sealClaim(params: SealClaimParams): Promise<TxResult> {
-    return Promise.resolve(this.provider.sealClaim(params)).then(unwrap);
+    return Promise.resolve(this.provider.sealClaim(params)).then(unwrapWrite);
   }
 
   /** Reveal a previously sealed claim by its sealing txid (always prompts). */
@@ -413,7 +432,7 @@ export class WalletConnection {
     if (typeof txid !== "string" || !txid) {
       return Promise.reject(new UnsupportedMethodError("revealClaim requires the sealing txid"));
     }
-    return Promise.resolve(this.provider.revealClaim(txid)).then(unwrap);
+    return Promise.resolve(this.provider.revealClaim(txid)).then(unwrapWrite);
   }
 }
 

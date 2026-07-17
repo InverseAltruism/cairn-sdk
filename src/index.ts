@@ -223,7 +223,9 @@ export {
   UnsupportedMethodError,
   HttpError,
   ContentVerificationError,
+  SubmitInFlightError,
   mapProviderError,
+  mapSubmitResultError,
   errorCode,
   SDK_VERSION,
 } from "./errors.js";

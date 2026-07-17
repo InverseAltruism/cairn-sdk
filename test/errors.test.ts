@@ -1,7 +1,8 @@
 // Typed-error tests (Phase 3 DX): stable codes, viem-style fields, walk(), and provider mapping.
 import {
   CairnError, NotInstalledError, UserRejectedError, WalletLockedError, UnsupportedMethodError,
-  HttpError, ContentVerificationError, mapProviderError, errorCode, SDK_VERSION,
+  HttpError, ContentVerificationError, SubmitInFlightError, mapProviderError, mapSubmitResultError,
+  errorCode, SDK_VERSION,
 } from "../src/index.js";
 import { readFileSync } from "node:fs";
 
@@ -45,6 +46,33 @@ ok("'…predates Sign-in-with-CSD' → UNSUPPORTED_METHOD", mapProviderError("th
 ok("unknown string → UNKNOWN", mapProviderError("weird backend error").code === "UNKNOWN");
 ok("errorCode(CairnError) returns its code", errorCode(new WalletLockedError()) === "WALLET_LOCKED");
 ok("errorCode(plain Error) → UNKNOWN", errorCode(new Error("x")) === "UNKNOWN");
+
+console.log("=== F14: nested SubmitResult code buckets ===");
+// DEFINITIVE fund-safety refusals -> code preserved, retryable === false.
+for (const code of ["FILL_UNSAFE", "FILL_WRONG_TARGET", "SOURCE_DIVERGENCE", "VERIFY_TAMPER", "SUBMIT_REJECTED",
+  "BAD_REQUEST", "BAD_FEE", "BAD_OUTPUTS", "NO_OUTPUTS", "ZERO_ADDR_REFUSED", "TOO_MANY_INPUTS", "INSUFFICIENT",
+  "FEE_CAP", "FEE_TOO_LOW", "ACCOUNT_CHANGED", "GHOST_INPUTS_SKIPPED", "NOTHING_TO_CONSOLIDATE"]) {
+  const e = mapSubmitResultError({ ok: false, code, error: `${code} refusal` });
+  ok(`${code} -> terminal (code preserved, retryable=false)`, e.code === code && e.retryable === false && !(e instanceof SubmitInFlightError));
+}
+// TRANSIENT -> retryable === true.
+for (const code of ["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN"]) {
+  const e = mapSubmitResultError({ ok: false, code, error: `${code} transient` });
+  ok(`${code} -> transient (retryable=true)`, e.code === code && e.retryable === true);
+}
+// AMBIGUOUS-INFLIGHT -> SubmitInFlightError that carries the txid; NOT retryable; maybeSent.
+for (const code of ["SUBMIT_MAYBE_INFLIGHT", "SUBMIT_DUPLICATE"]) {
+  const e = mapSubmitResultError({ ok: false, code, txid: "0xabc", error: `${code} ambiguous` });
+  ok(`${code} -> SubmitInFlightError carrying the txid, not retryable`,
+    e instanceof SubmitInFlightError && e.code === code && e.txid === "0xabc" && (e as SubmitInFlightError).maybeSent === true && e.retryable === false);
+}
+// A missing txid does not fabricate one (undefined, still reconcilable-by-explicit-absence).
+ok("SUBMIT_MAYBE_INFLIGHT without a txid -> txid undefined", (mapSubmitResultError({ ok: false, code: "SUBMIT_MAYBE_INFLIGHT" }) as SubmitInFlightError).txid === undefined);
+// Fail-closed: an explicit ok:false with NO code still throws a non-retryable refusal (never resolves).
+ok("codeless nested refusal -> non-retryable CairnError (fail closed)", mapSubmitResultError({ ok: false, error: "no code here" }).retryable === false);
+// mapProviderError itself classifies the nested codes (the finding's 'extend mapProviderError' requirement).
+ok("mapProviderError classifies FILL_UNSAFE terminal", mapProviderError("x", "FILL_UNSAFE").retryable === false && mapProviderError("x", "FILL_UNSAFE").code === "FILL_UNSAFE");
+ok("mapProviderError classifies VERIFY_UNAVAILABLE transient", mapProviderError("x", "VERIFY_UNAVAILABLE").retryable === true);
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"}: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
