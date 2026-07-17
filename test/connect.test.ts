@@ -10,6 +10,8 @@ import {
   UserRejectedError,
   WalletLockedError,
   UnsupportedMethodError,
+  CairnError,
+  SubmitInFlightError,
 } from "../src/index.js";
 import type { CairnProvider, ProviderReply } from "../src/connect.js";
 
@@ -193,6 +195,76 @@ console.log("=== connector: permissions (EIP-2255-style) + events ===");
   await okThrows("requestPermissions throws on an old wallet", () => wo.requestPermissions(), UnsupportedMethodError);
   wo.on("accountsChanged", () => {}); wo.off("accountsChanged", () => {}); // no-op, must not throw
   ok("on/off are safe no-ops on an old wallet", true);
+}
+
+console.log("=== connector: F14 nested SubmitResult refusal contract ===");
+{
+  // Catch and return the thrown error (or null if the call resolved instead of throwing).
+  const grab = async (fn: () => Promise<unknown>): Promise<unknown> => {
+    try { await fn(); return null; } catch (e) { return e; }
+  };
+
+  // (1) A fund-safety refusal nested inside an OUTER-OK reply MUST THROW, not resolve with a phantom txid.
+  // Mutation-check: reverting unwrapWrite's throw makes this RESOLVE with { ok:false } (the F14 bug), so the
+  // grab() returns null and both asserts below fail.
+  const unsafe = new WalletConnection(mockProvider({
+    fillOffer: () => Promise.resolve({ ok: true, result: { ok: false, code: "FILL_UNSAFE", error: "fill fund-safety preflight refused" } }),
+  }));
+  const fe = await grab(() => unsafe.fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 10 }] }));
+  ok("F14: fillOffer FILL_UNSAFE THROWS (does not resolve with a phantom txid)", fe !== null);
+  ok("F14: FILL_UNSAFE throws a CairnError with the code preserved", fe instanceof CairnError && fe.code === "FILL_UNSAFE");
+  ok("F14: FILL_UNSAFE is terminal (retryable === false)", fe instanceof CairnError && fe.retryable === false);
+
+  // (2) A TRANSIENT nested refusal throws retryable === true (nothing was signed; safe to retry shortly).
+  const unavail = new WalletConnection(mockProvider({
+    send: () => Promise.resolve({ ok: true, result: { ok: false, code: "VERIFY_UNAVAILABLE", error: "couldn't verify inputs before signing" } }),
+  }));
+  const ve = await grab(() => unavail.send({ to: "0xd", amount: 1 }));
+  ok("F14: VERIFY_UNAVAILABLE throws retryable === true", ve instanceof CairnError && ve.code === "VERIFY_UNAVAILABLE" && ve.retryable === true);
+
+  // (3) AMBIGUOUS-INFLIGHT: throws a SubmitInFlightError that STILL EXPOSES the txid (reconcilable, not a
+  // blind re-broadcast). Dropping the txid here would re-invite the double-broadcast the finding warns of.
+  const inflight = new WalletConnection(mockProvider({
+    send: () => Promise.resolve({ ok: true, result: { ok: false, code: "SUBMIT_MAYBE_INFLIGHT", txid: "0xmaybe", error: "gateway timeout; tx may be inflight" } }),
+  }));
+  const ie = await grab(() => inflight.send({ to: "0xd", amount: 1 }));
+  ok("F14: SUBMIT_MAYBE_INFLIGHT throws a SubmitInFlightError", ie instanceof SubmitInFlightError);
+  ok("F14: SUBMIT_MAYBE_INFLIGHT carries the locally-computed txid to reconcile", ie instanceof SubmitInFlightError && ie.txid === "0xmaybe");
+  ok("F14: SUBMIT_MAYBE_INFLIGHT is maybeSent + NOT retryable (reconcile, never blind-retry)", ie instanceof SubmitInFlightError && ie.maybeSent === true && ie.retryable === false);
+
+  const dup = new WalletConnection(mockProvider({
+    send: () => Promise.resolve({ ok: true, result: { ok: false, code: "SUBMIT_DUPLICATE", txid: "0xdup", error: "already present or mempool conflict" } }),
+  }));
+  const de = await grab(() => dup.send({ to: "0xd", amount: 1 }));
+  ok("F14: SUBMIT_DUPLICATE is a SubmitInFlightError carrying the txid", de instanceof SubmitInFlightError && de.code === "SUBMIT_DUPLICATE" && de.txid === "0xdup");
+
+  // (4) HONEST SUCCESS still resolves normally with the txid (the throw must not swallow real sends).
+  const good = new WalletConnection(mockProvider({
+    send: () => Promise.resolve({ ok: true, result: { ok: true, txid: "0xgood" } }),
+  }));
+  const gr = await good.send({ to: "0xd", amount: 1 });
+  ok("F14: an honest success resolves normally with the txid", gr.txid === "0xgood");
+
+  // (5) An OUTER { ok:false } user rejection still throws UserRejectedError (unchanged behavior).
+  const rej = new WalletConnection(mockProvider({
+    send: () => Promise.resolve({ ok: false, error: "rejected by user", code: "USER_REJECTED" }),
+  }));
+  await okThrows("F14: an outer user-rejection still throws UserRejectedError", () => rej.send({ to: "0xd", amount: 1 }), UserRejectedError);
+
+  // (6) A codeless nested refusal (pre-0.2.54 wallet) still fails CLOSED: it throws non-retryable rather than
+  // resolving with a phantom txid.
+  const nocode = new WalletConnection(mockProvider({
+    fillOffer: () => Promise.resolve({ ok: true, result: { ok: false, error: "refused, no machine code" } }),
+  }));
+  const ce = await grab(() => nocode.fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 1 }] }));
+  ok("F14: a codeless nested refusal fails closed (throws, retryable === false)", ce instanceof CairnError && ce.retryable === false);
+
+  // (7) The same nested-refusal guard applies to every write wrapper, not just send/fillOffer.
+  const badProp = new WalletConnection(mockProvider({
+    propose: () => Promise.resolve({ ok: true, result: { ok: false, code: "BAD_REQUEST", error: "payloadHash failed its shape check" } }),
+  }));
+  const pe = await grab(() => badProp.propose({ domain: "d", payloadHash: "0x", uri: "u", expiresEpoch: 1, fee: 1 }));
+  ok("F14: propose also throws on a nested BAD_REQUEST refusal", pe instanceof CairnError && pe.code === "BAD_REQUEST" && pe.retryable === false);
 }
 
 clearWindow();

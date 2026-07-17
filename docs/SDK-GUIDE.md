@@ -54,6 +54,22 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
 - **Indexer = untrusted derived view:** the `IndexerClient` re-folds Merkle proofs
   (`verifyInclusion`) — it's a prover, not an authority.
 
+**Filling an offer (F13, diligent-dApp pre-verify):** `fillOffer` is resolver-trusted at this SDK layer:
+the SDK does NOT SPV-verify the `outputs` you hand the wallet, so a lying resolver could redirect the
+payment. Before you build those `outputs`, corroborate the offer on-chain with
+`await cairn.verifyOfferForFill(offerId, servedOffer)`. It merkle-proves the offer's Propose into the
+PoW-verified header chain (from the pinned SPV checkpoint), binds the record to its on-chain commitment,
+derives the payment recipient + seller from the offer's on-chain author (the funding input's prevout owner,
+not the malleable scriptSig), and, when you pass the resolver-served `offer`, binds its payto/seller +
+fee/rebate/partial terms to the proven ones. It returns a trust-labeled `OfferFillCheck` (`{ ok, trust,
+payto, seller, terms, reason, transient }`): fail-closed on a positive mismatch, fail-soft (`transient`) on
+a lagging or below-checkpoint chain view. This is best-effort corroboration, not the payment-grade boundary
+(the Cairn Wallet's own on-device fill-SPV in 0.2.60+ is what fails-closed before signing), but a dApp
+settling real value should clear it first. The standalone `preverifyOffer({ light, client, offerId,
+servedOffer })` takes an injected light client + tx reader for custom wiring; `bindOfferTerms` / `feeBpsAt`
+are the pure term-bind primitives (a local copy of cairnx-core's; they move to a cairnx-core import once the
+SDK re-pins a version that exports them).
+
 **Sign-in:** the SIWC signature proves key control ONCE. Verify it **server-side** (`verifySiwc`) and
 then issue **your own** session (rotating, expiring, HttpOnly+Secure+SameSite cookie). The signature is
 **never** a bearer token. The wallet binds the message's `domain` to the real page origin (you can't

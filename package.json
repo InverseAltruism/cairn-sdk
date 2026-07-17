@@ -1,6 +1,6 @@
 {
   "name": "@inversealtruism/cairn-sdk",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "description": "The Compute Substrate dApp kit — one cohesive toolkit to connect the Cairn Wallet, read the chain/board, publish self-certifying content, and resolve registries. Composes the published csd-* primitives.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -60,7 +60,7 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts src/connect.ts src/board.ts src/indexer.ts src/content.ts src/registry.ts src/chain.ts src/controller.ts src/react.ts --format esm,cjs --dts --clean",
-    "test": "tsx test/sdk.test.ts && tsx test/connect.test.ts && tsx test/errors.test.ts && tsx test/controller.test.ts && tsx test/react.test.ts && tsx test/hardening.test.ts && tsx test/spv-checkpoint.test.ts && tsx test/names-b10.test.ts",
+    "test": "tsx test/sdk.test.ts && tsx test/connect.test.ts && tsx test/errors.test.ts && tsx test/controller.test.ts && tsx test/react.test.ts && tsx test/hardening.test.ts && tsx test/spv-checkpoint.test.ts && tsx test/names-b10.test.ts && tsx test/fillverify.test.ts",
     "test:live": "node examples/read-only.mjs",
     "build:example": "node scripts/build-example.mjs",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
