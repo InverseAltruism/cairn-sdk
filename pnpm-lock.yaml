@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@inversealtruism/cairnx-core':
-        specifier: 0.1.37
-        version: 0.1.37
+        specifier: 0.1.38
+        version: 0.1.38
       '@inversealtruism/csd-client':
         specifier: 0.1.15
         version: 0.1.15
@@ -27,8 +27,8 @@ importers:
         specifier: 0.1.16
         version: 0.1.16
       '@inversealtruism/csd-tx':
-        specifier: 0.1.16
-        version: 0.1.16
+        specifier: 0.1.17
+        version: 0.1.17
     devDependencies:
       '@inversealtruism/csd-siwc':
         specifier: 0.1.15
@@ -363,8 +363,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@inversealtruism/cairnx-core@0.1.37':
-    resolution: {integrity: sha512-q26kl4HM5qXkHdQrV3L+tidBjM/pvkTaL0QsUggYnLPtzJZ/xvcXY+0x0wNbMLkeDelzlfd6zUFBDHBeKrnlwg==}
+  '@inversealtruism/cairnx-core@0.1.38':
+    resolution: {integrity: sha512-uc8Bw8ann9MxulVOurUrdTD+NA6hk4Vdl+JT72yAr0Db6R/11BqFKtt0Qq6ASgt/ffCaP8wgu41G8AKxbbJkSQ==}
     engines: {node: '>=18'}
 
   '@inversealtruism/csd-client@0.1.15':
@@ -391,8 +391,8 @@ packages:
     resolution: {integrity: sha512-Yr1C7c9y1xBGS0aNNj+haL3pLzanyVZaHXUGCL1AvXt0PuKLlcPp1kbaK2kiOhO5pY1r42jyBCDD6A8gwCAWuw==}
     engines: {node: '>=18'}
 
-  '@inversealtruism/csd-tx@0.1.16':
-    resolution: {integrity: sha512-fCkunlgKOKBFuhlHR+GzEv9t3H6tyjMy0883OJCN51NK0zhC9iQfoip34fT4XBQ975WGu93OYu3sqhhuz+9t7w==}
+  '@inversealtruism/csd-tx@0.1.17':
+    resolution: {integrity: sha512-2uo4rX776uzO8z6K9y4FWRTNj6u78gZHFRYrGpE7AkvD1M29anSWK8SJKwuKEG00ZBgWvdAad4AMgteS88dz5g==}
     engines: {node: '>=18'}
 
   '@jridgewell/gen-mapping@0.3.13':
@@ -930,7 +930,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.0':
     optional: true
 
-  '@inversealtruism/cairnx-core@0.1.37':
+  '@inversealtruism/cairnx-core@0.1.38':
     dependencies:
       '@inversealtruism/csd-codec': 0.1.15
 
@@ -964,7 +964,7 @@ snapshots:
       '@inversealtruism/csd-crypto': 0.1.15
       '@noble/hashes': 1.8.0
 
-  '@inversealtruism/csd-tx@0.1.16':
+  '@inversealtruism/csd-tx@0.1.17':
     dependencies:
       '@inversealtruism/csd-codec': 0.1.15
       '@inversealtruism/csd-crypto': 0.1.15

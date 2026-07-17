@@ -72,13 +72,13 @@
     "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
-    "@inversealtruism/cairnx-core": "0.1.37",
+    "@inversealtruism/cairnx-core": "0.1.38",
     "@inversealtruism/csd-client": "0.1.15",
     "@inversealtruism/csd-codec": "0.1.15",
     "@inversealtruism/csd-crypto": "0.1.15",
     "@inversealtruism/csd-light": "0.1.18",
     "@inversealtruism/csd-registry": "0.1.16",
-    "@inversealtruism/csd-tx": "0.1.16"
+    "@inversealtruism/csd-tx": "0.1.17"
   },
   "devDependencies": {
     "esbuild": "^0.27.0",
