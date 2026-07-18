@@ -2,7 +2,7 @@
 
 > Onboarding briefing for coding agents and contributors working on this repo. `AGENTS.md` is the canonical briefing; `CLAUDE.md` imports it, so edit `AGENTS.md` only and keep them in sync that way. Production hosting and operations specifics are intentionally out of scope here and maintained privately.
 
-`@inversealtruism/cairn-sdk` (npm, v0.2.2) is the Compute Substrate dApp kit: the single umbrella package a third party installs to build on CSD/Cairn. It composes the published low-level `@inversealtruism/csd-*` primitives (from the csd-sdk monorepo) behind one `Cairn` facade:
+`@inversealtruism/cairn-sdk` (npm, v0.3.0) is the Compute Substrate dApp kit: the single umbrella package a third party installs to build on CSD/Cairn. It composes the published low-level `@inversealtruism/csd-*` primitives (from the csd-sdk monorepo) behind one `Cairn` facade:
 
 - `cairn.wallet`: connect the Cairn Wallet extension (window.cairn), clear-signed writes; keys never leave the extension
 - `cairn.chain`: node RPC, tx builders, verifying LightClient (re-exports csd-client/tx/codec/crypto/light)
@@ -33,7 +33,7 @@ src/ (12 files, ~2,200 lines), built by tsup to esm+cjs+dts with 9 subpath expor
 
 docs/SDK-GUIDE.md (third-party guide incl. the verifies-vs-trusts table), examples/ (read-only, wallet-connect, siwc-login, node-signer, hello-csd, register-swarm-peer [historical; swarm L1 is dead]), scripts/ (esbuild example build + 6 maintainer-run live E2E harnesses: scripts/live-wallet-ui.mjs, scripts/names-e2e.mjs, scripts/names-buy-e2e.mjs, scripts/ux-live-readonly.mjs, scripts/ux-openlane-buy.mjs, scripts/wallet-send-spv-e2e.mjs).
 
-Deps (exact-pinned): cairnx-core 0.1.36, csd-tx 0.1.16, csd-light 0.1.17, csd-registry 0.1.16, csd-client/codec/crypto/siwc 0.1.15. Re-pinned to published in 0.2.2 (2026-07-10) alongside the CI gate rework.
+Deps (exact-pinned): cairnx-core 0.1.38, csd-tx 0.1.17, csd-light 0.1.18, csd-registry 0.1.16, csd-client/codec/crypto/siwc 0.1.15. Re-pinned to published in 0.3.0 (2026-07-17, Plan 70 R2/R3). src/fillverify.ts imports `feeBpsAt`/`bindOfferTerms` from cairnx-core (the local copy was retired when 0.1.38 began exporting them); the F13 `preverifyOffer` helper and F14 throw-on-nested-refusal write wrapper landed in this line.
 
 ## Invariants and red lines
 
@@ -75,12 +75,12 @@ scripts/*.mjs live harnesses are maintainer-run only (some spend CSD). scripts/l
 
 ## Release and publish
 
-Maintainers publish to npm (public access) manually, with a transient npm token via a mktemp --userconfig deleted immediately; tokens are never stored and CI has NO publish job on purpose. prepublishOnly = build + test. Release ritual: bump version + SDK_VERSION + re-pin csd-*/cairnx-core to published versions, tag vX.Y.Z, push. History: 0.1.0 -> 0.1.1 -> 0.1.2 (M3 PoW-verify) -> 0.1.4 -> 0.2.0 (names namespace, native wallet error codes, http hardening) -> 0.2.1 (truth pass + re-pins) -> 0.2.2 (re-pin cairnx-core 0.1.36 + csd-tx 0.1.16 + csd-light 0.1.17; CI gate reworked from uniform-version to per-package exact-pin hygiene). In sync with npm as of 2026-07-10.
+Maintainers publish to npm (public access) manually, with a transient npm token via a mktemp --userconfig deleted immediately; tokens are never stored and CI has NO publish job on purpose. prepublishOnly = build + test. Release ritual: bump version + SDK_VERSION + re-pin csd-*/cairnx-core to published versions, tag vX.Y.Z, push. History: 0.1.0 -> 0.1.1 -> 0.1.2 (M3 PoW-verify) -> 0.1.4 -> 0.2.0 (names namespace, native wallet error codes, http hardening) -> 0.2.1 (truth pass + re-pins) -> 0.2.2 (re-pin cairnx-core 0.1.36 + csd-tx 0.1.16 + csd-light 0.1.17; CI gate reworked from uniform-version to per-package exact-pin hygiene) -> 0.2.3 (Plan 69 re-pin) -> 0.2.4 (Plan 70 R1) -> 0.3.0 (Plan 70 R2/R3: F13 preverifyOffer + F14 throw-on-nested-refusal; re-pin cairnx-core 0.1.38 + csd-tx 0.1.17 + csd-light 0.1.18). In sync with npm as of 2026-07-17.
 
 ## Gotchas and incident history
 
 - CI dep-pin gate (RESOLVED in 0.2.2, 2026-07-10): the old ci.yml gate demanded all @inversealtruism/csd-* pins be ONE uniform version, which is structurally impossible under independent per-package versioning, so it could never pass. Reworked to per-package EXACT-semver hygiene over every @inversealtruism/* (now including cairnx-core, which the old name filter excluded); cross-repo freshness is delegated to csd-sdk scripts/check-consumer-pins.mjs (which grades cairn-sdk as a helpers-only-lag advisory).
-- Pin drift (RESOLVED in 0.2.2): cairn-sdk now pins cairnx-core 0.1.36 + csd-tx 0.1.16 + csd-light 0.1.17 (the published versions). Do NOT re-pin outside a release.
+- Pin drift (RESOLVED in 0.2.2, kept current since): cairn-sdk now pins cairnx-core 0.1.38 + csd-tx 0.1.17 + csd-light 0.1.18 (the published versions as of 0.3.0). Do NOT re-pin outside a release, and never "correct" package.json to an older number from a stale doc.
 - The SDK originally shipped with no CI at all, and pin drift went unnoticed until review caught it. Don't remove the gates.
 - SSE through a buffering reverse proxy needs `X-Accel-Buffering: no` from the origin (the hosted proxy sets it); WS subscribe still needs a direct indexer URL because the hosted proxy is REST+SSE only.
 - esbuild CLI shim ELF-errors under pnpm; scripts/build-example.mjs uses the JS API, keep it that way.
@@ -90,7 +90,7 @@ Maintainers publish to npm (public access) manually, with a transient npm token 
 
 ## State snapshot (2026-07-09; verify with git log before trusting)
 
-Version 0.2.2, branch master, tags through v0.2.2. MIT.
+Version 0.3.0, branch master, tags through v0.3.0. MIT.
 
 Open items (do not act without a maintainer/release ask):
 - Pin drift + the uniform-version CI gate: RESOLVED in 0.2.2 (2026-07-10). See gotchas.
@@ -100,4 +100,4 @@ Open items (do not act without a maintainer/release ask):
 
 Depends on the published `@inversealtruism/csd-*` / `@inversealtruism/cairnx-core` packages from the csd-sdk monorepo (exact pins, installed from npm). Contract couplings: cairn-wallet's window.cairn provider (connect.ts is the dApp-side contract; WALLET-ERROR-CODES.md in the cairn-wallet repo), the cairn server endpoints (/api/*, /explorer/api, /trade/api/cairnx/*, POST /api/content), and the SPV checkpoint literal duplicated with cairn/public/trade/swapguard.js (test-enforced). The wallet-connector E2E builds against a sibling ../cairn-wallet checkout (override with WALLET_EXT).
 
-Published dependency versions as of 2026-07-09 (verify on npm before trusting): cairnx-core 0.1.35, csd-tx 0.1.16, csd-registry 0.1.16, csd-client/codec/crypto/light/siwc 0.1.15.
+Published dependency versions as of 2026-07-17 (verify on npm before trusting): cairnx-core 0.1.38, csd-tx 0.1.17, csd-light 0.1.18, csd-registry 0.1.16, csd-client/codec/crypto/siwc 0.1.15.

@@ -86,21 +86,21 @@ export class NamesClient {
   /** Resolve a .csd name for DISPLAY (server-trusted; see the module trust note). null = unknown/invalid name. */
   async resolve(name: string): Promise<NameResolution | null> {
     if (!nameOk(name)) return null;
-    try { return await this.http.getJson<NameResolution>(`/trade/api/cairnx/resolve/${name}`); }
+    try { return await this.http.getJson<NameResolution>(`/trade/api/cairnx/resolve/${encodeURIComponent(name)}`); }
     catch (e: any) { if (e?.status === 404) return null; throw e; }
   }
 
   /** Full detail for one name (lease, lock, resting offer, recapture). null = not registered/invalid. */
   async name(name: string): Promise<NameDetail | null> {
     if (!nameOk(name)) return null;
-    try { return await this.http.getJson<NameDetail>(`/trade/api/cairnx/name/${name}`); }
+    try { return await this.http.getJson<NameDetail>(`/trade/api/cairnx/name/${encodeURIComponent(name)}`); }
     catch (e: any) { if (e?.status === 404) return null; throw e; }
   }
 
   /** The event history of one name (registrations, transfers, sets, renewals). null = invalid name. */
   async nameHistory(name: string): Promise<unknown[] | null> {
     if (!nameOk(name)) return null;
-    try { return await this.http.getJson<unknown[]>(`/trade/api/cairnx/name-history/${name}`); }
+    try { return await this.http.getJson<unknown[]>(`/trade/api/cairnx/name-history/${encodeURIComponent(name)}`); }
     catch (e: any) { if (e?.status === 404) return null; throw e; }
   }
 

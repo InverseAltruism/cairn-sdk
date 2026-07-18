@@ -13,13 +13,13 @@
 // (cairn-wallet 0.2.60+, which fails-closed before signing) is the payment-grade check. Use this to avoid
 // building `outputs` a lying resolver would redirect, and to surface an honest trust label to the user.
 //
-// The term-mismatch predicate + `feeBpsAt` are a byte-identical local copy of cairnx-core's exported
-// `bindOfferTerms` / `feeBpsAt` (Plan 70 R2 Option B). The pinned cairnx-core (0.1.37) predates those exports;
-// once this SDK re-pins a cairnx-core carrying them, replace the local copy with
-// `import { bindOfferTerms, feeBpsAt } from "@inversealtruism/cairnx-core"` (behaviour-identical).
+// The term-mismatch predicate `bindOfferTerms` and `feeBpsAt` are IMPORTED from the pinned cairnx-core
+// (0.1.38 exports them; Plan 70 R2 Option B) and re-exported below, so the SDK never re-declares consensus
+// logic locally (the AGENTS.md invariant). They were a byte-identical local copy while the pin predated the
+// exports; the copy was retired once the pin carried them.
 import { rpcTxToTx, type RpcTxJson } from "@inversealtruism/csd-client";
 import { txid, payloadHash } from "@inversealtruism/csd-codec";
-import { parseRecord, V11_HEIGHT, V16_HEIGHT, FEE_BPS, FEE_BPS_V16 } from "@inversealtruism/cairnx-core";
+import { parseRecord, feeBpsAt, bindOfferTerms } from "@inversealtruism/cairnx-core";
 import type { InclusionResult } from "@inversealtruism/csd-light";
 
 /** The fee/rebate-relevant fields of an offer, derived from the MERKLE-PROVEN offer (never a served object). */
@@ -44,25 +44,11 @@ const ADDR = /^0x[0-9a-f]{40}$/;
 const HASH = /^0x[0-9a-f]{64}$/;
 const COINBASE = "0x" + "00".repeat(32);
 
-/** The treasury fee rate stamped on an offer at its creation height (resolve.ts: v11 ? (v16 ? 150 : 100) : 0). */
-export const feeBpsAt = (height: number): number =>
-  height >= V11_HEIGHT ? (height >= V16_HEIGHT ? FEE_BPS_V16 : FEE_BPS) : 0;
-
-/** true iff any fee/rebate/partial-sizing field of the SERVED offer diverges from the merkle-proven terms `t`
- *  (fail-closed: any divergence => the caller refuses). Byte-identical to cairnx-core `bindOfferTerms`. */
-export function bindOfferTerms(servedOffer: unknown, t: ProvenOfferTerms): boolean {
-  const o = servedOffer as { height?: unknown; feeBps?: unknown; want?: { value?: unknown }; taker?: unknown; bid?: unknown; min?: unknown };
-  const s = (v: unknown): string => (v === undefined || v === null ? "" : String(v).toLowerCase());
-  if (Number(o?.height) !== t.height) return true;
-  if (Number(o?.feeBps) !== t.feeBps) return true;
-  if (t.value !== undefined && String(o?.want?.value) !== t.value) return true;
-  if (s(o?.taker) !== s(t.taker)) return true;
-  if (s(o?.bid) !== s(t.bid)) return true;
-  const om = o?.min;
-  if ((om !== undefined && om !== null) !== (t.min !== undefined)) return true;
-  if (t.min !== undefined && String(om) !== t.min) return true;
-  return false;
-}
+// `feeBpsAt` (the treasury fee rate stamped at an offer's creation height) and `bindOfferTerms` (the
+// fee/rebate/partial-sizing term-mismatch predicate, fail-closed: any divergence => the caller refuses) come
+// from cairnx-core and are re-exported so the SDK's public API is unchanged while the consensus logic stays
+// single-sourced. Their prior byte-identical local copies were retired when the pin (0.1.38) began exporting them.
+export { feeBpsAt, bindOfferTerms };
 
 // The on-chain author of an offer Propose = the funding input's prevout OWNER (only that owner's key can spend
 // the coin it funds, and the owner is txid-committed). We fetch the source tx, RECOMPUTE its txid (so a forged

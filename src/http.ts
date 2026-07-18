@@ -132,8 +132,10 @@ export class Http {
       try {
         const res = await this.raw("GET", path, { query });
         if (!res.ok) {
-          const err = new HttpError(res.status, url, await safeText(res));
-          if (!(res.status >= 500 && attempt < this.retries)) throw err;
+          // read the body for the error message ONLY when we are actually throwing (terminal); on a
+          // to-be-retried 5xx, drain the discarded body (undici holds the socket until GC otherwise).
+          if (!(res.status >= 500 && attempt < this.retries)) throw new HttpError(res.status, url, await safeText(res));
+          res.body?.cancel().catch(() => {});
           // else: fall through to the jittered sleep and retry
         } else {
           return this.parseJson<T>(res, new TextDecoder().decode(await readCapped(res, this.maxBytes)), url);
