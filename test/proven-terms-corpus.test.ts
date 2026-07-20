@@ -5,6 +5,12 @@
 // divergences over 68). This pins canonical == frozen historical semantics forever, plus source
 // pins so an EQUIVALENT hand copy cannot silently return (value-equality alone cannot see one).
 //
+// B7b (REBIND W2/W7): consuming the 0.1.40 cairnx-core, provenOfferTerms now ALSO emits the additive
+// give legs (giveTicker/giveAmount/giveName) + wantType. The fixture was regenerated ONCE against the
+// new producer, and the regen ABORTED unless the pre-B6 fields (height/feeBps/value/taker/bid/min)
+// stayed byte-identical across all 68 entries - i.e. it PROVED B6 additive (0 drift) before writing.
+// The committed fixture now pins the full (existing + additive) canonical output forward.
+//
 // Mutations executed at authoring (observed RED, restored): re-add a local terms object literal in
 // fillverify.ts -> source pin red; corrupt one fixture entry's expected feeBps -> corpus pin red.
 import { provenOfferTerms } from "@inversealtruism/cairnx-core";
@@ -34,7 +40,13 @@ ok("canonical provenOfferTerms matches the frozen historical semantics for EVERY
 
 const src = readFileSync(new URL("../src/fillverify.ts", import.meta.url), "utf8").replace(/\/\/[^\n]*/g, "");
 ok("no local ProvenOfferTerms interface declaration in fillverify.ts (type re-export only)", !/interface ProvenOfferTerms/.test(src));
-ok("no object-literal terms construction in fillverify.ts (no `feeBps:` field writes)", !/feeBps:\s/.test(src));
+// B7b: the sums seam constructs an OfferState for the single-sourced fillOutputPlan, whose feeBps is the
+// PINNED producer's own output (`terms.feeBps`). That single reference is the ONLY feeBps write allowed -
+// any LOCALLY-DERIVED feeBps (`feeBps: feeBpsAt(...)`, a literal, an inline branch) would be re-deriving the
+// consensus fee and re-opens the hand-copy class this pin exists to forbid.
+const feeWrites = (src.match(/feeBps:\s*[^,;}\n]+/g) ?? []).map((w) => w.trim());
+ok("no LOCALLY-DERIVED feeBps in fillverify.ts (only the single-sourced `terms.feeBps` reference is allowed)",
+  feeWrites.every((w) => /^feeBps:\s*terms\.feeBps$/.test(w)));
 ok("exactly one provenOfferTerms call site in fillverify.ts", (src.match(/provenOfferTerms\(/g) ?? []).length === 1);
 
 console.log(`\nproven-terms-corpus: ${pass} passed, ${fail} failed`);

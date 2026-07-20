@@ -19,7 +19,10 @@
    "height": 29873,
    "feeBps": 0,
    "value": "30000000",
-   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec"
+   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  },
  {
@@ -41,7 +44,10 @@
   "terms": {
    "height": 29873,
    "feeBps": 0,
-   "value": "100000000"
+   "value": "100000000",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "25",
+   "wantType": "csd"
   }
  },
  {
@@ -62,7 +68,10 @@
   "terms": {
    "height": 29893,
    "feeBps": 0,
-   "value": "40000000"
+   "value": "40000000",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "200",
+   "wantType": "csd"
   }
  },
  {
@@ -82,7 +91,9 @@
   "terms": {
    "height": 29969,
    "feeBps": 100,
-   "value": "20000000"
+   "value": "20000000",
+   "giveName": "xname-8ma941",
+   "wantType": "csd"
   }
  },
  {
@@ -107,7 +118,10 @@
    "feeBps": 100,
    "value": "50000000",
    "taker": "0x006ede675891be2eed90192c0a0e0a06d60febb6",
-   "min": "10000000"
+   "min": "10000000",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "100",
+   "wantType": "csd"
   }
  },
  {
@@ -130,7 +144,10 @@
   "terms": {
    "height": 30319,
    "feeBps": 100,
-   "taker": "0x006ede675891be2eed90192c0a0e0a06d60febb6"
+   "taker": "0x006ede675891be2eed90192c0a0e0a06d60febb6",
+   "giveTicker": "CAIRN",
+   "giveAmount": "10000000000",
+   "wantType": "token"
   }
  },
  {
@@ -155,7 +172,10 @@
    "feeBps": 100,
    "value": "10000000",
    "taker": "0x006ede675891be2eed90192c0a0e0a06d60febb6",
-   "bid": "0x5ebeae39067e43c65947a0b0582667a47867863477b6f29f785f323065dba6dd"
+   "bid": "0x5ebeae39067e43c65947a0b0582667a47867863477b6f29f785f323065dba6dd",
+   "giveTicker": "CAIRN",
+   "giveAmount": "1000000000",
+   "wantType": "csd"
   }
  },
  {
@@ -176,7 +196,10 @@
   "terms": {
    "height": 30332,
    "feeBps": 100,
-   "value": "100000000"
+   "value": "100000000",
+   "giveTicker": "CAIRN",
+   "giveAmount": "500000000",
+   "wantType": "csd"
   }
  },
  {
@@ -199,7 +222,10 @@
    "height": 30340,
    "feeBps": 100,
    "value": "50000000",
-   "min": "5000000"
+   "min": "5000000",
+   "giveTicker": "CAIRN",
+   "giveAmount": "5000000000",
+   "wantType": "csd"
   }
  },
  {
@@ -222,7 +248,10 @@
    "height": 30343,
    "feeBps": 100,
    "value": "125000000",
-   "min": "5000000"
+   "min": "5000000",
+   "giveTicker": "CAIRN",
+   "giveAmount": "10000000000",
+   "wantType": "csd"
   }
  },
  {
@@ -245,7 +274,10 @@
    "height": 31360,
    "feeBps": 100,
    "value": "50000000",
-   "taker": "0x9d9305de03a77efd7f69720baff8e3e461cfe010"
+   "taker": "0x9d9305de03a77efd7f69720baff8e3e461cfe010",
+   "giveTicker": "PRBX2",
+   "giveAmount": "200",
+   "wantType": "csd"
   }
  },
  {
@@ -269,7 +301,9 @@
    "feeBps": 100,
    "value": "100000000",
    "taker": "0xd018baeb6167a87f244826f77f47f75ce26b0212",
-   "bid": "0xb29b2212f736797e0bde710cea3d08d007d9e1bda0fb50a14c693b8cd486c458"
+   "bid": "0xb29b2212f736797e0bde710cea3d08d007d9e1bda0fb50a14c693b8cd486c458",
+   "giveName": "szer",
+   "wantType": "csd"
   }
  },
  {
@@ -294,7 +328,10 @@
    "feeBps": 100,
    "value": "6000000",
    "taker": "0xcc450aa401bb9940d8e74a5713142ba7417a4c19",
-   "bid": "0x8faee2e6ff6b092ef418b0a676c253e3b29ea04a1756a954963bfb2cb0e56467"
+   "bid": "0x8faee2e6ff6b092ef418b0a676c253e3b29ea04a1756a954963bfb2cb0e56467",
+   "giveTicker": "CAIRN",
+   "giveAmount": "500000000",
+   "wantType": "csd"
   }
  },
  {
@@ -319,7 +356,10 @@
    "feeBps": 100,
    "value": "100000000",
    "taker": "0x8d7b6aaeb9e6c2aa446b8d610127ac2f56b6d1a2",
-   "bid": "0x3701e387441cac6955cf106d541468d72ba0cbbbb9ddf8e546f22cc60f43a643"
+   "bid": "0x3701e387441cac6955cf106d541468d72ba0cbbbb9ddf8e546f22cc60f43a643",
+   "giveTicker": "CAIRN",
+   "giveAmount": "9900990099",
+   "wantType": "csd"
   }
  },
  {
@@ -344,7 +384,10 @@
    "feeBps": 100,
    "value": "100000000",
    "taker": "0x8d7b6aaeb9e6c2aa446b8d610127ac2f56b6d1a2",
-   "bid": "0x160cdd6657cedf6546e6916c860ae4dfd9527106379f12eb8d1ef6fc56305b11"
+   "bid": "0x160cdd6657cedf6546e6916c860ae4dfd9527106379f12eb8d1ef6fc56305b11",
+   "giveTicker": "CAIRN",
+   "giveAmount": "9802960494",
+   "wantType": "csd"
   }
  },
  {
@@ -369,7 +412,10 @@
    "feeBps": 100,
    "value": "55000000",
    "taker": "0xcc450aa401bb9940d8e74a5713142ba7417a4c19",
-   "bid": "0xf2b836a843916603c35f36d1e9fe87de8a20e1944cb933a06d8e7fff052d7087"
+   "bid": "0xf2b836a843916603c35f36d1e9fe87de8a20e1944cb933a06d8e7fff052d7087",
+   "giveTicker": "CAIRN",
+   "giveAmount": "5000000000",
+   "wantType": "csd"
   }
  },
  {
@@ -394,7 +440,10 @@
    "feeBps": 100,
    "value": "10000000",
    "taker": "0xcc450aa401bb9940d8e74a5713142ba7417a4c19",
-   "bid": "0xef53909921d1bb7d3c34ddbd303aaebb4d474b29f4abd57d6715214664b5e367"
+   "bid": "0xef53909921d1bb7d3c34ddbd303aaebb4d474b29f4abd57d6715214664b5e367",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "200",
+   "wantType": "csd"
   }
  },
  {
@@ -419,7 +468,10 @@
    "feeBps": 100,
    "value": "51005000",
    "taker": "0x16e824f9ddf8186b01cc017155258f8d733c7c93",
-   "bid": "0xe351a8f3bf691c352897ab7fba2253e7607ab5f465adadfe033888bc517c0a33"
+   "bid": "0xe351a8f3bf691c352897ab7fba2253e7607ab5f465adadfe033888bc517c0a33",
+   "giveTicker": "CAIRN",
+   "giveAmount": "5000000000",
+   "wantType": "csd"
   }
  },
  {
@@ -444,7 +496,10 @@
    "feeBps": 100,
    "value": "51515050",
    "taker": "0x16e824f9ddf8186b01cc017155258f8d733c7c93",
-   "bid": "0x702df61b5cb416c89c836967f2be5fe260fe93b4457b875885a8a37e4d897f1f"
+   "bid": "0x702df61b5cb416c89c836967f2be5fe260fe93b4457b875885a8a37e4d897f1f",
+   "giveTicker": "CAIRN",
+   "giveAmount": "5000000000",
+   "wantType": "csd"
   }
  },
  {
@@ -466,7 +521,10 @@
   "terms": {
    "height": 32706,
    "feeBps": 100,
-   "value": "100000000"
+   "value": "100000000",
+   "giveTicker": "XEGWFI",
+   "giveAmount": "25",
+   "wantType": "csd"
   }
  },
  {
@@ -489,7 +547,10 @@
    "height": 32706,
    "feeBps": 100,
    "value": "30000000",
-   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec"
+   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "giveTicker": "XEGWFI",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  },
  {
@@ -510,7 +571,10 @@
   "terms": {
    "height": 34169,
    "feeBps": 150,
-   "value": "100000"
+   "value": "100000",
+   "giveTicker": "CAIRN",
+   "giveAmount": "1000",
+   "wantType": "csd"
   }
  },
  {
@@ -531,7 +595,10 @@
   "terms": {
    "height": 34189,
    "feeBps": 150,
-   "value": "100000"
+   "value": "100000",
+   "giveTicker": "CAIRN",
+   "giveAmount": "1000",
+   "wantType": "csd"
   }
  },
  {
@@ -554,7 +621,10 @@
    "height": 37020,
    "feeBps": 150,
    "value": "30000000",
-   "taker": "0x6b09ce74e6070ebc982ab0fb793a211c4d24f016"
+   "taker": "0x6b09ce74e6070ebc982ab0fb793a211c4d24f016",
+   "giveTicker": "XE6GMK",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  },
  {
@@ -576,7 +646,10 @@
   "terms": {
    "height": 37020,
    "feeBps": 150,
-   "value": "100000000"
+   "value": "100000000",
+   "giveTicker": "XE6GMK",
+   "giveAmount": "25",
+   "wantType": "csd"
   }
  },
  {
@@ -596,7 +669,9 @@
   "terms": {
    "height": 37681,
    "feeBps": 150,
-   "value": "4500000000"
+   "value": "4500000000",
+   "giveName": "69",
+   "wantType": "csd"
   }
  },
  {
@@ -617,7 +692,10 @@
   "terms": {
    "height": 38234,
    "feeBps": 150,
-   "value": "100000000"
+   "value": "100000000",
+   "giveTicker": "CAIRN",
+   "giveAmount": "100000000",
+   "wantType": "csd"
   }
  },
  {
@@ -637,7 +715,9 @@
   "terms": {
    "height": 38236,
    "feeBps": 150,
-   "value": "4000000000"
+   "value": "4000000000",
+   "giveName": "69",
+   "wantType": "csd"
   }
  },
  {
@@ -657,7 +737,9 @@
   "terms": {
    "height": 38236,
    "feeBps": 150,
-   "value": "4000000000"
+   "value": "4000000000",
+   "giveName": "69",
+   "wantType": "csd"
   }
  },
  {
@@ -677,7 +759,9 @@
   "terms": {
    "height": 38299,
    "feeBps": 150,
-   "value": "4000000000"
+   "value": "4000000000",
+   "giveName": "69",
+   "wantType": "csd"
   }
  },
  {
@@ -698,7 +782,10 @@
   "terms": {
    "height": 38317,
    "feeBps": 150,
-   "value": "1000000000"
+   "value": "1000000000",
+   "giveTicker": "CAIRN",
+   "giveAmount": "1000000000",
+   "wantType": "csd"
   }
  },
  {
@@ -718,7 +805,9 @@
   "terms": {
    "height": 38342,
    "feeBps": 150,
-   "value": "500000000"
+   "value": "500000000",
+   "giveName": "69",
+   "wantType": "csd"
   }
  },
  {
@@ -738,7 +827,9 @@
   "terms": {
    "height": 38901,
    "feeBps": 150,
-   "value": "200000000"
+   "value": "200000000",
+   "giveName": "dao",
+   "wantType": "csd"
   }
  },
  {
@@ -758,7 +849,9 @@
   "terms": {
    "height": 39592,
    "feeBps": 150,
-   "value": "100000000"
+   "value": "100000000",
+   "giveName": "swap",
+   "wantType": "csd"
   }
  },
  {
@@ -778,7 +871,9 @@
   "terms": {
    "height": 39680,
    "feeBps": 150,
-   "value": "200000000"
+   "value": "200000000",
+   "giveName": "swap",
+   "wantType": "csd"
   }
  },
  {
@@ -798,7 +893,9 @@
   "terms": {
    "height": 39684,
    "feeBps": 150,
-   "value": "200000000"
+   "value": "200000000",
+   "giveName": "dao",
+   "wantType": "csd"
   }
  },
  {
@@ -818,7 +915,9 @@
   "terms": {
    "height": 39694,
    "feeBps": 150,
-   "value": "200000000"
+   "value": "200000000",
+   "giveName": "swap",
+   "wantType": "csd"
   }
  },
  {
@@ -838,7 +937,9 @@
   "terms": {
    "height": 39697,
    "feeBps": 150,
-   "value": "200000000"
+   "value": "200000000",
+   "giveName": "dao",
+   "wantType": "csd"
   }
  },
  {
@@ -858,7 +959,9 @@
   "terms": {
    "height": 41381,
    "feeBps": 150,
-   "value": "200000000"
+   "value": "200000000",
+   "giveName": "6",
+   "wantType": "csd"
   }
  },
  {
@@ -878,7 +981,9 @@
   "terms": {
    "height": 41382,
    "feeBps": 150,
-   "value": "100000000"
+   "value": "100000000",
+   "giveName": "dex",
+   "wantType": "csd"
   }
  },
  {
@@ -898,7 +1003,9 @@
   "terms": {
    "height": 41749,
    "feeBps": 150,
-   "value": "200000000"
+   "value": "200000000",
+   "giveName": "dao",
+   "wantType": "csd"
   }
  },
  {
@@ -920,7 +1027,10 @@
   "terms": {
    "height": 44061,
    "feeBps": 150,
-   "value": "200000"
+   "value": "200000",
+   "giveTicker": "CAIRN",
+   "giveAmount": "100000000",
+   "wantType": "csd"
   }
  },
  {
@@ -942,7 +1052,10 @@
   "terms": {
    "height": 44062,
    "feeBps": 150,
-   "value": "200000"
+   "value": "200000",
+   "giveTicker": "CAIRN",
+   "giveAmount": "100000000",
+   "wantType": "csd"
   }
  },
  {
@@ -962,7 +1075,9 @@
   "terms": {
    "height": 44650,
    "feeBps": 150,
-   "value": "200000000"
+   "value": "200000000",
+   "giveName": "12",
+   "wantType": "csd"
   }
  },
  {
@@ -982,7 +1097,9 @@
   "terms": {
    "height": 44650,
    "feeBps": 150,
-   "value": "200000000"
+   "value": "200000000",
+   "giveName": "sex",
+   "wantType": "csd"
   }
  },
  {
@@ -1002,7 +1119,9 @@
   "terms": {
    "height": 44651,
    "feeBps": 150,
-   "value": "200000000"
+   "value": "200000000",
+   "giveName": "dapp",
+   "wantType": "csd"
   }
  },
  {
@@ -1022,7 +1141,9 @@
   "terms": {
    "height": 44662,
    "feeBps": 150,
-   "value": "200000000"
+   "value": "200000000",
+   "giveName": "1",
+   "wantType": "csd"
   }
  },
  {
@@ -1042,7 +1163,9 @@
   "terms": {
    "height": 44680,
    "feeBps": 150,
-   "value": "200000000"
+   "value": "200000000",
+   "giveName": "1",
+   "wantType": "csd"
   }
  },
  {
@@ -1066,7 +1189,9 @@
    "feeBps": 150,
    "value": "300000000",
    "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
-   "bid": "0x524dab8d26a3ecfca44d22cc02fb3c024c47664cd2a8b35aa4e82f22cb55109e"
+   "bid": "0x524dab8d26a3ecfca44d22cc02fb3c024c47664cd2a8b35aa4e82f22cb55109e",
+   "giveName": "dapp",
+   "wantType": "csd"
   }
  },
  {
@@ -1086,7 +1211,9 @@
   "terms": {
    "height": 47113,
    "feeBps": 150,
-   "value": "100000000"
+   "value": "100000000",
+   "giveName": "audit0705bb0c",
+   "wantType": "csd"
   }
  },
  {
@@ -1106,7 +1233,9 @@
   "terms": {
    "height": 47935,
    "feeBps": 150,
-   "value": "100000000"
+   "value": "100000000",
+   "giveName": "sex",
+   "wantType": "csd"
   }
  },
  {
@@ -1126,7 +1255,9 @@
   "terms": {
    "height": 47935,
    "feeBps": 150,
-   "value": "100000000"
+   "value": "100000000",
+   "giveName": "sexy",
+   "wantType": "csd"
   }
  },
  {
@@ -1146,7 +1277,9 @@
   "terms": {
    "height": 49534,
    "feeBps": 150,
-   "value": "500000000"
+   "value": "500000000",
+   "giveName": "agfgasdfgaasdf",
+   "wantType": "csd"
   }
  },
  {
@@ -1166,7 +1299,9 @@
   "terms": {
    "height": 49567,
    "feeBps": 150,
-   "value": "100000000"
+   "value": "100000000",
+   "giveName": "agfgasdfgaasdf",
+   "wantType": "csd"
   }
  },
  {
@@ -1186,7 +1321,9 @@
   "terms": {
    "height": 49626,
    "feeBps": 150,
-   "value": "100000000"
+   "value": "100000000",
+   "giveName": "6",
+   "wantType": "csd"
   }
  },
  {
@@ -1207,7 +1344,10 @@
   "terms": {
    "height": 47000,
    "feeBps": 150,
-   "value": "30000000"
+   "value": "30000000",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  },
  {
@@ -1230,7 +1370,10 @@
    "height": 47000,
    "feeBps": 150,
    "value": "30000000",
-   "taker": "0xabcdef1212121212121212121212121212121212"
+   "taker": "0xabcdef1212121212121212121212121212121212",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  },
  {
@@ -1255,7 +1398,10 @@
    "feeBps": 150,
    "value": "30000000",
    "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
-   "bid": "5000"
+   "bid": "5000",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  },
  {
@@ -1280,7 +1426,10 @@
    "feeBps": 150,
    "value": "30000000",
    "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
-   "bid": "0xffee000000000000000000000000000000000000"
+   "bid": "0xffee000000000000000000000000000000000000",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  },
  {
@@ -1305,7 +1454,10 @@
    "feeBps": 150,
    "value": "30000000",
    "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
-   "min": "1000"
+   "min": "1000",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  },
  {
@@ -1330,7 +1482,10 @@
    "feeBps": 150,
    "value": "30000000",
    "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
-   "min": "1000"
+   "min": "1000",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  },
  {
@@ -1353,7 +1508,10 @@
    "height": 47000,
    "feeBps": 150,
    "value": "30000000",
-   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec"
+   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  },
  {
@@ -1376,7 +1534,10 @@
    "height": 47000,
    "feeBps": 150,
    "value": "200000",
-   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec"
+   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  },
  {
@@ -1399,7 +1560,10 @@
   "terms": {
    "height": 47000,
    "feeBps": 150,
-   "taker": "0x006ede675891be2eed90192c0a0e0a06d60febb6"
+   "taker": "0x006ede675891be2eed90192c0a0e0a06d60febb6",
+   "giveTicker": "CAIRN",
+   "giveAmount": "10000000000",
+   "wantType": "token"
   }
  },
  {
@@ -1423,7 +1587,10 @@
    "height": 47000,
    "feeBps": 150,
    "value": "30000000",
-   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec"
+   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  },
  {
@@ -1446,7 +1613,10 @@
    "height": 30000,
    "feeBps": 100,
    "value": "30000000",
-   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec"
+   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  },
  {
@@ -1469,7 +1639,10 @@
    "height": 5000,
    "feeBps": 0,
    "value": "30000000",
-   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec"
+   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  },
  {
@@ -1492,7 +1665,10 @@
    "height": 30800,
    "feeBps": 100,
    "value": "30000000",
-   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec"
+   "taker": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "giveTicker": "XE5XNS",
+   "giveAmount": "50",
+   "wantType": "csd"
   }
  }
 ]

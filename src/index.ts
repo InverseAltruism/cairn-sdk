@@ -257,5 +257,12 @@ export type { CairnErrorCode, CairnErrorOptions } from "./errors.js";
 // F13 offer pre-verify (diligent-dApp on-chain corroboration before building a fillOffer's outputs). The
 // standalone `preverifyOffer` takes an injected light client + tx reader; `Cairn.verifyOfferForFill` wires the
 // checkpoint-anchored SPV light client for you. `bindOfferTerms`/`feeBpsAt` are the pure term-bind primitives.
-export { preverifyOffer, bindOfferTerms, feeBpsAt } from "./fillverify.js";
-export type { OfferFillCheck, ProvenOfferTerms } from "./fillverify.js";
+// B7b: also surfaces the discriminated fill-safety successors `fillEndorsement` (endorsed/refused/
+// not-endorsable - a token want is HONEST NON-ENDORSEMENT, never a refusal) and `fillOutputPlan`
+// (csd-outputs/token-settled/undeliverable), with the deprecated, behavior-frozen `fillIsSafe` /
+// `requiredFillOutputs` / `previewFill` kept for existing third-party consumers.
+export {
+  preverifyOffer, bindOfferTerms, feeBpsAt,
+  fillEndorsement, fillOutputPlan, fillIsSafe, requiredFillOutputs, previewFill,
+} from "./fillverify.js";
+export type { OfferFillCheck, ProvenOfferTerms, FillEndorsement, FillOutputPlan, FillSafety, FillPreview } from "./fillverify.js";

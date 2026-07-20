@@ -5,8 +5,12 @@
 // derived); each served-field lie (payto / seller / feeBps / spurious min) is REFUSED; and a below-checkpoint /
 // unprovable-author view fails SOFT (transient), never a hard decline. Pure unit test, no network.
 import { addrFromPriv, signDigest, buildScriptSig } from "@inversealtruism/csd-crypto";
+import { provenOfferTerms } from "@inversealtruism/cairnx-core";
 import { txid, sighash, canonicalJson, payloadHash, rpcTxToTx } from "../src/chain.js";
-import { preverifyOffer, feeBpsAt, bindOfferTerms } from "../src/index.js";
+import {
+  preverifyOffer, feeBpsAt, bindOfferTerms,
+  fillEndorsement, fillOutputPlan, fillIsSafe, requiredFillOutputs, previewFill,
+} from "../src/index.js";
 
 let pass = 0, fail = 0;
 const ok = async (n: string, fn: () => Promise<boolean> | boolean) => {
@@ -62,6 +66,32 @@ await ok("bindOfferTerms: honest == no mismatch; a lie -> mismatch", () => {
   return bindOfferTerms(servedFor(), t) === false && bindOfferTerms(servedFor({ feeBps: 0 }), t) === true;
 });
 
+// B7b: the 3-arg OPT-IN give legs (W7) + symmetric want-type refusal, over BRANDED proven terms.
+await ok("bindOfferTerms 3-arg: an honest give+type match -> no mismatch", () => {
+  const t = provenOfferTerms({ t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } } as never, H);
+  return bindOfferTerms(servedFor(), t, { give: true, wantType: true }) === false;
+});
+await ok("[W7 give shortchange] a served give.amount inflated a millionfold is REFUSED (only the opt-in give leg catches it)", () => {
+  const t = provenOfferTerms({ t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } } as never, H);
+  return bindOfferTerms(servedFor({ give: { ticker: "AAA", amount: "10000000000" } }), t, { give: true, wantType: true }) === true
+      && bindOfferTerms(servedFor({ give: { ticker: "AAA", amount: "10000000000" } }), t) === false; // 2-arg is byte-identical to pre-B6: does NOT catch the give
+});
+await ok("[want-type flip] a proven TOKEN offer served as CSD is REFUSED by the wantType leg (the reverse the legacy value leg misses)", () => {
+  const t = provenOfferTerms({ t: "offer", give: { ticker: "AAA", amount: "10" }, want: { ticker: "BBB", amount: "5", payto: SELLER } } as never, H);
+  // served as CSD (want.value, no ticker): the legacy value leg does NOT fire (a proven token has no value)
+  return bindOfferTerms(servedFor(), t, { give: true, wantType: true }) === true
+      && bindOfferTerms(servedFor(), t) === false;
+});
+
+// B7b: the discriminated successors are surfaced; the deprecated funcs stay exported + behavior-frozen.
+await ok("fillEndorsement / fillOutputPlan surfaced; fillIsSafe / requiredFillOutputs / previewFill still exported", () =>
+  [fillEndorsement, fillOutputPlan, fillIsSafe, requiredFillOutputs, previewFill].every((f) => typeof f === "function"));
+await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsement, NEVER a refusal - the B7f trap)", () => {
+  const offer = { id: "0x" + "00".repeat(32), seller: SELLER, give: { ticker: "AAA", amount: "10" }, want: { ticker: "BBB", amount: "5", payto: SELLER }, status: "open", expiresEpoch: 0, height: H, feeBps: 150 };
+  const e = fillEndorsement(offer as never, SELLER, "5", H);
+  return e.verdict === "not-endorsable";
+});
+
 // honest CSD offer -> verified, payto/seller/terms derived
 {
   const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
@@ -84,11 +114,34 @@ await ok("bindOfferTerms: honest == no mismatch; a lie -> mismatch", () => {
   });
   await ok("[deflated feeBps] a served feeBps=0 (proven 150) is REFUSED", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, feeBps: 0 }) });
-    return r.ok === false && /fee\/rebate\/partial terms/.test(r.reason ?? "");
+    return r.ok === false && /terms don't match the offer's on-chain record/.test(r.reason ?? "");
   });
   await ok("[spurious min] a min added to a whole-fill offer is REFUSED", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, min: "1" }) });
     return r.ok === false && /terms/.test(r.reason ?? "");
+  });
+  await ok("[give shortchange via preverifyOffer] a served give.amount lie is REFUSED (proves the 3-arg give flip is wired in)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, give: { ticker: "AAA", amount: "999999999" } }) });
+    return r.ok === false && /terms don't match the offer's on-chain record/.test(r.reason ?? "");
+  });
+
+  // B7b sums seam (W3/M1): a WHOLE fill of this non-partial CSD offer returns the PROVEN CSD output plan.
+  await ok("[sums] passing `pay` returns the proven outputPlan (single-sourced fillOutputPlan)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000" });
+    return r.ok === true && Array.isArray(r.outputPlan) && r.outputPlan.length > 0 && r.outputPlan.some((o) => o.to === SELLER) && r.outputPlan.every((o) => typeof o.value === "bigint");
+  });
+  await ok("[sums honest] plannedOutputs equal to the proven plan is ACCEPTED (no false refusal)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000" });
+    const planned = Object.fromEntries((r.outputPlan ?? []).map((o) => [o.to, o.value.toString()]));
+    const r2 = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000", plannedOutputs: planned });
+    return r2.ok === true;
+  });
+  await ok("[W3 overpay] a planned leg above the proven plan is REFUSED (N26 smuggle / overpay class)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000" });
+    const planned = Object.fromEntries((r.outputPlan ?? []).map((o) => [o.to, o.value.toString()]));
+    planned[SELLER] = (BigInt(planned[SELLER] ?? "0") + 100000n).toString();   // overpay the recipient leg
+    const r2 = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000", plannedOutputs: planned });
+    return r2.ok === false && /proven fill outputs/.test(r2.reason ?? "");
   });
   await ok("[not merkle-proven] a below-checkpoint/rpc-trusted view fails SOFT (transient), not a hard decline", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash, H, "rpc-trusted", false), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }) });
