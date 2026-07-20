@@ -267,6 +267,28 @@ console.log("=== connector: F14 nested SubmitResult refusal contract ===");
   ok("F14: propose also throws on a nested BAD_REQUEST refusal", pe instanceof CairnError && pe.code === "BAD_REQUEST" && pe.retryable === false);
 }
 
+console.log("=== B7c: per-call provider timeout ===");
+{
+  installWindow();
+  const grab = async (fn: () => Promise<unknown>): Promise<unknown> => { try { return await fn(); } catch (e) { return e; } };
+
+  // a fast provider resolves normally even with a tiny timeout (no false rejection of a prompt answer)
+  const fast = new WalletConnection(mockProvider(), { timeoutMs: 5000 });
+  ok("a fast provider resolves before the timeout", (await fast.send({ to: "0xd", amount: 1 })).txid === "0xtx");
+
+  // a hung write REJECTS with a fail-closed CairnError (retryable:false) once the (short, test-set) timeout fires
+  const hung = new WalletConnection(mockProvider({ send: () => new Promise(() => {}) }), { timeoutMs: 20 });
+  const te = await grab(() => hung.send({ to: "0xd", amount: 1 }));
+  ok("a hung write times out with a fail-closed CairnError (retryable === false, never a blind auto-retry)",
+    te instanceof CairnError && te.retryable === false && /did not respond to send/.test((te as CairnError).shortMessage));
+
+  // the timeout is GENEROUS by default (it must never reject an in-flight human approval): a call that
+  // resolves after a human-paced delay still succeeds under the default (10-minute) budget
+  const slowish = new WalletConnection(mockProvider({ fillOffer: () => new Promise((r) => setTimeout(() => r({ ok: true, result: { ok: true, txid: "0xfill" } }), 40)) }));
+  ok("the default (generous) timeout does not reject a normal, human-paced approval",
+    (await slowish.fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 1 }] })).txid === "0xfill");
+}
+
 clearWindow();
 console.log(`\nconnect.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

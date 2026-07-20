@@ -12,11 +12,18 @@
 // the keys and the approval flow. The private key is never exposed to the page.
 
 import {
+  CairnError,
   NotInstalledError,
   UnsupportedMethodError,
   mapProviderError,
   mapSubmitResultError,
 } from "./errors.js";
+
+// B7c (REBIND, cairn-sdk LOW): the default per-call provider timeout. GENEROUS (10 minutes) on purpose -
+// write methods legitimately block on the user's clear-sign approval, so a short default would reject an
+// in-flight approval the user is still reading, which is worse than the hung-provider bug it guards. 0
+// disables it. Override per connection via `new WalletConnection(provider, { timeoutMs })`.
+const DEFAULT_PROVIDER_TIMEOUT_MS = 10 * 60_000;
 
 /** Result of `connect()` / `getAddress()`. */
 export interface ConnectResult {
@@ -290,9 +297,26 @@ function unwrapWrite(reply: ProviderReply<TxResult>): TxResult {
 export class WalletConnection {
   readonly provider: CairnProvider;
   private _addr: string | null = null;
+  /** B7c: per-call provider timeout (ms). GENEROUS by default so it never rejects an in-flight human
+   *  approval; 0 disables it. Every provider call (writes especially) races against it. */
+  private readonly _timeoutMs: number;
 
-  constructor(provider: CairnProvider) {
+  constructor(provider: CairnProvider, opts: { timeoutMs?: number } = {}) {
     this.provider = provider;
+    this._timeoutMs = opts.timeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+  }
+
+  // B7c: race a provider call against the per-call timeout. On timeout, throw a fail-closed CairnError
+  // (retryable:false: a write may already have reached the wallet, so never invite a blind auto-retry). The
+  // genuine wallet resolves quickly once the user acts; this only fires on a truly hung/absent response.
+  private call<T>(op: () => Promise<T> | T, label: string): Promise<T> {
+    const ms = this._timeoutMs;
+    if (!Number.isFinite(ms) || ms <= 0) return Promise.resolve(op());
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new CairnError(`the wallet did not respond to ${label} within ${ms}ms`, { retryable: false })), ms);
+    });
+    return Promise.race([Promise.resolve(op()), timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
   }
 
   /** The wallet's version string (e.g. "0.2.x"). */
@@ -307,14 +331,14 @@ export class WalletConnection {
 
   /** Request connection. First time per origin prompts the user; afterwards may be silent. */
   async connect(): Promise<string> {
-    const { addr } = unwrap(await this.provider.connect());
+    const { addr } = unwrap(await this.call(() => this.provider.connect(), "connect"));
     this._addr = addr;
     return addr;
   }
 
   /** Get the connected address (does not force a new connection prompt if already consented). */
   async getAddress(): Promise<string> {
-    const { addr } = unwrap(await this.provider.getAddress());
+    const { addr } = unwrap(await this.call(() => this.provider.getAddress(), "getAddress"));
     this._addr = addr;
     return addr;
   }
@@ -328,7 +352,7 @@ export class WalletConnection {
     if (typeof this.provider.signIn !== "function") {
       return Promise.reject(new UnsupportedMethodError("this wallet does not expose signIn()"));
     }
-    return Promise.resolve(this.provider.signIn()).then(unwrap);
+    return this.call(() => this.provider.signIn!(), "signIn").then(unwrap);
   }
 
   /**
@@ -345,7 +369,7 @@ export class WalletConnection {
     if (typeof this.provider.signInWithCsd !== "function") {
       return Promise.reject(new UnsupportedMethodError("this wallet predates Sign-in-with-CSD — ask the user to update the Cairn Wallet"));
     }
-    return Promise.resolve(this.provider.signInWithCsd(params)).then(unwrap);
+    return this.call(() => this.provider.signInWithCsd!(params), "signInWithCsd").then(unwrap);
   }
 
   /** True if this wallet supports audience-bound SIWC (safe to call `signInWithCsd`). */
@@ -356,7 +380,7 @@ export class WalletConnection {
   /** Feature/capability detection. Returns null if the wallet predates `getCapabilities`. */
   async getCapabilities(): Promise<WalletCapabilities | null> {
     if (typeof this.provider.getCapabilities !== "function") return null;
-    try { return await this.provider.getCapabilities(); } catch { return null; }
+    try { return await this.call(() => this.provider.getCapabilities!(), "getCapabilities"); } catch { return null; }
   }
 
   /**
@@ -370,13 +394,13 @@ export class WalletConnection {
     if (typeof this.provider.fillOffer !== "function") {
       return Promise.reject(new UnsupportedMethodError("this wallet predates fillOffer() — ask the user to update the Cairn Wallet"));
     }
-    return Promise.resolve(this.provider.fillOffer(params)).then(unwrapWrite);
+    return this.call(() => this.provider.fillOffer!(params), "fillOffer").then(unwrapWrite);
   }
 
   /** This origin's current permission grant (EIP-2255-style). Silent; [] if none / unsupported. */
   async getPermissions(): Promise<WalletPermission[]> {
     if (typeof this.provider.getPermissions !== "function") return [];
-    return unwrap(await this.provider.getPermissions());
+    return unwrap(await this.call(() => this.provider.getPermissions!(), "getPermissions"));
   }
 
   /** Explicitly request permission to see the address (prompts, like connect). */
@@ -384,13 +408,13 @@ export class WalletConnection {
     if (typeof this.provider.requestPermissions !== "function") {
       return Promise.reject(new UnsupportedMethodError("this wallet predates requestPermissions — use connect()"));
     }
-    return Promise.resolve(this.provider.requestPermissions()).then(unwrap);
+    return this.call(() => this.provider.requestPermissions!(), "requestPermissions").then(unwrap);
   }
 
   /** Revoke THIS origin's own access (silent). Returns { revoked }. Safe no-op on older wallets. */
   async revokePermissions(): Promise<{ revoked: boolean }> {
     if (typeof this.provider.revokePermissions !== "function") return { revoked: false };
-    return unwrap(await this.provider.revokePermissions());
+    return unwrap(await this.call(() => this.provider.revokePermissions!(), "revokePermissions"));
   }
 
   /**
@@ -409,22 +433,22 @@ export class WalletConnection {
 
   /** Send CSD (always prompts with clear-signing; wallet picks inputs + returns change to itself). */
   send(params: SendParams): Promise<TxResult> {
-    return Promise.resolve(this.provider.send(params)).then(unwrapWrite);
+    return this.call(() => this.provider.send(params), "send").then(unwrapWrite);
   }
 
   /** Low-level Propose (always prompts). Prefer `cairn.board.propose()` which computes the hash/uri/expiry. */
   propose(params: ProposeParams): Promise<TxResult> {
-    return Promise.resolve(this.provider.propose(params)).then(unwrapWrite);
+    return this.call(() => this.provider.propose(params), "propose").then(unwrapWrite);
   }
 
   /** Attest/support a proposal (always prompts). */
   attest(params: AttestParams): Promise<TxResult> {
-    return Promise.resolve(this.provider.attest(params)).then(unwrapWrite);
+    return this.call(() => this.provider.attest(params), "attest").then(unwrapWrite);
   }
 
   /** Seal a commit-reveal claim (always prompts; salt stays inside the wallet). */
   sealClaim(params: SealClaimParams): Promise<TxResult> {
-    return Promise.resolve(this.provider.sealClaim(params)).then(unwrapWrite);
+    return this.call(() => this.provider.sealClaim(params), "sealClaim").then(unwrapWrite);
   }
 
   /** Reveal a previously sealed claim by its sealing txid (always prompts). */
@@ -432,7 +456,7 @@ export class WalletConnection {
     if (typeof txid !== "string" || !txid) {
       return Promise.reject(new UnsupportedMethodError("revealClaim requires the sealing txid"));
     }
-    return Promise.resolve(this.provider.revealClaim(txid)).then(unwrapWrite);
+    return this.call(() => this.provider.revealClaim(txid), "revealClaim").then(unwrapWrite);
   }
 }
 

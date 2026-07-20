@@ -185,7 +185,11 @@ export class SubmitInFlightError extends CairnError {
  * next to the human `error` string — that is the PREFERRED branch (B10; UX copy may change).
  * The string matching below stays as the fallback for pre-0.2.46 wallets.
  */
-const NATIVE_CODES = new Set<CairnErrorCode>(["ACCOUNT_CHANGED", "FIRST_PARTY_ONLY", "RATE_LIMITED", "APPROVAL_CLOSED", "FORBIDDEN", "INTERNAL"]);
+// B7c (REBIND, cairn-sdk LOW): the DEAD entries were removed. `APPROVAL_CLOSED` is already mapped to
+// UserRejectedError at the top of mapProviderError, and `ACCOUNT_CHANGED` is in NESTED_TERMINAL (checked
+// first), so NEITHER could ever reach this set's branch below - both were unreachable dead code. The
+// remaining four are the genuine native-relayed codes with no earlier handler.
+const NATIVE_CODES = new Set<CairnErrorCode>(["FIRST_PARTY_ONLY", "RATE_LIMITED", "FORBIDDEN", "INTERNAL"]);
 
 // F14: nested SubmitResult codes (wallet 0.2.54+) classified into buckets. TRANSIENT = nothing was signed,
 // safe to auto-retry shortly. TERMINAL = a definitive fund-safety / validation refusal, nothing was sent, no

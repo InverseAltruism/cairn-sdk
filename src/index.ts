@@ -16,7 +16,7 @@
 //   await cairn.board.propose({ domain: "csd:apps", title: "My dApp", body: "…" });
 
 import { Http, type FetchLike } from "./http.js";
-import { Chain, LightClient } from "./chain.js";
+import { Chain, LightClient, type BlockHeader } from "./chain.js";
 import { BoardClient } from "./board.js";
 import { IndexerClient } from "./indexer.js";
 import { ContentClient } from "./content.js";
@@ -72,9 +72,25 @@ export interface CairnConfig {
 // baked anchor — `cairn/public/trade/swapguard.js` CP; test/spv-checkpoint.test.ts asserts equality so the
 // two literals can't silently drift). A consensus block hash, not a trusted server's word — the light client
 // re-verifies every header forward from here. Pin a newer one via config.spvCheckpoint as the chain grows.
+// B7c (REBIND W12) note on the forward-bump: a 38,142 anchor costs every consumer a checkpoint..tip header
+// sync (now batched + retried by seededSpvLight below, so it is a few requests, not a per-height flood).
+// Moving the anchor forward shrinks that span, but the checkpoint is a SHARED cross-repo literal that MUST
+// land at the SAME value in swapguard.js's CP AND cairn/deploy/spv-checkpoint IN THE SAME change
+// (spv-checkpoint.test.ts fails on any drift). So the bump is a COORDINATED runbook step, not a unilateral
+// SDK edit; the recipe (pick a well-buried height, read its consensus block hash, update all three literals
+// together, re-run the pin) is in this campaign's b7bc-record. Until then this stays at swapguard's live value.
 export const DEFAULT_SPV_CHECKPOINT = { height: 38142, hash: "0x00000000000140f023cc0ee1457a40833f2fcb4de44291b9d373e50f17b97232" };
 
 const DEFAULT_CAIRN = "https://cairn-substrate.com";
+
+// W12: SPV header-batch transport tuning (mirrors cairn/public/trade/swapguard.js's headersBatch). The
+// per-attempt timeout sits ABOVE the cairn server's 10s /api/headers whole-request deadline so a clean 502
+// is retried rather than raced; the retry budget bounds 429/502/503 + transport errors, then THROWS so the
+// light client sync fails CLOSED. Every retried header is re-verified downstream, so retrying carries no trust.
+const SPV_HTTP_TIMEOUT_MS = 15000;
+const SPV_HTTP_MAX_RETRIES = 4;
+const spvSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const spvRetryDelayMs = (attempt: number, retryAfterSecs: number) => Math.min(4000, Math.max(700 * (attempt + 1), retryAfterSecs * 1000));
 
 
 export class Cairn {
@@ -93,6 +109,8 @@ export class Cairn {
   private _spvLight: LightClient | null = null;
   private _spvSeeded = false;
   private readonly _spvCp: { height: number; hash: string };
+  // W12: the cairn base the SPV header-batch provider fetches /api/headers from (same base the rest of the SDK uses).
+  private readonly _cairnBase: string;
 
   constructor(config: CairnConfig = {}) {
     this.config = config;
@@ -104,6 +122,7 @@ export class Cairn {
     const indexer = (config.baseUrls?.indexer ?? `${cairn}/explorer/api`).replace(/\/+$/, "");
 
     this.cairnHttp = new Http({ baseUrl: cairn, fetch, timeoutMs });
+    this._cairnBase = cairn;
     const indexerHttp = new Http({ baseUrl: indexer, fetch, timeoutMs });
     // Optional direct swarm gateway (not public by default — the indexer fronts it).
     const swarmHttp = config.baseUrls?.swarm
@@ -154,9 +173,74 @@ export class Cairn {
   /** The PoW-verifying SPV light client, seeded ONCE from the pinned checkpoint (shared by the M3 header-merkle
    *  bind and the F13 offer pre-verify). Reused across calls; the first call near tip syncs the post-checkpoint span. */
   private async seededSpvLight(): Promise<LightClient> {
-    if (!this._spvLight) this._spvLight = new LightClient({ client: this.chain.client, checkpoints: { [this._spvCp.height]: this._spvCp.hash } });
-    if (!this._spvSeeded) { await this._spvLight.syncFromCheckpoint(this._spvCp.height, this._spvCp.hash); this._spvSeeded = true; }
+    // W12: pass a BATCH header provider (checkpoint..tip in a few batched requests, each header re-verified
+    // so it carries ZERO trust). Fixing the sync WITHOUT this converts a fast wrong answer into a
+    // multi-thousand-request flood, so the provider is MANDATORY, not an optimization.
+    if (!this._spvLight) this._spvLight = new LightClient({
+      client: this.chain.client,
+      checkpoints: { [this._spvCp.height]: this._spvCp.hash },
+      headersBatchProvider: (from, count) => this.fetchHeadersBatch(from, count),
+    });
+    if (!this._spvSeeded) {
+      await this._spvLight.syncFromCheckpoint(this._spvCp.height, this._spvCp.hash);
+      // W12: ADVANCE TO THE LIVE TIP after the seed. Before B7c the SDK's SPV only seeded the checkpoint
+      // window and never reached tip, so a near-tip offer never merkle-proved and every downstream fill
+      // bind was dead (the inertness that hid the SDK's want-type hole; this is why B7c lands AFTER B7b's
+      // binds are on). A transient tip/sync failure must NOT brick the seed: verifyTxInclusion self-syncs
+      // (also batched) to a tx's height on demand, so fall soft and keep the seeded client usable.
+      try {
+        const tipHeight = Number((await this.chain.tip()).height);
+        const have = this._spvLight.baseHeight + this._spvLight.chain.length - 1;
+        if (Number.isFinite(tipHeight) && tipHeight > have) await this._spvLight.sync(tipHeight);
+      } catch { /* keep the seeded client; on-demand batched sync covers what this pre-warm missed */ }
+      this._spvSeeded = true;
+    }
     return this._spvLight;
+  }
+
+  /**
+   * W12 batch header transport for the checkpoint..tip forward sync, backed by the cairn server's
+   * `/api/headers/:from/:count`. Carries ZERO trust: the LightClient re-verifies every header's PoW /
+   * prev-link / LWMA, so a forged or stale row fails closed and retrying transport proves nothing new.
+   * Retry budget: a 429 (per-IP header budget) or 502/503 (a height past the lagging indexer, or the
+   * server's 10s deadline) is a transient data-availability hiccup; back off (honouring Retry-After) a
+   * bounded number of times, then THROW so `sync()` fails closed. A non-dense range is rejected.
+   *
+   * B7d / F6 DEPENDENCY: `/api/headers` serves no Access-Control-Allow-Origin today (`corsPublic` is
+   * mounted on `/explorer/api`, `/trade/api` and `/api/rpc`, not here). A SAME-ORIGIN dApp (hosted on the
+   * cairn base) reaches it now; a CROSS-ORIGIN third-party dApp cannot until B7d adds the CORS mount and
+   * restarts the cairn service. This code is correct as written; it becomes reachable cross-origin only
+   * once B7d ships. This is a recorded dependency, not a blocker for authoring/testing.
+   */
+  private async fetchHeadersBatch(from: number, count: number): Promise<{ header: BlockHeader; hash: string }[]> {
+    const g = this.config.fetch ?? (globalThis.fetch as FetchLike | undefined);
+    if (!g) throw new Error("No fetch available for SPV header sync - pass `fetch` in the SDK options.");
+    const doFetch: FetchLike = this.config.fetch ? this.config.fetch : (g.bind(globalThis) as FetchLike);
+    const url = `${this._cairnBase}/api/headers/${from}/${count}`;
+    for (let attempt = 0; ; attempt++) {
+      let res: Response;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), SPV_HTTP_TIMEOUT_MS);
+      try { res = await doFetch(url, { signal: ctrl.signal }); }
+      catch (e) {
+        if (attempt >= SPV_HTTP_MAX_RETRIES) throw e;   // transport error / timeout: bounded retry, then fail closed
+        await spvSleep(spvRetryDelayMs(attempt, 0));
+        continue;
+      } finally { clearTimeout(timer); }
+      if (res.ok) {
+        // ZERO trust in the row shape: the LightClient re-verifies every header (PoW / prev-link / LWMA)
+        // against the pinned checkpoint, so a wrong `header` fails closed downstream, not here.
+        const rows = ((await res.json()) as { headers?: { header: BlockHeader; hash: string }[] })?.headers;
+        if (!Array.isArray(rows) || rows.length !== count) throw new Error(`/api/headers: non-dense range (${from}/${count})`);
+        return rows.map((r) => ({ header: r.header, hash: r.hash }));
+      }
+      if ((res.status === 429 || res.status === 502 || res.status === 503) && attempt < SPV_HTTP_MAX_RETRIES) {
+        res.body?.cancel?.().catch(() => {});   // drain the discarded body (undici holds the socket otherwise)
+        await spvSleep(spvRetryDelayMs(attempt, Number(res.headers.get("retry-after")) || 0));
+        continue;
+      }
+      throw new Error(`/api/headers ${res.status}`);
+    }
   }
 
   /**
