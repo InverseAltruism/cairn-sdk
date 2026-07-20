@@ -12,7 +12,13 @@ import { readFileSync } from "node:fs";
 
 declare const process: { exit(code: number): void };
 let pass = 0, fail = 0;
-const ok = (n: string, c: boolean) => { c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n)); };
+// The runtime vacuous-assertion guard the .mjs twins carry (G6 referee R1): this file is outside
+// tsconfig include, so tsc never enforces the `c: boolean` annotation, and tsx does not typecheck.
+// Throw on a function condition so a future `ok(name, () => ...)` regression goes RED, not silently green.
+const ok = (n: string, c: boolean) => {
+  if (typeof c === "function") throw new Error(`vacuous assertion (function passed as cond): ${n}`);
+  c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n));
+};
 
 interface Entry { id: string; source: string; height: number; rec: unknown; terms: unknown }
 const corpus = JSON.parse(readFileSync(new URL("./fixtures/proven-terms-corpus.json", import.meta.url), "utf8")) as Entry[];
