@@ -19,11 +19,15 @@
 // exports; the copy was retired once the pin carried them.
 import { rpcTxToTx, type RpcTxJson } from "@inversealtruism/csd-client";
 import { txid, payloadHash } from "@inversealtruism/csd-codec";
-import { parseRecord, feeBpsAt, bindOfferTerms } from "@inversealtruism/cairnx-core";
+import { parseRecord, feeBpsAt, bindOfferTerms, provenOfferTerms, type ProvenOfferTerms } from "@inversealtruism/cairnx-core";
 import type { InclusionResult } from "@inversealtruism/csd-light";
 
-/** The fee/rebate-relevant fields of an offer, derived from the MERKLE-PROVEN offer (never a served object). */
-export interface ProvenOfferTerms { height: number; feeBps: number; value?: string; taker?: string; bid?: string; min?: string }
+// B4b (REBIND W2): the terms interface + producer are SINGLE-SOURCED in the pinned cairnx-core
+// (provenOfferTerms, verifyfill.ts) - this file used to carry a local interface copy and one of the
+// four hand-built producers the audit flagged. Corpus-equivalence over every real on-chain offer
+// (55) + synthetic envelope variants proved the old copy byte-identical to canonical before the
+// swap (test/proven-terms-corpus.test.ts pins it). Re-exported as a POINTER for existing importers.
+export type { ProvenOfferTerms } from "@inversealtruism/cairnx-core";
 
 /** The trust-labeled verdict. `ok:false` + `transient:true` = a retryable chain-catching-up soft-fail (NOT a
  *  proven mismatch). `payto`/`seller`/`terms` are populated whenever they could be merkle-derived. */
@@ -115,14 +119,10 @@ export async function preverifyOffer(opts: {
   if (!seller) return { ok: false, trust: "verified", transient: true, blockHeight, reason: "couldn't prove the offer's on-chain author yet; the chain view may be catching up, try again" };
   const w = rec.want ?? {};
   const payto = (w.payto && ADDR.test(String(w.payto).toLowerCase())) ? String(w.payto).toLowerCase() : seller;
-  const terms: ProvenOfferTerms = {
-    height: blockHeight,
-    feeBps: feeBpsAt(blockHeight),
-    value: w.value !== undefined ? String(w.value) : undefined,
-    taker: rec.taker !== undefined ? String(rec.taker).toLowerCase() : undefined,
-    bid: rec.bid !== undefined ? String(rec.bid).toLowerCase() : undefined,
-    min: rec.min !== undefined ? String(rec.min) : undefined,
-  };
+  // B4b: the ONE pinned producer; blockHeight is the merkle-proven inclusion height, never served.
+  // The cast is sound: rec passed the t==="offer" payload-hash-bound guard above; parseRecord's
+  // widened partial type simply lacks the OfferRecord brand the pinned signature demands.
+  const terms: ProvenOfferTerms = provenOfferTerms(rec as Parameters<typeof provenOfferTerms>[0], blockHeight);
   const base = { payto, seller, terms, blockHeight };
 
   if (opts.servedOffer !== undefined && opts.servedOffer !== null) {
