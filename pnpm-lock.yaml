@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@inversealtruism/cairnx-core':
-        specifier: 0.1.38
-        version: 0.1.38
+        specifier: 0.1.40
+        version: 0.1.40
       '@inversealtruism/csd-client':
         specifier: 0.1.15
         version: 0.1.15
@@ -363,8 +363,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@inversealtruism/cairnx-core@0.1.38':
-    resolution: {integrity: sha512-uc8Bw8ann9MxulVOurUrdTD+NA6hk4Vdl+JT72yAr0Db6R/11BqFKtt0Qq6ASgt/ffCaP8wgu41G8AKxbbJkSQ==}
+  '@inversealtruism/cairnx-core@0.1.40':
+    resolution: {integrity: sha512-uJ3/rf5gi6wNluYWHPBi2ySbuAPPqhq6bFrOquA9/5RWTS05uN7f24DM0kHjzInB25WF6HR0Qhj3Xn9kBnTClA==}
     engines: {node: '>=18'}
 
   '@inversealtruism/csd-client@0.1.15':
@@ -930,7 +930,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.0':
     optional: true
 
-  '@inversealtruism/cairnx-core@0.1.38':
+  '@inversealtruism/cairnx-core@0.1.40':
     dependencies:
       '@inversealtruism/csd-codec': 0.1.15
 
