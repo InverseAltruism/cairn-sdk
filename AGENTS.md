@@ -88,13 +88,13 @@ Maintainers publish to npm (public access) manually, with a transient npm token 
 - mapProviderError maps the outer error-code set; the 13 nested wallet SubmitResult codes are documented but unmapped; WALLET-ERROR-CODES.md in the wallet repo is the canonical contract.
 - Large-tx submits: the hosted RPC proxy at cairn-substrate.com historically rejected very large multi-input submits to POST /api/rpc/tx/submit with HTTP 400 before the tx ever reached the node, because of a 64KB body cap (hit at roughly 127+ inputs). The cap is being raised to 512KB on that route. Symptom: a big Chain.send()/submit 400s with no node-side error. Debugging hint: suspect the proxy body cap (and check whether the raised cap is live on the server you target) before blaming the SDK.
 
-## State snapshot (2026-07-21, REBIND S-06; verify with git log before trusting)
+## State snapshot (2026-07-23, post-REBIND LTS baseline; verify with git log before trusting)
 
-Version in tree 0.3.2 on branch rebind/b4b = the staged 0.4.0-TO-BE (B4b single-source + B7b fillverify flip/surface + B7c seededSpvLight W12 sync + the FU-9 runner-guards fixture). npm has 0.3.2; tags through v0.3.2. The 0.4.0 bump, cairnx-core 0.1.40 re-pin, --ff-only merge to master, tag and publish are close-out/runbook steps (never pin an unpublished version). Suite 12/12 via test/run.mjs. MIT.
+Version 0.4.0 on master, PUBLISHED to npm 2026-07-21 (tag v0.4.0 at 05b1515; rebind/b4b merged = B4b single-source + B7b fillverify flip/surface + B7c seededSpvLight W12 sync + the FU-9 runner-guards fixture; pins cairnx-core 0.1.40 + csd-tx 0.1.17). Suite 12/12 via test/run.mjs. MIT.
 
 Open items (do not act without a maintainer/release ask):
 - DEFAULT_SPV_CHECKPOINT tri-repo coordinated forward-bump (perf only, parity 38142 kept deliberately; see the index.ts bullet).
-- The seededSpvLight batch provider is cross-origin-reachable only once cairn's B7d CORS mount is deployed (rides cairn 0.5.27 + restart).
+- The seededSpvLight batch provider's cross-origin reach (cairn's B7d CORS mount) is DEPLOYED: cairn 0.5.27+ live with CORS on /api/headers since 2026-07-21.
 - The hosted RPC proxy's large-submit body-cap raise (64KB -> 512KB on /api/rpc/tx/submit): shipped server-side in cairn; verify live before leaning on it (see gotchas).
 
 ## Cross-repo map
