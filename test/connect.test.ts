@@ -289,6 +289,42 @@ console.log("=== B7c: per-call provider timeout ===");
     (await slowish.fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 1 }] })).txid === "0xfill");
 }
 
+console.log("=== P75-5 MF-10: fill capability advisory (WARN, NEVER BLOCK) ===");
+{
+  const grab = async (fn: () => Promise<unknown>): Promise<unknown> => { try { return await fn(); } catch (e) { return e; } };
+  const grabWarns = () => {
+    const seen: string[] = []; const orig = console.warn;
+    console.warn = (...a: unknown[]) => { seen.push(a.map(String).join(" ")); };
+    return { seen, restore: () => { console.warn = orig; } };
+  };
+
+  // PERMANENT TRIPWIRE: the resolve half of this first assertion must outlive every future hardening
+  // pass. A wallet-version HARD GATE in fillOffer is explicitly declined; this reds if one appears.
+  const w59 = new WalletConnection(mockProvider({ version: "0.2.59" }));
+  const g = grabWarns();
+  let r1: unknown, r2: unknown;
+  try {
+    r1 = await grab(() => w59.fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 10 }] }));
+    r2 = await grab(() => w59.fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 10 }] }));
+  } finally { g.restore(); }
+  ok("MF-10 TRIPWIRE: a 0.2.59 wallet's fill STILL RESOLVES with the txid (WARN, NEVER BLOCK)",
+    (r1 as { txid?: string })?.txid === "0xfill" && (r2 as { txid?: string })?.txid === "0xfill");
+  ok("MF-10: the 0.2.59 advisory fired exactly ONCE across two fills on one connection",
+    g.seen.filter((s) => /fill-SPV/.test(s)).length === 1);
+
+  const w64 = new WalletConnection(mockProvider({ version: "0.2.64" }));
+  const g2 = grabWarns();
+  let r3: unknown;
+  try { r3 = await grab(() => w64.fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 10 }] })); } finally { g2.restore(); }
+  ok("MF-10 happy: a 0.2.64 wallet fills with NO advisory", (r3 as { txid?: string })?.txid === "0xfill" && g2.seen.length === 0);
+
+  const wg = new WalletConnection(mockProvider({ version: "lolwut" }));
+  const g3 = grabWarns();
+  let r4: unknown;
+  try { r4 = await grab(() => wg.fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 10 }] })); } finally { g3.restore(); }
+  ok("MF-10 happy: a garbage version fills with NO advisory and still resolves", (r4 as { txid?: string })?.txid === "0xfill" && g3.seen.length === 0);
+}
+
 clearWindow();
 console.log(`\nconnect.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

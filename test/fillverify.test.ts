@@ -8,6 +8,7 @@ import { addrFromPriv, signDigest, buildScriptSig } from "@inversealtruism/csd-c
 import { provenOfferTerms } from "@inversealtruism/cairnx-core";
 import { txid, sighash, canonicalJson, payloadHash, rpcTxToTx } from "../src/chain.js";
 import {
+  Cairn,
   preverifyOffer, feeBpsAt, bindOfferTerms,
   fillEndorsement, fillOutputPlan, fillIsSafe, requiredFillOutputs, previewFill,
 } from "../src/index.js";
@@ -27,16 +28,16 @@ const H = 40000; // > V16 (33600) so feeBps = 150
 
 // a REAL signed Propose tx committing `rec`; its funding prevout owner is registered as `owner`.
 const prevoutOf = new Map<string, { value: number; script_pubkey: string }>();
-function proposeTx(priv: string, rec: object, nonce = 1) {
+function proposeTx(priv: string, rec: object, nonce = 1, domain = DOMAIN) {
   const a = addrFromPriv(priv);
   const uri = canonicalJson(rec);
   const phash = payloadHash(rec);
   const prev = "0x" + nonce.toString(16).padStart(2, "0").repeat(32).slice(0, 64);
-  const stripped = { version: 1, inputs: [{ prevTxid: prev, vout: 0, scriptSig: "0x" }], outputs: [{ value: 1000, scriptPubkey: a }], locktime: 0, app: { type: "Propose", domain: DOMAIN, payloadHash: phash, uri, expiresEpoch: 9_000_000 } };
+  const stripped = { version: 1, inputs: [{ prevTxid: prev, vout: 0, scriptSig: "0x" }], outputs: [{ value: 1000, scriptPubkey: a }], locktime: 0, app: { type: "Propose", domain, payloadHash: phash, uri, expiresEpoch: 9_000_000 } };
   const { sig64, pub33 } = signDigest(sighash(stripped), priv);
   const scriptSig = buildScriptSig(sig64, pub33);
   const id = txid(stripped);
-  const json = { txid: id, version: 1, locktime: 0, inputs: [{ prev_txid: prev, vout: 0, script_sig: scriptSig }], outputs: [{ value: 1000, script_pubkey: a }], app: { type: "Propose", domain: DOMAIN, payload_hash: phash, uri, expires_epoch: 9_000_000 } };
+  const json = { txid: id, version: 1, locktime: 0, inputs: [{ prev_txid: prev, vout: 0, script_sig: scriptSig }], outputs: [{ value: 1000, script_pubkey: a }], app: { type: "Propose", domain, payload_hash: phash, uri, expires_epoch: 9_000_000 } };
   // the funding source tx (a coinbase-like body whose output[0] the offer input spends), owner = the signer
   const srcStripped = { version: 1, inputs: [{ prevTxid: "0x" + "00".repeat(32), vout: 0xffffffff, scriptSig: "0x" + nonce.toString(16).padStart(8, "0") }], outputs: [{ value: 5_000_000_000, scriptPubkey: a }], locktime: 0, app: { type: "None" } };
   const srcId = txid(srcStripped);
@@ -169,6 +170,112 @@ await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsemen
   await ok("payto-less offer defaults payto to the proven author", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id });
     return r.ok === true && r.payto === SELLER && r.seller === SELLER;
+  });
+}
+
+console.log("\nP75-5 fill-surface guards:");
+
+// MF-06: a token-priced offer's served price is bound to the merkle-bound record
+{
+  const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { ticker: "BBB", amount: "5", payto: SELLER } };
+  const tx = proposeTx(SELLER_KEY, rec, 3);
+  const servedTok = (want: object) => ({ id: tx.id, seller: SELLER, feeBps: 150, height: H, give: { ticker: "AAA", amount: "10" }, want });
+  await ok("[MF-06 happy] an honestly served token want (ticker+amount+payto) still verifies", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedTok({ ticker: "BBB", amount: "5", payto: SELLER }) });
+    return r.ok === true && r.trust === "verified";
+  });
+  await ok("[MF-06] a served want.amount bait-and-switch on a token-priced offer is REFUSED", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedTok({ ticker: "BBB", amount: "5000000", payto: SELLER }) });
+    return r.ok === false && /want ticker\/amount/.test(r.reason ?? "");
+  });
+  await ok("[MF-06] a served want.ticker swap on a token-priced offer is REFUSED", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedTok({ ticker: "SCAM", amount: "5", payto: SELLER }) });
+    return r.ok === false && /want ticker\/amount/.test(r.reason ?? "");
+  });
+}
+
+// MF-07: settlement-domain bind + no asserted liveness
+{
+  const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
+  const wrong = proposeTx(SELLER_KEY, rec, 4, "board:v1");
+  await ok("[MF-07] a Propose from a non-cairnx:v1 settlement domain is REFUSED (unverified)", async () => {
+    const r = await preverifyOffer({ light: mockLight(wrong.json, wrong.phash), client: mockClient, offerId: wrong.id });
+    return r.ok === false && r.trust === "unverified" && /settlement domain/.test(r.reason ?? "");
+  });
+  const tx = proposeTx(SELLER_KEY, rec, 5);
+  await ok("[MF-07 happy] the cairnx:v1 domain still verifies (zero false-refuse)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id });
+    return r.ok === true;
+  });
+  await ok("[MF-07] a served non-open status is refused by the sizer's own status gate (no asserted liveness)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, status: "cancelled" }), pay: "500000000" });
+    return r.ok === false && /not-open/.test(r.reason ?? "");
+  });
+  await ok("[MF-07 happy] a served status:\"open\" sizes normally (real resolver shape)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, status: "open" }), pay: "500000000" });
+    return r.ok === true && Array.isArray(r.outputPlan);
+  });
+}
+
+// MF-08: the sizer valve. The fixture is deliberately HONEST everywhere except `pay`, so the catch is
+// the ONLY possible source of ok:false and a silently-swallowing catch fails the assertion (fail-open).
+{
+  const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
+  const tx = proposeTx(SELLER_KEY, rec, 6);
+  await ok("[MF-08] a sizer throw REFUSES with sumsMismatch (honest served offer, garbage pay)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "1.5" });
+    return r.ok === false && /couldn't size the fill/.test(r.reason ?? "");
+  });
+  const rec2 = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000" } };
+  const tx2 = proposeTx(SELLER_KEY, rec2, 7);
+  await ok("[MF-08 happy] a payto-less offer + pay now sizes (plan pays the proven author; was a TypeError escape)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx2.json, tx2.phash), client: mockClient, offerId: tx2.id, pay: "500000000" });
+    return r.ok === true && Array.isArray(r.outputPlan) && r.outputPlan!.some((o) => o.to === SELLER);
+  });
+}
+
+// MF-09: absence fails closed, naming the field
+{
+  const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
+  const tx = proposeTx(SELLER_KEY, rec, 8);
+  await ok("[MF-09] a served offer MISSING want.payto is REFUSED naming the field (was a silent skip)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, want: { value: "500000000" } }) });
+    return r.ok === false && /missing want\.payto/.test(r.reason ?? "");
+  });
+  await ok("[MF-09] a served offer MISSING seller is REFUSED naming the field", async () => {
+    const served = servedFor({ id: tx.id }) as { seller?: unknown }; delete served.seller;
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: served });
+    return r.ok === false && /missing seller/.test(r.reason ?? "");
+  });
+  await ok("[MF-09 happy] the full served object still verifies (exact resolver shape)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }) });
+    return r.ok === true;
+  });
+  await ok("[MF-09 happy] NO servedOffer still verifies (the optional param stays optional)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id });
+    return r.ok === true;
+  });
+}
+
+// MF-11: the facade reaches the whole preverifyOffer surface, offline via the stubbed SPV seam.
+// (This also makes this file's line-2 header comment about Cairn.verifyOfferForFill TRUE at last.)
+{
+  const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
+  const tx = proposeTx(SELLER_KEY, rec, 9);
+  const cairn = new Cairn({ baseUrls: { cairn: "https://example.test" } });
+  (cairn as unknown as { seededSpvLight: unknown }).seededSpvLight = async () => mockLight(tx.json, tx.phash);
+  (cairn as unknown as { chain: unknown }).chain = { client: mockClient };
+  await ok("[MF-11] verifyOfferForFill(id, served, { pay }) reaches the proven outputPlan seam", async () => {
+    const r = await cairn.verifyOfferForFill(tx.id, servedFor({ id: tx.id }), { pay: "500000000" });
+    return r.ok === true && Array.isArray(r.outputPlan) && r.outputPlan!.some((o) => o.to === SELLER);
+  });
+  await ok("[MF-11] plannedOutputs flow through and bind (a smuggled extra leg is REFUSED)", async () => {
+    const r = await cairn.verifyOfferForFill(tx.id, servedFor({ id: tx.id }), { pay: "500000000", plannedOutputs: { [SELLER]: "1", ["0x" + "ee".repeat(20)]: "42" } });
+    return r.ok === false && /proven fill outputs/.test(r.reason ?? "");
+  });
+  await ok("[MF-11 happy] the 2-arg call shape is unchanged (ok:true, no outputPlan)", async () => {
+    const r = await cairn.verifyOfferForFill(tx.id, servedFor({ id: tx.id }));
+    return r.ok === true && r.outputPlan === undefined;
   });
 }
 

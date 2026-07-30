@@ -26,6 +26,9 @@ export interface CairnControllerOptions extends DetectOptions {
 export class CairnController {
   private state: CairnState = DISCONNECTED;
   private conn: WalletConnection | null = null;
+  // MF-15: connect/disconnect generation token. disconnect() bumps it; a connect() whose await straddled
+  // the bump must never commit "connected" over the torn-down session (a zombie null-connection session).
+  private epoch = 0;
   private readonly listeners = new Set<() => void>();
   private readonly getWalletFn: (opts?: DetectOptions) => Promise<WalletConnection>;
   private readonly detectOpts: DetectOptions;
@@ -74,35 +77,49 @@ export class CairnController {
 
   /** Detect + connect (prompts the user the first time per origin). Resolves the connected address. */
   connect = async (): Promise<string> => {
+    const epoch = this.epoch;
     this.setState({ status: "connecting", error: null });
     try {
-      if (!this.conn) {
-        this.conn = await this.getWalletFn(this.detectOpts);
-        this.conn.on("accountsChanged", this.onAccounts);
-        this.conn.on("disconnect", this.onDisconnect);
+      let conn = this.conn;
+      if (!conn) {
+        conn = await this.getWalletFn(this.detectOpts);
+        if (epoch !== this.epoch) throw new Error("connection was torn down while connecting - call connect() again");
+        conn.on("accountsChanged", this.onAccounts);
+        conn.on("disconnect", this.onDisconnect);
+        this.conn = conn;   // assigned together with the listener attach, AFTER the epoch check, so
+                            // this.conn is always exactly the connection the listeners are on and
+                            // detach() tears down what was actually attached
       }
-      const addr = await this.conn.connect();
+      const addr = await conn.connect();
+      if (epoch !== this.epoch) throw new Error("connection was torn down while awaiting approval - call connect() again");
       this.setState({ status: "connected", account: addr, error: null });
       return addr;
     } catch (e) {
-      this.setState({ status: "disconnected", account: null, error: (e as Error)?.message ?? String(e) });
+      // If a disconnect() superseded us, its clean disconnected state stands; do not smear an error over it.
+      if (epoch === this.epoch) this.setState({ status: "disconnected", account: null, error: (e as Error)?.message ?? String(e) });
       throw e;
     }
   };
 
-  /** Forget the connection locally AND revoke this origin's wallet-side permission (best-effort). */
+  /** Forget the connection locally AND revoke this origin's wallet-side permission (best-effort).
+   *  Local teardown is IMMEDIATE and unconditional; the wallet-side revoke happens after, so a hung
+   *  provider can never hold a torn-down session in "connected". */
   disconnect = async (): Promise<void> => {
-    try { await this.conn?.revokePermissions(); } catch { /* best-effort; still drop local state */ }
+    this.epoch++;                       // invalidate any in-flight connect() (it will refuse to commit)
+    const conn = this.conn;
     // Ghost-reconnect fix: detach listeners + drop the connection so a later (possibly forged)
     // accountsChanged([addr]) can't resurrect this torn-down session. A fresh connect() re-attaches them.
     this.detach();
     this.conn = null;
     this.setState({ status: "disconnected", account: null, error: null });
+    try { await conn?.revokePermissions(); } catch { /* best-effort; local state is already down */ }
   };
 
   /** Audience-bound sign-in (must connect() first). Returns the signed artifact to verify server-side. */
   signInWithCsd = (params: SiwcParams): Promise<SiwcResult> => {
-    if (!this.conn) return Promise.reject(new Error("call connect() before signInWithCsd()"));
+    // Gate on the STATUS, not just a non-null conn: a failed or still-pending connect() leaves conn
+    // set but the session is not connected, and signing must not proceed on it.
+    if (!this.conn || this.state.status !== "connected") return Promise.reject(new Error("call connect() before signInWithCsd()"));
     return this.conn.signInWithCsd(params);
   };
 }
