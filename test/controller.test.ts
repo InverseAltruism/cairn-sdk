@@ -77,6 +77,79 @@ async function main() {
   await okThrows("a rejected connect propagates the error", () => c4.connect());
   ok("after a failed connect: disconnected + error captured", c4.getSnapshot().status === "disconnected" && !!c4.getSnapshot().error);
 
+  // ===== P75-5 MF-15: connect/disconnect epoch guard + promise contract =====
+  const overT = (prov: any, timeoutMs: number) => new CairnController({ getWallet: async () => new WalletConnection(prov, { timeoutMs }) });
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  // E1 (zombie resurrect): a connect() whose APPROVAL await straddled a disconnect() must NOT commit
+  // "connected" over the torn-down session. Pre-fix the pending connect resolves and writes a zombie
+  // connected/null-connection state.
+  {
+    const prov: any = mockProvider();
+    let resolveConnect!: (r: any) => void;
+    prov.connect = () => new Promise((res) => { resolveConnect = res; });
+    const c = overT(prov, 0);
+    let rejected = false;
+    const p = c.connect();
+    p.then(() => {}, () => { rejected = true; });          // attach early so the rejection is never "unhandled"
+    await tick();                                          // let connect() reach the approval await (this.conn set)
+    await c.disconnect();
+    resolveConnect({ ok: true, result: { addr: "0xabc" } }); // approval lands AFTER the teardown
+    await tick();
+    ok("MF-15 E1: a connect() that straddled disconnect() REJECTS (no zombie resurrect)", rejected === true);
+    ok("MF-15 E1: the clean disconnected state stands (no error smeared, connection null)",
+      c.getSnapshot().status === "disconnected" && c.getSnapshot().account === null && c.connection === null);
+  }
+
+  // E2 (immediate local teardown): a hung revokePermissions() must not hold the session "connected".
+  {
+    const prov: any = mockProvider();
+    prov.revokePermissions = () => new Promise(() => {});   // never resolves
+    const c = overT(prov, 0);
+    await c.connect();
+    const dp = c.disconnect();                              // do NOT await
+    ok("MF-15 E2: local teardown is IMMEDIATE (disconnected + connection null before revoke settles)",
+      c.getSnapshot().status === "disconnected" && c.connection === null);
+    void dp;
+  }
+
+  // E3 (signInWithCsd gate): a FAILED connect() leaves conn non-null, but signing must NOT proceed on it.
+  {
+    const prov: any = mockProvider();
+    prov.connect = () => Promise.resolve({ ok: false, error: "rejected by user" });
+    const c = overT(prov, 0);
+    await okThrows("MF-15 E3: the failed connect propagates", () => c.connect());
+    await okThrows("MF-15 E3: signInWithCsd after a FAILED connect REJECTS (gates on status, not just conn)",
+      () => c.signInWithCsd({ nonce: "abc123def456" }));
+  }
+
+  // E4 (call() sync-throw): a synchronously-throwing provider must REJECT, never escape as a sync throw.
+  {
+    const sprov: any = { isCairn: true, version: "0.2.24", send: () => { throw new Error("boom"); } };
+    const w = new WalletConnection(sprov);
+    let sync = true; let p: any;
+    try { p = w.send({ to: "0xq", amount: 1 }); sync = false; } catch { /* pre-fix: escapes here */ }
+    ok("MF-15 E4: send() on a sync-throwing provider returns a promise (no sync throw escapes call())", sync === false);
+    await okThrows("MF-15 E4: that promise REJECTS", () => p);
+  }
+
+  // E0b (happy): reconnect after a completed disconnect still resolves + reaches connected.
+  {
+    const c = over(mockProvider());
+    await c.connect(); await c.disconnect();
+    const addr = await c.connect();
+    ok("MF-15 E0b happy: reconnect after a completed disconnect resolves + reaches connected",
+      addr === "0xabc" && c.getSnapshot().status === "connected" && c.connection !== null);
+  }
+
+  // E0c (happy): the invoke() wrapper adds no behavior change on the honest send path.
+  {
+    const gprov: any = mockProvider();
+    gprov.send = () => Promise.resolve({ ok: true, result: { ok: true, txid: "0xSEND" } });
+    const w = new WalletConnection(gprov);
+    ok("MF-15 E0c happy: w.send() on a normal provider still resolves the txid", (await w.send({ to: "0xd", amount: 1 })).txid === "0xSEND");
+  }
+
   console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"}: ${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
 }

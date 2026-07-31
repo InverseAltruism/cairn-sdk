@@ -83,7 +83,8 @@ export interface SealClaimParams {
  * so a dApp settling real value MUST merkle-prove the offer and derive the recipient from its on-chain author
  * before building `outputs`. Payment-grade offer verification is the wallet's on-device fill-SPV path (F13;
  * added in cairn-wallet 0.2.60, which binds the fill payment/rebate/fee legs to the merkle-proven offer; see
- * docs/SDK-GUIDE.md verifies-vs-trusts). An SPV pre-verify helper in this SDK is roadmapped.
+ * docs/SDK-GUIDE.md verifies-vs-trusts). The SDK's SPV pre-verify SHIPPED: call `preverifyOffer` or
+ * `cairn.verifyOfferForFill(offerId, servedOffer, { pay })` before building `outputs`.
  */
 export interface FillParams {
   proposalId: string;
@@ -311,12 +312,15 @@ export class WalletConnection {
   // genuine wallet resolves quickly once the user acts; this only fires on a truly hung/absent response.
   private call<T>(op: () => Promise<T> | T, label: string): Promise<T> {
     const ms = this._timeoutMs;
-    if (!Number.isFinite(ms) || ms <= 0) return Promise.resolve(op());
+    // MF-15: a synchronously-throwing (non-conformant/spoofed) provider must REJECT, never escape the
+    // documented promise contract as a sync throw.
+    const invoke = () => new Promise<T>((resolve) => { resolve(op()); });
+    if (!Number.isFinite(ms) || ms <= 0) return invoke();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new CairnError(`the wallet did not respond to ${label} within ${ms}ms`, { retryable: false })), ms);
     });
-    return Promise.race([Promise.resolve(op()), timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
+    return Promise.race([invoke(), timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
   }
 
   /** The wallet's version string (e.g. "0.2.x"). */
@@ -394,7 +398,24 @@ export class WalletConnection {
     if (typeof this.provider.fillOffer !== "function") {
       return Promise.reject(new UnsupportedMethodError("this wallet predates fillOffer() — ask the user to update the Cairn Wallet"));
     }
+    this.adviseFillSpvCapability();
     return this.call(() => this.provider.fillOffer!(params), "fillOffer").then(unwrapWrite);
+  }
+
+  // P75-5 MF-10: ONE capability advisory per connection. The wallet's on-device fill-SPV (0.2.60+) is the
+  // payment-grade fill boundary; when the provider SELF-REPORTS an older version, warn the integrator once
+  // and STILL RELAY. WARN, NEVER BLOCK: a hard version gate would decline honest fills (version strings are
+  // spoofable and unparseable forks exist), and the wallet itself is the enforcement point. Reads only the
+  // sync `provider.version`; never an awaited getCapabilities() round-trip on the fill hot path. An
+  // unparseable version never warns (no false alarms).
+  private _fillSpvAdvised = false;
+  private adviseFillSpvCapability(): void {
+    if (this._fillSpvAdvised) return;
+    this._fillSpvAdvised = true;
+    const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(this.provider?.version ?? ""));
+    if (!m) return;
+    const below = Number(m[1]) === 0 && (Number(m[2]) < 2 || (Number(m[2]) === 2 && Number(m[3]) < 60));
+    if (below) console.warn(`[cairn-sdk] this Cairn Wallet (v${m[0]}) predates the on-device fill-SPV boundary (cairn-wallet 0.2.60+). The fill proceeds; suggest a wallet update for payment-grade offer verification.`);
   }
 
   /** This origin's current permission grant (EIP-2255-style). Silent; [] if none / unsupported. */

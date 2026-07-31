@@ -30,7 +30,7 @@ const ERR_TEXT_CAP = 8 * 1024; // error-body text is only for a message — cap 
 // Read a Response body with a running byte cap: a Content-Length precheck rejects a declared-oversize body,
 // and a streamed reader aborts the moment the running total exceeds the cap (defeats a no-Content-Length
 // slow-stream OOM). Falls back to a buffered read + post-check when the body stream is unavailable.
-async function readCapped(res: Response, maxBytes: number): Promise<Uint8Array> {
+export async function readCapped(res: Response, maxBytes: number): Promise<Uint8Array> {
   const cl = Number(res.headers.get("content-length"));
   if (Number.isFinite(cl) && cl > maxBytes) throw new HttpError(res.status, res.url, `response too large (content-length ${cl} > ${maxBytes})`);
   const body = res.body as ReadableStream<Uint8Array> | null | undefined;

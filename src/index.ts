@@ -15,7 +15,7 @@
 //   const top = await cairn.board.top({ domain: "csd:apps" });
 //   await cairn.board.propose({ domain: "csd:apps", title: "My dApp", body: "…" });
 
-import { Http, type FetchLike } from "./http.js";
+import { Http, readCapped, type FetchLike } from "./http.js";
 import { Chain, LightClient, type BlockHeader } from "./chain.js";
 import { BoardClient } from "./board.js";
 import { IndexerClient } from "./indexer.js";
@@ -87,8 +87,27 @@ const DEFAULT_CAIRN = "https://cairn-substrate.com";
 // per-attempt timeout sits ABOVE the cairn server's 10s /api/headers whole-request deadline so a clean 502
 // is retried rather than raced; the retry budget bounds 429/502/503 + transport errors, then THROWS so the
 // light client sync fails CLOSED. Every retried header is re-verified downstream, so retrying carries no trust.
+// MF-13: the attempt now spans headers PLUS the body read (the timer stays armed through readCapped), so a
+// never-ending or oversize 200 stream is aborted instead of hanging past the cleared timer.
 const SPV_HTTP_TIMEOUT_MS = 15000;
 const SPV_HTTP_MAX_RETRIES = 4;
+// MF-13: cap on one /api/headers batch response body. An honest worst-case batch is 512 rows
+// (csd-light slices batches at 512) at ~330 bytes of JSON per row, ~170 KB total; 2 MiB is ~12x
+// headroom, so no legitimate batch is ever declined, while a hostile or MITM'd 200 stream is
+// bounded instead of OOMing the client. Do NOT route this call through Http (its retry and error
+// semantics are different by design); the capped reader is shared instead.
+const SPV_MAX_BATCH_BYTES = 2 * 1024 * 1024;
+// MF-03: transient-vs-STRUCTURAL classifier for SPV sync failures, ported from the WALLET's widened
+// form (cairn-wallet namespv.ts M8/B5e), NOT swapguard's older twin: the 50[0-9] arm plus the
+// JSON-parse arm, because fetchHeadersBatch parses the response body, so a CF 200-HTML interstitial
+// surfaces as "Unexpected token ..." - a transport fault, never a chain fault (structural errors say
+// prev/PoW/bits/hash, never json). Misclassifying it re-authors the DOS-HDR-3 reseed storm.
+const SPV_TRANSIENT_RE = /\b(429|50[0-9]|timeout|timed out|abort|aborted|headers|non-dense|failed to fetch|networkerror|load failed)\b/i;
+const SPV_TRANSIENT_JSON_RE = /unexpected (token|end)|json/i;
+const spvIsTransient = (e: unknown): boolean => {
+  const msg = String((e as Error)?.message || e);
+  return SPV_TRANSIENT_RE.test(msg) || SPV_TRANSIENT_JSON_RE.test(msg);
+};
 const spvSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const spvRetryDelayMs = (attempt: number, retryAfterSecs: number) => Math.min(4000, Math.max(700 * (attempt + 1), retryAfterSecs * 1000));
 
@@ -107,7 +126,10 @@ export class Cairn {
   private readonly cairnHttp: Http;
   // Lazily-seeded SPV light client + its checkpoint (audit M3 — PoW-verified header source).
   private _spvLight: LightClient | null = null;
-  private _spvSeeded = false;
+  // MF-14: the in-flight seed promise. Concurrent first callers share ONE seed instead of racing two
+  // syncFromCheckpoint calls onto the same client (the loser would hit "seedTrusted must be called on a
+  // fresh client"). Cleared when the seed settles; a failure leaves no cached state, so the next call retries.
+  private _spvSeedInflight: Promise<LightClient> | null = null;
   private readonly _spvCp: { height: number; hash: string };
   // W12: the cairn base the SPV header-batch provider fetches /api/headers from (same base the rest of the SDK uses).
   private readonly _cairnBase: string;
@@ -147,7 +169,7 @@ export class Cairn {
     });
     // Content sources tried in order: direct swarm (if set) → indexer (fronts swarm) → cairn origin.
     this.content = new ContentClient({ swarm: swarmHttp, indexer: indexerHttp, cairn: this.cairnHttp });
-    this.registry = new RegistryClient({ baseUrl: indexer, fetch });
+    this.registry = new RegistryClient(indexerHttp);
     this.names = new NamesClient(this.cairnHttp);
   }
 
@@ -158,44 +180,86 @@ export class Cairn {
    * checkpoint (can't verify backward) or if verification fails — the IndexerClient then degrades
    * to the honest "proof-consistent" instead of over-claiming "verified-inclusion". The verified
    * header chain is cached across calls; the first call near tip syncs the post-checkpoint span.
+   * MF-03: a STRUCTURAL forward-sync break (a reorg orphaned the cached tip) reseeds ONCE via
+   * withSpvReseed. RESIDUAL: a height at or below the cached tip answers from the cached branch with
+   * NO network touch, so a tx in a reorg-orphaned block can still read "verified-inclusion" until a
+   * read PAST the tip trips the reseed; this closes the permanent post-reorg brick, not reorg-blindness.
    */
   private async verifiedHeaderMerkleAt(height: number): Promise<string> {
     if (!Number.isInteger(height) || height < this._spvCp.height)
       throw new Error(`height ${height} is below the SPV checkpoint ${this._spvCp.height} (cannot PoW-verify backward)`);
-    const lc = await this.seededSpvLight();
-    const haveTo = lc.baseHeight + lc.chain.length - 1;
-    if (haveTo < height) await lc.sync(height);
-    const vh = lc.chain[height - lc.baseHeight];
-    if (!vh) throw new Error(`light client has no verified header at ${height}`);
-    return String(vh.header.merkle);
+    return this.withSpvReseed(async (lc) => {
+      const haveTo = lc.baseHeight + lc.chain.length - 1;
+      if (haveTo < height) await lc.sync(height);
+      const vh = lc.chain[height - lc.baseHeight];
+      if (!vh) throw new Error(`light client has no verified header at ${height}`);
+      return String(vh.header.merkle);
+    });
   }
 
-  /** The PoW-verifying SPV light client, seeded ONCE from the pinned checkpoint (shared by the M3 header-merkle
-   *  bind and the F13 offer pre-verify). Reused across calls; the first call near tip syncs the post-checkpoint span. */
-  private async seededSpvLight(): Promise<LightClient> {
+  // MF-03: run an SPV read; on a STRUCTURAL failure (a reorg orphaned our cached tip: broken
+  // prev-link / bad PoW / hash mismatch) reseed ONCE from the pinned checkpoint into a LOCAL fresh
+  // client, retry the read on it, and commit the fresh client ONLY when both succeed (never null
+  // this._spvLight first - the wallet G8 lesson, same shape as the MF-14 seed). A TRANSIENT failure
+  // (rate limit / gateway / timeout / non-dense / CF 200-HTML) keeps the cache and rethrows: wiping
+  // on those turns one /api/headers 429 into a reseed storm (DOS-HDR-3). A second structural
+  // failure propagates fail-closed; there is no loop.
+  // RESIDUAL (recorded, not closed): heights at or below the cached tip answer from the cached
+  // branch with NO network touch, so after a reorg "verified-inclusion" can still be over-claimed
+  // for a tx in an orphaned block until some read past the tip trips this reseed. This fix closes
+  // the permanent-brick leg only.
+  private async withSpvReseed<T>(op: (lc: LightClient) => Promise<T>): Promise<T> {
+    const lc = await this.seededSpvLight();
+    try { return await op(lc); }
+    catch (e) {
+      if (spvIsTransient(e)) throw e;
+      const fresh = await this.seedFreshSpvLight();
+      const out = await op(fresh);
+      this._spvLight = fresh;
+      return out;
+    }
+  }
+
+  // Build + seed + tip-advance a FRESH light client into a LOCAL. Never touches this._spvLight:
+  // the caller commits the result only on success (MF-14; the wallet G8 posture - never null or
+  // dirty the shared field while an attempt is in flight).
+  private async seedFreshSpvLight(): Promise<LightClient> {
     // W12: pass a BATCH header provider (checkpoint..tip in a few batched requests, each header re-verified
     // so it carries ZERO trust). Fixing the sync WITHOUT this converts a fast wrong answer into a
     // multi-thousand-request flood, so the provider is MANDATORY, not an optimization.
-    if (!this._spvLight) this._spvLight = new LightClient({
+    const lc = new LightClient({
       client: this.chain.client,
       checkpoints: { [this._spvCp.height]: this._spvCp.hash },
       headersBatchProvider: (from, count) => this.fetchHeadersBatch(from, count),
     });
-    if (!this._spvSeeded) {
-      await this._spvLight.syncFromCheckpoint(this._spvCp.height, this._spvCp.hash);
-      // W12: ADVANCE TO THE LIVE TIP after the seed. Before B7c the SDK's SPV only seeded the checkpoint
-      // window and never reached tip, so a near-tip offer never merkle-proved and every downstream fill
-      // bind was dead (the inertness that hid the SDK's want-type hole; this is why B7c lands AFTER B7b's
-      // binds are on). A transient tip/sync failure must NOT brick the seed: verifyTxInclusion self-syncs
-      // (also batched) to a tx's height on demand, so fall soft and keep the seeded client usable.
-      try {
-        const tipHeight = Number((await this.chain.tip()).height);
-        const have = this._spvLight.baseHeight + this._spvLight.chain.length - 1;
-        if (Number.isFinite(tipHeight) && tipHeight > have) await this._spvLight.sync(tipHeight);
-      } catch { /* keep the seeded client; on-demand batched sync covers what this pre-warm missed */ }
-      this._spvSeeded = true;
+    await lc.syncFromCheckpoint(this._spvCp.height, this._spvCp.hash);
+    // W12: ADVANCE TO THE LIVE TIP after the seed. Before B7c the SDK's SPV only seeded the checkpoint
+    // window and never reached tip, so a near-tip offer never merkle-proved and every downstream fill
+    // bind was dead (the inertness that hid the SDK's want-type hole; this is why B7c lands AFTER B7b's
+    // binds are on). A transient tip/sync failure must NOT brick the seed: verifyTxInclusion self-syncs
+    // (also batched) to a tx's height on demand, so fall soft and keep the seeded client usable.
+    try {
+      const tipHeight = Number((await this.chain.tip()).height);
+      const have = lc.baseHeight + lc.chain.length - 1;
+      if (Number.isFinite(tipHeight) && tipHeight > have) await lc.sync(tipHeight);
+    } catch { /* keep the seeded client; on-demand batched sync covers what this pre-warm missed */ }
+    return lc;
+  }
+
+  /** The PoW-verifying SPV light client, seeded from the pinned checkpoint and cached across calls
+   *  (shared by the M3 header-merkle bind and the F13 offer pre-verify). The client is committed to
+   *  the field ONLY after a fully successful seed (MF-14): a failed seed leaves NO cached state, so
+   *  the next call retries on a fresh client instead of wedging on "seedTrusted must be called on a
+   *  fresh client". Concurrent first callers share ONE in-flight seed. Re-seeded only when a
+   *  structural (reorg) break is detected, see withSpvReseed. */
+  private seededSpvLight(): Promise<LightClient> {
+    if (this._spvLight) return Promise.resolve(this._spvLight);
+    if (!this._spvSeedInflight) {
+      this._spvSeedInflight = this.seedFreshSpvLight()
+        .then((lc) => { this._spvLight = lc; return lc; })
+        .finally(() => { this._spvSeedInflight = null; });
     }
-    return this._spvLight;
+    return this._spvSeedInflight;
   }
 
   /**
@@ -203,8 +267,10 @@ export class Cairn {
    * `/api/headers/:from/:count`. Carries ZERO trust: the LightClient re-verifies every header's PoW /
    * prev-link / LWMA, so a forged or stale row fails closed and retrying transport proves nothing new.
    * Retry budget: a 429 (per-IP header budget) or 502/503 (a height past the lagging indexer, or the
-   * server's 10s deadline) is a transient data-availability hiccup; back off (honouring Retry-After) a
-   * bounded number of times, then THROW so `sync()` fails closed. A non-dense range is rejected.
+   * server's 10s deadline), a transport/timeout error, or a body-read fault (an oversize stream past the
+   * SPV_MAX_BATCH_BYTES cap, or a non-JSON 200 body such as a CF interstitial) is a transient
+   * data-availability hiccup; back off (honouring Retry-After) a bounded number of times, then THROW so
+   * `sync()` fails closed. A non-dense range is rejected terminally (never retried).
    *
    * B7d / F6 DEPENDENCY: `/api/headers` serves no Access-Control-Allow-Origin today (`corsPublic` is
    * mounted on `/explorer/api`, `/trade/api` and `/api/rpc`, not here). A SAME-ORIGIN dApp (hosted on the
@@ -218,28 +284,37 @@ export class Cairn {
     const doFetch: FetchLike = this.config.fetch ? this.config.fetch : (g.bind(globalThis) as FetchLike);
     const url = `${this._cairnBase}/api/headers/${from}/${count}`;
     for (let attempt = 0; ; attempt++) {
-      let res: Response;
+      let res: Response | undefined;
+      let parsed: unknown;
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), SPV_HTTP_TIMEOUT_MS);
-      try { res = await doFetch(url, { signal: ctrl.signal }); }
-      catch (e) {
-        if (attempt >= SPV_HTTP_MAX_RETRIES) throw e;   // transport error / timeout: bounded retry, then fail closed
+      try {
+        res = await doFetch(url, { signal: ctrl.signal });
+        if (res.ok) {
+          // MF-13: ONE controller bounds headers AND body (the timer stays armed through the read),
+          // and the body goes through the shared capped reader so a never-ending or oversize 200
+          // stream fails bounded. A 200 with a non-JSON body (a CF interstitial) throws here and is
+          // retried below within the same bounded budget, then fails closed.
+          parsed = JSON.parse(new TextDecoder().decode(await readCapped(res, SPV_MAX_BATCH_BYTES)));
+        }
+      } catch (e) {
+        if (attempt >= SPV_HTTP_MAX_RETRIES) throw e;   // transport / timeout / oversize / bad body: bounded retry, then fail closed
         await spvSleep(spvRetryDelayMs(attempt, 0));
         continue;
       } finally { clearTimeout(timer); }
-      if (res.ok) {
+      if (res!.ok) {
         // ZERO trust in the row shape: the LightClient re-verifies every header (PoW / prev-link / LWMA)
         // against the pinned checkpoint, so a wrong `header` fails closed downstream, not here.
-        const rows = ((await res.json()) as { headers?: { header: BlockHeader; hash: string }[] })?.headers;
+        const rows = (parsed as { headers?: { header: BlockHeader; hash: string }[] })?.headers;
         if (!Array.isArray(rows) || rows.length !== count) throw new Error(`/api/headers: non-dense range (${from}/${count})`);
         return rows.map((r) => ({ header: r.header, hash: r.hash }));
       }
-      if ((res.status === 429 || res.status === 502 || res.status === 503) && attempt < SPV_HTTP_MAX_RETRIES) {
-        res.body?.cancel?.().catch(() => {});   // drain the discarded body (undici holds the socket otherwise)
-        await spvSleep(spvRetryDelayMs(attempt, Number(res.headers.get("retry-after")) || 0));
+      if ((res!.status === 429 || res!.status === 502 || res!.status === 503) && attempt < SPV_HTTP_MAX_RETRIES) {
+        res!.body?.cancel?.().catch(() => {});   // drain the discarded body (undici holds the socket otherwise)
+        await spvSleep(spvRetryDelayMs(attempt, Number(res!.headers.get("retry-after")) || 0));
         continue;
       }
-      throw new Error(`/api/headers ${res.status}`);
+      throw new Error(`/api/headers ${res!.status}`);
     }
   }
 
@@ -254,10 +329,21 @@ export class Cairn {
    * This is best-effort corroboration, NOT the payment-grade boundary: the Cairn Wallet's OWN on-device
    * fill-SPV (0.2.60+, fails-closed before signing) is that. A dApp settling real value should still clear this
    * before building `outputs`, so it never hands the wallet a payment a lying resolver would redirect.
+   *
+   * Pass opts.pay (the CSD base units you intend to pay) to receive the PROVEN outputPlan for a whole fill of a
+   * non-partial offer, and opts.plannedOutputs to bind your planned per-address sums to it before signing; build
+   * EXACTLY the outputPlan, never resolver-served outputs.
    */
-  async verifyOfferForFill(offerId: string, servedOffer?: unknown): Promise<OfferFillCheck> {
-    const light = await this.seededSpvLight();
-    return preverifyOffer({ light, client: this.chain.client, offerId, servedOffer });
+  async verifyOfferForFill(
+    offerId: string,
+    servedOffer?: unknown,
+    opts?: { pay?: bigint | string | number; plannedOutputs?: Record<string, bigint | string | number> },
+  ): Promise<OfferFillCheck> {
+    // MF-03: the reseed also covers the fill path. preverifyOffer's own catch (fillverify.ts) otherwise
+    // eats a structural (reorg) throw and reports transient forever, so we hand it a light handle whose
+    // verifyTxInclusion reseeds ONCE on a structural break. Structurally typed, so fillverify.ts is untouched.
+    const light = { verifyTxInclusion: (txidHex: string) => this.withSpvReseed((lc) => lc.verifyTxInclusion(txidHex)) };
+    return preverifyOffer({ light, client: this.chain.client, offerId, servedOffer, pay: opts?.pay, plannedOutputs: opts?.plannedOutputs });
   }
 
   /**

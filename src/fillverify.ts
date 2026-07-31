@@ -6,7 +6,7 @@
 // the pinned SPV checkpoint), binds the record to its on-chain commitment, derives the payment recipient +
 // seller from the offer's on-chain AUTHOR (the funding input's prevout owner, txid-committed, NOT the malleable
 // scriptSig), and, if given the resolver-SERVED offer, binds its fee/rebate/partial terms + recipients to the
-// proven ones. Trust-labeled; fail-CLOSED on a positive mismatch, fail-SOFT (transient) on an unreachable /
+// proven ones. Trust-labeled; fail-CLOSED on a positive mismatch or a partial served offer (an absent served want.payto/seller refuses, naming the field), fail-SOFT (transient) on an unreachable /
 // lagging / below-checkpoint chain view (never a hard decline of an honest offer).
 //
 // It is best-effort corroboration, NOT the payment-grade boundary: the Cairn Wallet's OWN on-device fill-SPV
@@ -27,7 +27,7 @@
 import { rpcTxToTx, type RpcTxJson } from "@inversealtruism/csd-client";
 import { txid, payloadHash } from "@inversealtruism/csd-codec";
 import {
-  parseRecord, feeBpsAt, bindOfferTerms, provenOfferTerms, fillOutputPlan, isTokenWant,
+  DOMAIN, parseRecord, feeBpsAt, bindOfferTerms, provenOfferTerms, fillOutputPlan, isTokenWant,
   fillEndorsement, fillIsSafe, requiredFillOutputs, previewFill,
   type ProvenOfferTerms, type OfferState,
 } from "@inversealtruism/cairnx-core";
@@ -129,7 +129,9 @@ async function provenAuthor(
  * Pre-verify an offer on-chain before building a `fillOffer` payment. `light` is a PoW-verifying light client
  * (its `verifyTxInclusion` surfaces the merkle-proven tx + committed appPayloadHash); `client` reads source txs
  * for the prevout-owner author bind. Pass `servedOffer` (the resolver's offer object) to also bind its
- * payto/seller/terms to the proven values. See the module header for the trust posture.
+ * payto/seller/terms to the proven values. The FULL object is required: a served offer missing want.payto
+ * or seller is refused (P75-5). A token-priced offer's served want.ticker/want.amount are bound verbatim to
+ * the record. See the module header for the trust posture.
  */
 export async function preverifyOffer(opts: {
   light: { verifyTxInclusion(txidHex: string): Promise<InclusionResult> };
@@ -165,6 +167,11 @@ export async function preverifyOffer(opts: {
   if (String(provenId).toLowerCase() !== id) return { ok: false, trust: "unverified", reason: "the merkle-proven tx doesn't match the offer id" };
   const app = incl.tx.app;
   if (!app || app.type !== "Propose") return { ok: false, trust: "unverified", reason: "the offer tx is not a Propose" };
+  // P75-5 MF-07: the settlement-domain bind. cairnx:v1 (the single-sourced cairnx-core DOMAIN constant) is
+  // the ONLY CairnX settlement domain, so a Propose from any other domain whose payload happens to parse as
+  // an offer record is a spoof, never an honest offer. Fail-closed with zero false-refuse on the hot path.
+  if (String(app.domain) !== DOMAIN)
+    return { ok: false, trust: "unverified", reason: `the offer tx is not a ${DOMAIN} Propose (wrong settlement domain)` };
 
   let rec: { t?: string; want?: { payto?: string; value?: string }; taker?: string; bid?: string; min?: string } | null;
   try { rec = parseRecord(app.uri, incl.appPayloadHash) as typeof rec; } catch { rec = null; }
@@ -190,32 +197,52 @@ export async function preverifyOffer(opts: {
   // resolver could redirect. Scoped to a WHOLE fill of a non-partial (min-less) offer: the running
   // paid/delivered of a PARTIALLY-fillable offer is not merkle-provable at this corroboration layer (that
   // is the wallet's fill-SPV, cairn-wallet 0.2.60+), so a partial is LEFT UNSIZED rather than false-refused.
-  // The offer state fed to the sizer is built ENTIRELY from proven fields (record + merkle-proven height +
-  // prevout-bound seller), never a resolver-served object.
+  // P75-5 MF-07 truth correction: the state fed to the sizer is record-derived (record + merkle-proven
+  // height + prevout-bound seller + the derived payto) EXCEPT liveness, which is NOT provable at this
+  // layer. `status` is taken from the resolver-SERVED offer when one carries it, so the sizer's own
+  // status gate refuses a non-open offer instead of being asserted past; with no served status the sizer
+  // ASSUMES open, and the wallet's fill-SPV stays the payment-grade liveness check. `expiresEpoch` is
+  // likewise unproven; the sizer never reads it, so the 0 is a placeholder, not a claim.
   let outputPlan: { to: string; value: bigint }[] | undefined;
   let sumsMismatch: string | undefined;
   if (opts.pay !== undefined && opts.pay !== null && !isTokenWant(offerRec.want) && offerRec.min === undefined) {
+    const servedStatus = (opts.servedOffer as { status?: unknown } | null | undefined)?.status;
     const provenState = {
-      id, seller, give: offerRec.give, want: offerRec.want, taker: offerRec.taker, bid: offerRec.bid,
-      status: "open", expiresEpoch: 0, height: blockHeight, feeBps: terms.feeBps,
+      id, seller, give: offerRec.give, want: { ...offerRec.want, payto }, taker: offerRec.taker, bid: offerRec.bid,
+      status: typeof servedStatus === "string" ? servedStatus : "open", expiresEpoch: 0, height: blockHeight, feeBps: terms.feeBps,
     } as OfferState;
-    const plan = fillOutputPlan(provenState, opts.pay);
-    if (plan.kind === "csd-outputs") {
-      outputPlan = plan.outputs;
-      if (opts.plannedOutputs !== undefined && opts.plannedOutputs !== null)
-        sumsMismatch = bindPlannedSums(opts.plannedOutputs, plan.outputs);
-    } else if (plan.kind === "undeliverable") {
-      sumsMismatch = `this pay would not deliver against the proven offer (${plan.reason}) - refusing (the CSD would be lost)`;
+    // P75-5 MF-08 valve: the sizer consumes the caller's `pay` (untrusted) plus record-derived values; a
+    // throw MUST become a refusal. Escaping would reject the whole call before the served-terms binds
+    // below ever ran, and swallowing would fail OPEN to ok:true with the sums bind skipped, so the catch
+    // sets `sumsMismatch` UNCONDITIONALLY.
+    try {
+      const plan = fillOutputPlan(provenState, opts.pay);
+      if (plan.kind === "csd-outputs") {
+        outputPlan = plan.outputs;
+        if (opts.plannedOutputs !== undefined && opts.plannedOutputs !== null)
+          sumsMismatch = bindPlannedSums(opts.plannedOutputs, plan.outputs);
+      } else if (plan.kind === "undeliverable") {
+        sumsMismatch = `this pay would not deliver against the proven offer (${plan.reason}) - refusing (the CSD would be lost)`;
+      }
+    } catch (e) {
+      sumsMismatch = `couldn't size the fill against the proven offer (${(e as Error)?.message ?? e}) - refusing rather than sizing from served fields`;
     }
   }
   const base = { payto, seller, terms, blockHeight, ...(outputPlan ? { outputPlan } : {}) };
 
   if (opts.servedOffer !== undefined && opts.servedOffer !== null) {
-    const so = opts.servedOffer as { want?: { payto?: unknown }; seller?: unknown };
-    const servedPayto = so?.want?.payto !== undefined && so?.want?.payto !== null ? String(so.want.payto).toLowerCase() : "";
-    if (servedPayto && servedPayto !== payto)
+    const so = opts.servedOffer as { want?: { payto?: unknown; ticker?: unknown; amount?: unknown }; seller?: unknown };
+    // P75-5 MF-09: every served leg fails CLOSED, including ABSENCE. A partial served offer (a dApp
+    // hand-building one) previously skipped the payto/seller bind entirely and still earned ok:true
+    // trust:"verified". BREAKING REFUSAL for such callers; the reason NAMES the missing field. A
+    // resolver's real offer object always carries both fields, so the hot path sees zero new declines.
+    if (so?.want?.payto === undefined || so?.want?.payto === null)
+      return { ok: false, trust: "verified", reason: "the served offer is missing want.payto (the payment recipient) - pass the resolver's full offer object, or omit servedOffer", ...base };
+    if (String(so.want.payto).toLowerCase() !== payto)
       return { ok: false, trust: "verified", reason: "the served payment recipient doesn't match the offer's on-chain author/record", ...base };
-    if (so?.seller !== undefined && so?.seller !== null && String(so.seller).toLowerCase() !== seller)
+    if (so?.seller === undefined || so?.seller === null)
+      return { ok: false, trust: "verified", reason: "the served offer is missing seller (the rebate recipient) - pass the resolver's full offer object, or omit servedOffer", ...base };
+    if (String(so.seller).toLowerCase() !== seller)
       return { ok: false, trust: "verified", reason: "the served seller doesn't match the offer's on-chain author (a lying resolver may be redirecting your payment)", ...base };
     // B7b: the 3-arg OPT-IN turns on the give legs (W7 shortchange: give.amount inflated a millionfold
     // passes every legacy leg) + the symmetric want-type refusal (proven-token served as CSD, which only
@@ -223,6 +250,15 @@ export async function preverifyOffer(opts: {
     // compare (resolve.ts copies the record's give verbatim and tracks delivered separately).
     if (bindOfferTerms(opts.servedOffer, terms, { give: true, wantType: true }))
       return { ok: false, trust: "verified", reason: "the served terms don't match the offer's on-chain record (fee, rebate, partial sizing, the give, or the want type - a lying resolver could mis-size or re-route the fill, redirecting or burning your payment)", ...base };
+    // P75-5 MF-06: the token PRICE legs. bindOfferTerms's wantType leg compares only the PRESENCE of a
+    // served want.ticker against the proven want type, and provenOfferTerms carries no token ticker or
+    // amount, so a token-priced offer's served price was UNBOUND: a bait-and-switch want.ticker or
+    // want.amount returned ok:true trust:"verified". Bind both VERBATIM against the merkle-bound record
+    // (the same verbatim-string precedent as the give legs; a pure local comparison, no cairnx-core
+    // change). String(undefined) can never equal a record value, so an absent served field fails closed.
+    if (isTokenWant(offerRec.want)
+        && (String(so?.want?.ticker) !== String(offerRec.want.ticker) || String(so?.want?.amount) !== String(offerRec.want.amount)))
+      return { ok: false, trust: "verified", reason: "the served want ticker/amount don't match the offer's on-chain record (a lying resolver could bait-and-switch the token price)", ...base };
   }
   if (sumsMismatch) return { ok: false, trust: "verified", reason: sumsMismatch, ...base };
   return { ok: true, trust: "verified", ...base };
