@@ -96,5 +96,45 @@ for (const v of V.vectors) {
 console.log("=== the corpus was actually exercised (a gate that runs nothing is not a gate) ===");
 ok(`executed exactly the pinned number of vectors (${EXPECTED_LEGS}, got ${legs})`, legs === EXPECTED_LEGS);
 
+// (c) THE DIST ARM (Plan 75-B C3). Everything above reads src/index.ts, which is exactly why a green suite
+// could sit on top of a dist that predates the fix: `dist/` is gitignored and untracked, `pnpm pack` does not
+// fire `prepublishOnly`, and the published bytes are dist, not src. Measured on this repo at 0.4.1:
+// `grep -c "fetch failed" dist/index.js` was 0 while this file reported 13/13. So the corpus is replayed a
+// SECOND time against the BUILT bytes.
+//
+// A missing dist is a HARD FAILURE here, never a skip. `pnpm build` runs before `pnpm test` in CI, in
+// `prepublishOnly` and in `prepack`, so the only way to reach this with no dist is to have skipped the build,
+// which is the defect this arm exists to catch. A skip-if-absent arm would be the dead-green class again.
+console.log("=== (c) the BUILT bytes carry the same classifier (dist is what ships, src is not) ===");
+const DIST = new URL("../dist/index.js", import.meta.url);
+let distSrc;
+try {
+  distSrc = readFileSync(DIST, "utf8");
+} catch {
+  console.error("  ❌ dist/index.js is missing. Run `pnpm build` first: this arm gates the bytes that actually ship.");
+  process.exit(1);
+}
+// The regexes survive bundling as literals; extract them from the built file the same strict way.
+const oneDist = (name) => {
+  const m = distSrc.match(new RegExp(`${name} = (/.+/[a-z]*);`));
+  if (!m) throw new Error(`spv-transient-parity: could not extract \`${name}\` from dist/index.js. Either the build is stale/absent or the bundler reshaped the literal: re-derive this arm, do not delete it.`);
+  return m[1];
+};
+const D_MAIN = lit(oneDist("SPV_TRANSIENT_RE"));
+const D_JSON = lit(oneDist("SPV_TRANSIENT_JSON_RE"));
+ok(`dist SPV_TRANSIENT_RE is byte-identical to src (${D_MAIN})`, String(D_MAIN) === String(RE_MAIN));
+ok(`dist SPV_TRANSIENT_JSON_RE is byte-identical to src (${D_JSON})`, String(D_JSON) === String(RE_JSON));
+const classifyDist = (msg) => (D_MAIN.test(msg) || D_JSON.test(msg) ? "transient" : "structural");
+let distLegs = 0;
+for (const v of V.vectors) {
+  distLegs++;
+  const cls = classifyDist(v.message);
+  ok(`dist ${v.id} ${v.class.toUpperCase()}: ${v.label} -> ${cls}`, cls === v.class);
+}
+ok(`dist replayed exactly the pinned number of vectors (${EXPECTED_LEGS}, got ${distLegs})`, distLegs === EXPECTED_LEGS);
+// The ASDK-1 headline itself, asserted on the shipping bytes by name. This is the grep the release gate runs
+// against the extracted tarball, run here so a stale dist reds the suite instead of reding only the tarball.
+ok('dist carries the ASDK-1 Node/undici arm verbatim ("fetch failed")', distSrc.includes("fetch failed"));
+
 console.log(`\nspv transient-parity: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

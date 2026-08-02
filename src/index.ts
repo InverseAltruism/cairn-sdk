@@ -72,14 +72,16 @@ export interface CairnConfig {
 // baked anchor — `cairn/public/trade/swapguard.js` CP; test/spv-checkpoint.test.ts asserts equality so the
 // two literals can't silently drift). A consensus block hash, not a trusted server's word — the light client
 // re-verifies every header forward from here. Pin a newer one via config.spvCheckpoint as the chain grows.
-// B7c (REBIND W12) note on the forward-bump: a 38,142 anchor costs every consumer a checkpoint..tip header
-// sync (now batched + retried by seededSpvLight below, so it is a few requests, not a per-height flood).
-// Moving the anchor forward shrinks that span, but the checkpoint is a SHARED cross-repo literal that MUST
-// land at the SAME value in swapguard.js's CP AND cairn/deploy/spv-checkpoint IN THE SAME change
-// (spv-checkpoint.test.ts fails on any drift). So the bump is a COORDINATED runbook step, not a unilateral
-// SDK edit; the recipe (pick a well-buried height, read its consensus block hash, update all three literals
-// together, re-run the pin) is in this campaign's b7bc-record. Until then this stays at swapguard's live value.
-export const DEFAULT_SPV_CHECKPOINT = { height: 38142, hash: "0x00000000000140f023cc0ee1457a40833f2fcb4de44291b9d373e50f17b97232" };
+// Plan 75-B C3 / H6 (2026-08-02): the coordinated forward-bump 38,142 -> 66,589 happened. The anchor is
+// NOT picked here: cairn's `scripts/bump-swapguard-cp.mjs` picked it (a finalized header at least 1,000
+// deep, hash cross-checked against BOTH independent local RPCs, kept below the oldest open offer, span
+// asserted under 24,000) and wrote it into swapguard.js; this literal is copied from that file and pinned
+// to it by test/spv-checkpoint.test.ts. Do NOT bump it unilaterally here: the two literals must move in the
+// SAME cycle or the pin reds, which is the drift guard working. Cost this buys: the checkpoint..tip seed a
+// consumer pays on a cold start drops from about 29,400 headers to about 1,000, one or two batched
+// /api/headers requests instead of about 58. cairn's `deploy/spv-checkpoint` carries the same number for the
+// ops watchdog; it is NOT covered by the parity test, so bump it in the cairn repo alongside swapguard.js.
+export const DEFAULT_SPV_CHECKPOINT = { height: 66589, hash: "0x00000000000027088f7a801555e1863d96a11fd4c258f86ca2c2506bd59ea698" };
 
 const DEFAULT_CAIRN = "https://cairn-substrate.com";
 

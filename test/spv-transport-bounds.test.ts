@@ -8,24 +8,24 @@ import { Cairn } from "../src/index.js";
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { c ? (pass++, console.log("  PASS " + n)) : (fail++, console.log("  FAIL " + n)); };
 
-const FIX = JSON.parse(readFileSync(new URL("./fixtures/spv-headers-38097-56.json", import.meta.url), "utf8")) as {
+const FIX = JSON.parse(readFileSync(new URL("./fixtures/spv-headers-66544-56.json", import.meta.url), "utf8")) as {
   headers: { height: number; header: Record<string, unknown>; hash: string }[];
 };
 const ROWS = FIX.headers;
 const BASE = ROWS[0].height;
-const M = ROWS.find((r) => r.height === 38150)!.header.merkle as string;
+const M = ROWS.find((r) => r.height === 66597)!.header.merkle as string;
 type Row = (typeof ROWS)[number];
 const sliceRows = (from: number, count: number): Row[] => ROWS.slice(from - BASE, from - BASE + count);
 const jsonRes = (obj: unknown, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json" } });
 
 function baseRoutes(url: string, tip: number): Response | undefined {
   if (/\/api\/rpc\/tip$/.test(url)) return jsonRes({ height: tip });
-  if (/\/merkle-proof$/.test(url)) return jsonRes({ block_height: 38150, pos: 0, merkle: [], merkle_root: M });
+  if (/\/merkle-proof$/.test(url)) return jsonRes({ block_height: 66597, pos: 0, merkle: [], merkle_root: M });
   if (/\/api\/rpc\/block\/height\/(\d+)$/.test(url)) return jsonRes({ ok: true, txs: [] });
-  if (/\/api\/rpc\/tx\//.test(url)) return jsonRes({ ok: true, height: 38150 });
+  if (/\/api\/rpc\/tx\//.test(url)) return jsonRes({ ok: true, height: 66597 });
   return undefined;
 }
-const seedCount = (seen: string[]) => seen.filter((u) => /\/api\/headers\/38097\/46$/.test(u)).length;
+const seedCount = (seen: string[]) => seen.filter((u) => /\/api\/headers\/66544\/46$/.test(u)).length;
 
 console.log("P75-5 MF-13 bounded batch transport:");
 
@@ -37,14 +37,14 @@ console.log("P75-5 MF-13 bounded batch transport:");
     seen.push(url);
     let m: RegExpMatchArray | null;
     if ((m = url.match(/\/api\/headers\/(\d+)\/(\d+)$/))) return jsonRes({ ok: true, headers: sliceRows(Number(m[1]), Number(m[2])) });
-    return baseRoutes(url, 38152) ?? new Response("not found", { status: 404 });
+    return baseRoutes(url, 66599) ?? new Response("not found", { status: 404 });
   }) as unknown as typeof fetch;
   const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: stub });
   const r = await cairn.index.verifyInclusion(M);
   ok("B0 happy: an honest batch (~170 KB max, 12x under the cap) still verifies (no decline, no latency)", r.trustLevel === "verified-inclusion" && r.included === true);
 }
 
-// B1 (size cap): the first from>=38143 batch is a VALID dense batch bloated with ~300 KB/row of pad (>2 MiB);
+// B1 (size cap): the first from>=66590 batch is a VALID dense batch bloated with ~300 KB/row of pad (>2 MiB);
 // every later hit 404s. The oversize batch is REFUSED, the seed survives, the client degrades to proof-consistent.
 {
   const seen: string[] = [];
@@ -55,7 +55,7 @@ console.log("P75-5 MF-13 bounded batch transport:");
     let m: RegExpMatchArray | null;
     if ((m = url.match(/\/api\/headers\/(\d+)\/(\d+)$/))) {
       const from = Number(m[1]), count = Number(m[2]);
-      if (from < 38143) return jsonRes({ ok: true, headers: sliceRows(from, count) });
+      if (from < 66590) return jsonRes({ ok: true, headers: sliceRows(from, count) });
       bigHit++;
       if (bigHit === 1) {
         const padded = sliceRows(from, count).map((r) => ({ header: r.header, hash: r.hash, pad: "x".repeat(300 * 1024) }));
@@ -63,7 +63,7 @@ console.log("P75-5 MF-13 bounded batch transport:");
       }
       return new Response("gone", { status: 404 });
     }
-    return baseRoutes(url, 38152) ?? new Response("not found", { status: 404 });
+    return baseRoutes(url, 66599) ?? new Response("not found", { status: 404 });
   }) as unknown as typeof fetch;
   const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: stub });
   const r = await cairn.index.verifyInclusion(M);
@@ -71,7 +71,7 @@ console.log("P75-5 MF-13 bounded batch transport:");
   ok("B1 size cap: the seed itself was NOT re-fetched (bounded degrade, not a reseed storm)", seedCount(seen) === 1);
 }
 
-// B2 (whole-attempt abort): the first from>=38143 batch returns a 200 whose body enqueues `{"headers":` then
+// B2 (whole-attempt abort): the first from>=66590 batch returns a 200 whose body enqueues `{"headers":` then
 // STALLS forever; the runtime ties the body stream to the AbortSignal. The attempt-spanning timer aborts the
 // in-flight body read (pre-fix the timer is cleared at headers and res.json() hangs). Every later hit 404s.
 {
@@ -84,7 +84,7 @@ console.log("P75-5 MF-13 bounded batch transport:");
     let m: RegExpMatchArray | null;
     if ((m = url.match(/\/api\/headers\/(\d+)\/(\d+)$/))) {
       const from = Number(m[1]), count = Number(m[2]);
-      if (from < 38143) return jsonRes({ ok: true, headers: sliceRows(from, count) });
+      if (from < 66590) return jsonRes({ ok: true, headers: sliceRows(from, count) });
       stallHit++;
       if (stallHit === 1) {
         const body = new ReadableStream<Uint8Array>({
@@ -97,7 +97,7 @@ console.log("P75-5 MF-13 bounded batch transport:");
       }
       return new Response("gone", { status: 404 });
     }
-    return baseRoutes(url, 38152) ?? new Response("not found", { status: 404 });
+    return baseRoutes(url, 66599) ?? new Response("not found", { status: 404 });
   }) as unknown as typeof fetch;
   const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: stub });
   const t0 = Date.now();

@@ -1,6 +1,6 @@
 {
   "name": "@inversealtruism/cairn-sdk",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "The Compute Substrate dApp kit — one cohesive toolkit to connect the Cairn Wallet, read the chain/board, publish self-certifying content, and resolve registries. Composes the published csd-* primitives.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -69,6 +69,7 @@
     "test:e2e:write": "node test/e2e/e2e-write.mjs",
     "test:e2e": "node test/e2e/e2e-read.mjs && xvfb-run -a node test/e2e/e2e-wallet-connect.mjs",
     "test:all": "pnpm test && pnpm test:e2e",
+    "prepack": "pnpm build",
     "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
