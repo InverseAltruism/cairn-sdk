@@ -102,7 +102,7 @@ const SPV_MAX_BATCH_BYTES = 2 * 1024 * 1024;
 // JSON-parse arm, because fetchHeadersBatch parses the response body, so a CF 200-HTML interstitial
 // surfaces as "Unexpected token ..." - a transport fault, never a chain fault (structural errors say
 // prev/PoW/bits/hash, never json). Misclassifying it re-authors the DOS-HDR-3 reseed storm.
-const SPV_TRANSIENT_RE = /\b(429|50[0-9]|timeout|timed out|abort|aborted|headers|non-dense|failed to fetch|networkerror|load failed)\b/i;
+const SPV_TRANSIENT_RE = /\b(429|50[0-9]|timeout|timed out|abort|aborted|headers|non-dense|failed to fetch|fetch failed|networkerror|load failed)\b/i;
 const SPV_TRANSIENT_JSON_RE = /unexpected (token|end)|json/i;
 const spvIsTransient = (e: unknown): boolean => {
   const msg = String((e as Error)?.message || e);
