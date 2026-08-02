@@ -1,0 +1,57 @@
+{
+  "family": "spv-transient-classifier",
+  "revision": 1,
+  "purpose": "REFUSAL-parity vectors for the hand-maintained SPV transient-vs-STRUCTURAL classifier twin family (Plan 75-A section 7.3). Three copies: cairn-sdk/src/index.ts (spvIsTransient), cairn-wallet/src/core/namespv.ts (isTransientSyncError), cairn/public/trade/swapguard.js (the inline regex in ensureSyncedTo). This file is DUPLICATED byte-for-byte into each repo and every copy's test pins sha256 of these bytes, so a drifted COPY reds.",
+  "contract": "transient = a TRANSPORT or data-availability fault: KEEP the verified header cache and rethrow fail-closed, because wiping and cold-reseeding turns one blip into the DOS-HDR-3 reseed storm. structural = a CHAIN fault (prev-link / PoW / bits / hash): drop the cache and reseed from the baked checkpoint. Misclassifying transport as structural manufactures the storm; misclassifying a chain fault as transport wedges a client on an orphaned tip.",
+  "vectors": [
+    {
+      "id": "SPV-1",
+      "class": "transient",
+      "label": "Node/undici transport failure",
+      "message": "fetch failed",
+      "why": "The message undici (Node 18+ global fetch) puts on its TypeError for DNS failure, connection refused and connection reset. It is the single most common transport error on a Node-side SPV sync."
+    },
+    {
+      "id": "SPV-2",
+      "class": "transient",
+      "label": "browser transport failure",
+      "message": "Failed to fetch",
+      "why": "The Chrome/MV3 wording for the same condition. Firefox says NetworkError, Safari says Load failed; all three are transport, never chain."
+    },
+    {
+      "id": "SPV-3",
+      "class": "transient",
+      "label": "200 with an HTML body, legacy V8 wording",
+      "message": "Unexpected token < in JSON at position 0",
+      "why": "A Cloudflare interstitial answers 200 with HTML; the batch reader parses the body, so the fault surfaces as a JSON syntax error. Structural errors say prev / PoW / bits / hash, never json."
+    },
+    {
+      "id": "SPV-4",
+      "class": "transient",
+      "label": "200 with a non-JSON body, current V8 wording",
+      "message": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON",
+      "why": "The same condition on Node 20+ / V8 11+, whose SyntaxError text was reworded. Listed separately because a classifier that pattern-matches the old wording alone silently stops covering the current runtime."
+    },
+    {
+      "id": "SPV-5",
+      "class": "transient",
+      "label": "height beyond tip",
+      "message": "/api/headers: non-dense range",
+      "why": "What a sync past the header source's tip actually produces: the server cannot fill a batch that extends beyond what it holds, so the range comes back short. That is indexer lag, a data-availability condition, not a chain fault, and reseeding from the checkpoint cannot fix it."
+    },
+    {
+      "id": "SPV-6",
+      "class": "transient",
+      "label": "HTTP 507 (exercises 50[0-9] against 502|503)",
+      "message": "GET /block/height/61832 → HTTP 507",
+      "why": "The verbatim csd-client 5xx producer string. 507 is deliberately outside the 502|503 pair: a classifier enumerating only 502 and 503 treats every other gateway/proxy 5xx as a chain fault. The string carries no other transient keyword, so it isolates the 5xx arm (a /api/headers URL would match the 'headers' keyword instead and prove nothing)."
+    },
+    {
+      "id": "SPV-7",
+      "class": "structural",
+      "label": "genuine prev-link break",
+      "message": "broken prev link at 61833",
+      "why": "The verbatim csd-light producer for a reorg that orphaned the cached tip. This is the accept side of the classifier: it MUST stay structural, or a client wedges forever on an orphaned branch while reporting verified inclusion."
+    }
+  ]
+}
