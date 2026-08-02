@@ -8,9 +8,13 @@
 // the SDK-vs-swapguard drift gate, is NOT in the sanctioned publish path. Saying otherwise is the
 // over-claim this script replaces: the gate that IS in the path now checks both things.
 //
-// Checks, all against the extracted tarball, never the working tree:
-//   1. package/dist/index.js exists and carries the ASDK-1 transient arm ("fetch failed").
-//   2. package/dist/index.js carries a parseable DEFAULT_SPV_CHECKPOINT literal.
+// Checks, all against the extracted tarball, never the working tree, and run over BOTH package entries
+// (dist/index.js is `module` + exports["."].import; dist/index.cjs is `main` + exports["."].require, so
+// it is what every CommonJS consumer loads). Checking only the ESM entry left the CJS bytes ungated:
+// a tarball whose index.cjs carried the old anchor or a stripped ASDK-1 arm passed green.
+//   1. the entry exists (a missing entry FAILS, it is never skipped) and carries the ASDK-1
+//      transient arm ("fetch failed").
+//   2. the entry carries a parseable DEFAULT_SPV_CHECKPOINT literal.
 //   3. that height+hash pair equals cairn's public/trade/swapguard.js CP (the fund-adjacent pin).
 // A missing sibling cairn checkout FAILS here (a silent skip is exactly the class this gate exists for).
 // CAIRN_REPO / CAIRN_SWAPGUARD must point at the cairn tree carrying the CP you intend to ship against.
@@ -69,21 +73,24 @@ console.log(`  swapguard CP height=${CP.height} hash=${CP.hash}`);
 const work = mkdtempSync(join(tmpdir(), "cairn-sdk-tarball-"));
 try {
   execFileSync("tar", ["xf", tgz, "-C", work], { stdio: ["ignore", "ignore", "inherit"] });
-  const distPath = join(work, "package/dist/index.js");
-  if (!existsSync(distPath)) die("package/dist/index.js is missing from the tarball (a dist-less pack)");
-  const dist = readFileSync(distPath, "utf8");
+  // Both entries of exports["."]: the ESM one and the CJS one every `require()` consumer gets.
+  for (const entry of ["dist/index.js", "dist/index.cjs"]) {
+    const distPath = join(work, "package", entry);
+    if (!existsSync(distPath)) die(`package/${entry} is missing from the tarball (a dist-less or half-built pack)`);
+    const dist = readFileSync(distPath, "utf8");
 
-  // 1. ASDK-1: the Node/undici transport wording must be in the SHIPPED classifier.
-  ok('packed dist/index.js carries the ASDK-1 "fetch failed" arm', dist.includes("fetch failed"));
+    // 1. ASDK-1: the Node/undici transport wording must be in the SHIPPED classifier.
+    ok(`packed ${entry} carries the ASDK-1 "fetch failed" arm`, dist.includes("fetch failed"));
 
-  // 2 + 3. The packed anchor, and its equality with cairn's swapguard CP.
-  const m = dist.match(/DEFAULT_SPV_CHECKPOINT\s*=\s*\{\s*height:\s*(\d+)\s*,\s*hash:\s*["']([0-9a-fA-Fx]+)["']/);
-  ok("packed dist/index.js carries a parseable DEFAULT_SPV_CHECKPOINT", !!m);
-  if (m) {
-    const packed = { height: Number(m[1]), hash: m[2].toLowerCase() };
-    console.log(`  packed  CP height=${packed.height} hash=${packed.hash}`);
-    ok(`packed checkpoint height matches swapguard (${CP.height})`, packed.height === CP.height);
-    ok("packed checkpoint hash matches swapguard (lowercased)", packed.hash === CP.hash);
+    // 2 + 3. The packed anchor, and its equality with cairn's swapguard CP.
+    const m = dist.match(/DEFAULT_SPV_CHECKPOINT\s*=\s*\{\s*height:\s*(\d+)\s*,\s*hash:\s*["']([0-9a-fA-Fx]+)["']/);
+    ok(`packed ${entry} carries a parseable DEFAULT_SPV_CHECKPOINT`, !!m);
+    if (m) {
+      const packed = { height: Number(m[1]), hash: m[2].toLowerCase() };
+      console.log(`  packed  ${entry} CP height=${packed.height} hash=${packed.hash}`);
+      ok(`packed ${entry} checkpoint height matches swapguard (${CP.height})`, packed.height === CP.height);
+      ok(`packed ${entry} checkpoint hash matches swapguard (lowercased)`, packed.hash === CP.hash);
+    }
   }
 } finally {
   rmSync(work, { recursive: true, force: true });
