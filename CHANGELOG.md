@@ -1,6 +1,45 @@
 # Changelog
 
-## Unreleased (Plan 75, P75-5 fill + SPV surface)
+## 0.4.2 (2026-08-02) - Plan 75-B C3
+
+- ASDK-1: the SPV transient-vs-structural classifier now recognises the Node/undici transport wording
+  `fetch failed` alongside the browser's `failed to fetch`. This package runs in Node, so an ordinary
+  transport blip was classified STRUCTURAL and drove `withSpvReseed` into a full checkpoint-to-tip cold
+  reseed instead of a retry: the DOS-HDR-3 storm the split exists to prevent, re-authored through a
+  different message class. The fix landed on master right after 0.4.1 was published, so every 0.4.1
+  install carries the defect.
+- `DEFAULT_SPV_CHECKPOINT` moves from height 38,142 to **66,589**
+  (`0x00000000000027088f7a801555e1863d96a11fd4c258f86ca2c2506bd59ea698`). A moved trust anchor is never a
+  silent change. The anchor is cairn's `public/trade/swapguard.js` CP, picked by that repo's
+  `bump-swapguard-cp.mjs` (finalized, at least 1,000 deep, hash cross-checked against two independent
+  local RPCs) and pinned to this literal by `test/spv-checkpoint.test.ts`. Effect for consumers: the cold
+  checkpoint-to-tip header seed drops from about 29,400 headers to about 1,000, one or two batched
+  `/api/headers` requests instead of about 58.
+- **Read this if you gate on `trustLevel === "verified-inclusion"`.** No signature, export or option
+  changed, but one behavior did, and it is a consequence of the anchor move above. The light client
+  verifies headers FORWARD from the anchor only, so `index.verifyInclusion(txid)` for a tx confirmed in
+  blocks **38,142 through 66,588** now returns `trustLevel: "proof-consistent"` where 0.4.1 returned
+  `"verified-inclusion"` (internally: `height <N> is below the SPV checkpoint 66589 (cannot PoW-verify
+  backward)`). That is roughly six weeks of chain history. The proof is still fetched, shape-checked and
+  root-matched, it is just indexer-trusted instead of PoW-verified, so the move is fail-CLOSED and never
+  an over-claim. It still matters for a consumer that REFUSES anything below `verified-inclusion`: those
+  reads start being refused on a routine `^0.4.1` update, because this is a patch release. If you need
+  backward verification over that band, keep the old anchor explicitly:
+  `new Cairn({ spvCheckpoint: { height: 38142, hash: "0x00000000000140f023cc0ee1457a40833f2fcb4de44291b9d373e50f17b97232" } })`.
+  A pinned anchor is your own trust decision and is never checked against swapguard.
+- Release integrity: `prepack` now runs `pnpm build`. `dist/` is gitignored and untracked and `pnpm pack`
+  does not fire `prepublishOnly`, so the sanctioned pack-then-publish path could ship a dist older than
+  the source it claims to be. Measured at 0.4.1: `grep -c "fetch failed" dist/index.js` was 0 while the
+  suite reported 16/16 green, because the parity test reads `src` by design.
+  `test/spv-transient-parity.test.mjs` gains a dist arm that replays the whole vector corpus against the
+  BUILT bytes and hard-fails on a missing dist. No hook fires when a pre-made tarball is published, so
+  the authoritative gate stays the extracted-tarball assertion, now `node scripts/verify-tarball.mjs`
+  (repo-only, not shipped): it checks the packed `dist/index.js` for the ASDK-1 arm AND cross-checks the
+  packed `DEFAULT_SPV_CHECKPOINT` against cairn's `public/trade/swapguard.js` CP. Publishing a pre-made
+  tarball also skips `prepublishOnly`, so `test/spv-checkpoint.test.ts` is not in that path; the
+  cross-check is in the gate that is. An absent sibling cairn checkout FAILS the gate, never skips it.
+
+## 0.4.1 (2026-07-31) - Plan 75, P75-5 fill + SPV surface
 
 BREAKING REFUSAL (MF-09): `preverifyOffer` / `verifyOfferForFill` now REFUSE a `servedOffer` whose
 `want.payto` or `seller` is absent or null (the reason names the missing field), where they previously
