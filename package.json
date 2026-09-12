@@ -1,7 +1,7 @@
 {
   "name": "@inversealtruism/cairn-sdk",
-  "version": "0.4.2",
-  "description": "The Compute Substrate dApp kit — one cohesive toolkit to connect the Cairn Wallet, read the chain/board, publish self-certifying content, and resolve registries. Composes the published csd-* primitives.",
+  "version": "0.4.3",
+  "description": "The Compute Substrate dApp kit \u2014 one cohesive toolkit to connect the Cairn Wallet, read the chain/board, publish self-certifying content, and resolve registries. Composes the published csd-* primitives.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -74,12 +74,12 @@
   },
   "dependencies": {
     "@inversealtruism/cairnx-core": "0.1.41",
-    "@inversealtruism/csd-client": "0.1.15",
+    "@inversealtruism/csd-client": "0.1.16",
     "@inversealtruism/csd-codec": "0.1.16",
     "@inversealtruism/csd-crypto": "0.1.15",
     "@inversealtruism/csd-light": "0.1.19",
     "@inversealtruism/csd-registry": "0.1.17",
-    "@inversealtruism/csd-tx": "0.1.17"
+    "@inversealtruism/csd-tx": "0.1.18"
   },
   "devDependencies": {
     "@inversealtruism/csd-siwc": "0.1.16",
