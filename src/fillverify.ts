@@ -28,7 +28,7 @@ import { rpcTxToTx, type RpcTxJson } from "@inversealtruism/csd-client";
 import { txid, payloadHash } from "@inversealtruism/csd-codec";
 import {
   DOMAIN, parseRecord, feeBpsAt, bindOfferTerms, provenOfferTerms, fillOutputPlan, isTokenWant,
-  fillEndorsement, fillIsSafe, requiredFillOutputs, previewFill,
+  fillEndorsement, fillIsSafe, requiredFillOutputs, previewFill, TREASURY_ADDR, epochOf,
   type ProvenOfferTerms, type OfferState,
 } from "@inversealtruism/cairnx-core";
 import type { InclusionResult } from "@inversealtruism/csd-light";
@@ -190,6 +190,22 @@ export async function preverifyOffer(opts: {
   // B7b keeps the BRANDED MintedProvenOfferTerms (no widening annotation) so the 3-arg bindOfferTerms
   // opt-in below type-checks - a hand-built terms object opting into the new legs is a compile error.
   const terms = provenOfferTerms(offerRec, blockHeight);
+
+  // S-B4: refuse records the chain's own resolver REJECTS at creation (cairnx-core resolve.ts) -
+  // they would otherwise return ok:true trust:"verified" while the fill's give is a no-op (the CSD
+  // moves, nothing is delivered). Both checks run over the merkle-proven record + the merkle-proven
+  // inclusion height, never a served field:
+  //   - payto == the protocol treasury (resolve.ts: "payto cannot be the protocol treasury").
+  if (payto === TREASURY_ADDR)
+    return { ok: false, trust: "verified", blockHeight, reason: "the offer's payment recipient is the protocol treasury - the chain rejects it, and a fill would move CSD for nothing" };
+  //   - already expired at its anchor height (resolve.ts: "already expired at anchor"). The proven
+  //   expiry is the on-chain Propose's expires_epoch; blockHeight is the merkle-proven inclusion height.
+  //   Mirrors resolve.ts exactly: a NON-safe-integer expires_epoch is rejected outright (the node
+  //   accepts an unbounded u64), so refuse on that too, not just on a past anchor.
+  const provenExpiresEpoch = Number((app as { expires_epoch?: unknown }).expires_epoch);
+  if (!Number.isSafeInteger(provenExpiresEpoch) || epochOf(blockHeight) > provenExpiresEpoch)
+    return { ok: false, trust: "verified", blockHeight, reason: "the offer was already expired when it was mined - the chain rejects it, and a fill would move CSD for nothing" };
+
 
   // B7b (REBIND W3/M1) OPT-IN sums seam: when the caller states the `pay` it intends, size the PROVEN CSD
   // output plan from the merkle-proven offer via the discriminated `fillOutputPlan` (the M1 successor to

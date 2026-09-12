@@ -28,16 +28,16 @@ const H = 40000; // > V16 (33600) so feeBps = 150
 
 // a REAL signed Propose tx committing `rec`; its funding prevout owner is registered as `owner`.
 const prevoutOf = new Map<string, { value: number; script_pubkey: string }>();
-function proposeTx(priv: string, rec: object, nonce = 1, domain = DOMAIN) {
+function proposeTx(priv: string, rec: object, nonce = 1, domain = DOMAIN, expiresEpoch = 9_000_000) {
   const a = addrFromPriv(priv);
   const uri = canonicalJson(rec);
   const phash = payloadHash(rec);
   const prev = "0x" + nonce.toString(16).padStart(2, "0").repeat(32).slice(0, 64);
-  const stripped = { version: 1, inputs: [{ prevTxid: prev, vout: 0, scriptSig: "0x" }], outputs: [{ value: 1000, scriptPubkey: a }], locktime: 0, app: { type: "Propose", domain, payloadHash: phash, uri, expiresEpoch: 9_000_000 } };
+  const stripped = { version: 1, inputs: [{ prevTxid: prev, vout: 0, scriptSig: "0x" }], outputs: [{ value: 1000, scriptPubkey: a }], locktime: 0, app: { type: "Propose", domain, payloadHash: phash, uri, expiresEpoch } };
   const { sig64, pub33 } = signDigest(sighash(stripped), priv);
   const scriptSig = buildScriptSig(sig64, pub33);
   const id = txid(stripped);
-  const json = { txid: id, version: 1, locktime: 0, inputs: [{ prev_txid: prev, vout: 0, script_sig: scriptSig }], outputs: [{ value: 1000, script_pubkey: a }], app: { type: "Propose", domain, payload_hash: phash, uri, expires_epoch: 9_000_000 } };
+  const json = { txid: id, version: 1, locktime: 0, inputs: [{ prev_txid: prev, vout: 0, script_sig: scriptSig }], outputs: [{ value: 1000, script_pubkey: a }], app: { type: "Propose", domain, payload_hash: phash, uri, expires_epoch: expiresEpoch } };
   // the funding source tx (a coinbase-like body whose output[0] the offer input spends), owner = the signer
   const srcStripped = { version: 1, inputs: [{ prevTxid: "0x" + "00".repeat(32), vout: 0xffffffff, scriptSig: "0x" + nonce.toString(16).padStart(8, "0") }], outputs: [{ value: 5_000_000_000, scriptPubkey: a }], locktime: 0, app: { type: "None" } };
   const srcId = txid(srcStripped);
@@ -113,6 +113,36 @@ await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsemen
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, seller: ATTACKER }) });
     return r.ok === false && /seller/.test(r.reason ?? "");
   });
+
+  // S-B4: records the chain's own resolver REJECTS at creation must be REFUSED, not ok:true.
+  {
+    const TREASURY = "0x6b09ce74e6070ebc982ab0fb793a211c4d24f016";
+    // payto == the protocol treasury (resolve.ts rejects it): the fill's give would be a no-op.
+    const recT = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: TREASURY } };
+    const txT = proposeTx(SELLER_KEY, recT, 1);
+    await ok("[S-B4] an offer paying the protocol treasury is REFUSED (a chain-rejected record)", async () => {
+      const r = await preverifyOffer({ light: mockLight(txT.json, txT.phash), client: mockClient, offerId: txT.id, servedOffer: servedFor({ id: txT.id, want: { value: "500000000", payto: TREASURY } }) });
+      return r.ok === false && /treasury/.test(r.reason ?? "");
+    });
+    // expired at anchor: expires_epoch 1000 < epochOf(H=40000)=1333. The resolver rejects it at creation.
+    const recX = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
+    const txX = proposeTx(SELLER_KEY, recX, 1, DOMAIN, 1000);
+    await ok("[S-B4] an already-expired-at-anchor offer is REFUSED (a chain-rejected record)", async () => {
+      const r = await preverifyOffer({ light: mockLight(txX.json, txX.phash), client: mockClient, offerId: txX.id, servedOffer: servedFor({ id: txX.id }) });
+      return r.ok === false && /expired/.test(r.reason ?? "");
+    });
+    // non-safe-integer expiry (>= 2^53): the codec's u64 refuses to even RE-DERIVE such a tx
+    // (txid throws), so preverifyOffer fails closed at the re-derivation step - never ok:true. The
+    // resolver also rejects a non-safe-integer expiresEpoch outright (resolve.ts), and the expiry
+    // check in fillverify carries a matching !Number.isSafeInteger refusal as defense-in-depth.
+    {
+      const badJson = { txid: K(0x99), version: 1, locktime: 0, inputs: [{ prev_txid: K(0x01), vout: 0, script_sig: "0x" }], outputs: [{ value: 1000, script_pubkey: SELLER }], app: { type: "Propose", domain: DOMAIN, payload_hash: "0x" + "0".repeat(64), uri: "x", expires_epoch: 9007199254740992 } };
+      await ok("[S-B4] a non-safe-integer expires_epoch offer is REFUSED (fail-closed)", async () => {
+        const r = await preverifyOffer({ light: mockLight(badJson, "0x" + "0".repeat(64)), client: mockClient, offerId: K(0x99) });
+        return r.ok === false;
+      });
+    }
+  }
   await ok("[deflated feeBps] a served feeBps=0 (proven 150) is REFUSED", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, feeBps: 0 }) });
     return r.ok === false && /terms don't match the offer's on-chain record/.test(r.reason ?? "");

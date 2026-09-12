@@ -97,7 +97,7 @@ export class Http {
     return u.toString();
   }
 
-  private async raw(method: string, path: string, opts?: { query?: Record<string, string | number | boolean | undefined>; body?: unknown; headers?: Record<string, string> }): Promise<Response> {
+  private async raw(method: string, path: string, opts?: { query?: Record<string, string | number | boolean | undefined>; body?: unknown; headers?: Record<string, string> }): Promise<{ res: Response; body: Uint8Array }> {
     const url = this.url(path, opts?.query);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
@@ -112,7 +112,11 @@ export class Http {
         },
         body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
       });
-      return res;
+      // C-6 / MF-13: ONE controller bounds headers AND body. Read the body (byte-capped) while the
+      // timer is still armed, so a 200-then-drip body is aborted mid-read instead of hanging the
+      // read forever. (Aborting the signal after headers aborts the body stream's reader.)
+      const body = await readCapped(res, this.maxBytes);
+      return { res, body };
     } finally {
       clearTimeout(timer);
     }
@@ -130,15 +134,13 @@ export class Http {
     // Opt-in GET retry (default 0): network errors/timeouts and 5xx only, full-jitter backoff.
     for (let attempt = 0; ; attempt++) {
       try {
-        const res = await this.raw("GET", path, { query });
+        const { res, body } = await this.raw("GET", path, { query });
         if (!res.ok) {
-          // read the body for the error message ONLY when we are actually throwing (terminal); on a
-          // to-be-retried 5xx, drain the discarded body (undici holds the socket until GC otherwise).
-          if (!(res.status >= 500 && attempt < this.retries)) throw new HttpError(res.status, url, await safeText(res));
-          res.body?.cancel().catch(() => {});
+          // the body is already read (byte-capped, socket drained); build the error message from it.
+          if (!(res.status >= 500 && attempt < this.retries)) throw new HttpError(res.status, url, errText(body));
           // else: fall through to the jittered sleep and retry
         } else {
-          return this.parseJson<T>(res, new TextDecoder().decode(await readCapped(res, this.maxBytes)), url);
+          return this.parseJson<T>(res, new TextDecoder().decode(body), url);
         }
       } catch (e) {
         if (e instanceof HttpError && e.status < 500) throw e;      // 4xx: terminal, never retried
@@ -150,25 +152,27 @@ export class Http {
 
   async postJson<T = unknown>(path: string, body: unknown, headers?: Record<string, string>): Promise<T> {
     const url = this.url(path);
-    const res = await this.raw("POST", path, { body, headers });
-    if (!res.ok) throw new HttpError(res.status, url, await safeText(res));
-    return this.parseJson<T>(res, new TextDecoder().decode(await readCapped(res, this.maxBytes)), url);
+    const { res, body: respBody } = await this.raw("POST", path, { body, headers });
+    if (!res.ok) throw new HttpError(res.status, url, errText(respBody));
+    return this.parseJson<T>(res, new TextDecoder().decode(respBody), url);
   }
 
   /** GET raw bytes (for content retrieval). Returns null on 404. */
   async getBytes(path: string): Promise<{ bytes: Uint8Array; headers: Headers } | null> {
-    const res = await this.raw("GET", path);
+    const { res, body } = await this.raw("GET", path);
     if (res.status === 404) return null;
-    if (!res.ok) throw new HttpError(res.status, this.url(path), await safeText(res));
-    return { bytes: await readCapped(res, this.maxBytes), headers: res.headers };
+    if (!res.ok) throw new HttpError(res.status, this.url(path), errText(body));
+    return { bytes: body, headers: res.headers };
   }
 }
 
 // CAIRNSDK-DESER-4: the error-response body is read only to build an HttpError message — cap it HARD so a
 // hostile 4xx/5xx with a multi-GB body can't OOM the client on the error path (the sink the finding missed).
-async function safeText(res: Response): Promise<string> {
+// Build an HttpError message from an already-read (byte-capped) body; sliced hard for the message
+// (the body was read at maxBytes by raw(), so this just truncates for the error string).
+function errText(body: Uint8Array): string {
   try {
-    return new TextDecoder().decode(await readCapped(res, ERR_TEXT_CAP));
+    return new TextDecoder().decode(body).slice(0, ERR_TEXT_CAP);
   } catch {
     return "";
   }
