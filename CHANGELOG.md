@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.4 (2026-09-25) - CairnX public launch (Plans 80 and 81)
+
+- Dependencies: `@inversealtruism/cairnx-core` 0.1.42 (the expiry index: `resolve()` sweeps only open offers,
+  bids and pending names; canonical replay byte-identical to 0.1.41, proven on the real chain) and
+  `@inversealtruism/csd-light` 0.1.21 (hash-once header verify, light-local PoW/work memos, chunked async
+  snapshot restore from 0.1.20). The lockfile is regenerated: at 0.4.3 it still resolved csd-client 0.1.15
+  and csd-tx 0.1.17 while package.json pinned 0.1.16 and 0.1.18, so a frozen install (CI) refused.
+- `DEFAULT_SPV_CHECKPOINT` moves from height 66,589 to **101,998**
+  (`0x0000000000085295c9e13bbf276a11affb5470059235d1ea85d6334c8b43c49c`), following cairn's
+  `public/trade/swapguard.js` (Plan 80 D9, live since 25 Sep; hash checked against the local node). A cold
+  checkpoint-to-tip seed drops from about 39,000 headers to about 4,000.
+- **Read this if you gate on `trustLevel === "verified-inclusion"`:** the light client verifies headers
+  forward from the anchor only, so a transaction confirmed below height 101,998 no longer reaches
+  `verified-inclusion` through the default anchor. Pass your own older checkpoint if you need to prove
+  inclusion that deep.
+- `SDK_VERSION` is 0.4.4.
+
 ## 0.4.2 (2026-08-02) - Plan 75-B C3
 
 - ASDK-1: the SPV transient-vs-structural classifier now recognises the Node/undici transport wording
