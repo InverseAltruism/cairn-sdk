@@ -1,6 +1,6 @@
 # cairn-sdk
 
-> Onboarding briefing for coding agents and contributors working on this repo. `AGENTS.md` is the canonical briefing; `CLAUDE.md` imports it, so edit `AGENTS.md` only and keep them in sync that way. Production hosting and operations specifics are intentionally out of scope here and maintained privately.
+> Onboarding briefing for coding agents and contributors working on this repo. `AGENTS.md` is the canonical briefing; `CLAUDE.md` is a symlink to it. Production hosting and operations specifics are intentionally out of scope here and maintained privately.
 
 `@inversealtruism/cairn-sdk` (npm; version state is ephemeral, see the dated State snapshot at the bottom) is the Compute Substrate dApp kit: the single umbrella package a third party installs to build on CSD/Cairn. It composes the published low-level `@inversealtruism/csd-*` primitives (from the csd-sdk monorepo) behind one `Cairn` facade:
 
@@ -33,7 +33,7 @@ src/ (12 files, ~2,200 lines), built by tsup to esm+cjs+dts with 9 subpath expor
 
 docs/SDK-GUIDE.md (third-party guide incl. the verifies-vs-trusts table), examples/ (read-only, wallet-connect, siwc-login, node-signer, hello-csd, register-swarm-peer [historical; swarm L1 is dead]), scripts/ (esbuild example build + 6 maintainer-run live E2E harnesses: scripts/live-wallet-ui.mjs, scripts/names-e2e.mjs, scripts/names-buy-e2e.mjs, scripts/ux-live-readonly.mjs, scripts/ux-openlane-buy.mjs, scripts/wallet-send-spv-e2e.mjs).
 
-Deps (exact-pinned, as in package.json at 0.4.2): cairnx-core 0.1.41, csd-codec 0.1.16, csd-light 0.1.19, csd-registry 0.1.17, csd-tx 0.1.17, csd-client 0.1.15, csd-crypto 0.1.15, plus csd-siwc 0.1.16 as a devDependency. These already name the published csd-sdk set, so 0.4.2 re-pins nothing. src/fillverify.ts imports `feeBpsAt`/`bindOfferTerms`/`provenOfferTerms` from cairnx-core (the local copies were retired: B4b single-sourced the ProvenOfferTerms interface + producer, corpus-equivalence-pinned by test/proven-terms-corpus.test.ts); the F13 `preverifyOffer` helper and F14 throw-on-nested-refusal write wrapper landed in 0.3.0. B7b (0.4.0-to-be) FLIPS the opt-in binds ON: the 3-arg branded `bindOfferTerms` give legs + symmetric want-type refusal, the opt-in sums seam over the discriminated `fillOutputPlan`, and the `fillEndorsement`/`fillOutputPlan` successors surfaced (deprecated `fillIsSafe`/`requiredFillOutputs`/`previewFill` stay exported, behavior-frozen; `fillEndorsement`'s not-endorsable verdict means PROCEED-unendorsed, never a refusal of an honest token fill).
+Deps: exact-pinned in `package.json`, which is the single source for every version and pin (csd-siwc is a devDependency). src/fillverify.ts imports `feeBpsAt`/`bindOfferTerms`/`provenOfferTerms` from cairnx-core (the local copies were retired: B4b single-sourced the ProvenOfferTerms interface + producer, corpus-equivalence-pinned by test/proven-terms-corpus.test.ts); the F13 `preverifyOffer` helper and F14 throw-on-nested-refusal write wrapper landed in 0.3.0. B7b (0.4.0-to-be) FLIPS the opt-in binds ON: the 3-arg branded `bindOfferTerms` give legs + symmetric want-type refusal, the opt-in sums seam over the discriminated `fillOutputPlan`, and the `fillEndorsement`/`fillOutputPlan` successors surfaced (deprecated `fillIsSafe`/`requiredFillOutputs`/`previewFill` stay exported, behavior-frozen; `fillEndorsement`'s not-endorsable verdict means PROCEED-unendorsed, never a refusal of an honest token fill).
 
 ## Invariants and red lines
 
@@ -100,9 +100,7 @@ re-gated green against the real graph.
 
 ## State snapshot (2026-08-02, Plan 75-B C3; verify with git log before trusting)
 
-**0.4.1 is the version PUBLISHED to npm** (2026-07-31, tag v0.4.1; Plan 75 P75-5, the fill + SPV surface, pins cairnx-core 0.1.41 + csd-codec 0.1.16 + csd-light 0.1.19 + csd-registry 0.1.17 + csd-tx 0.1.17 + csd-client/crypto 0.1.15, csd-siwc 0.1.16 as a devDependency). Suite 16/16 via test/run.mjs. MIT.
-
-**0.4.2 is authored on master and NOT yet published** (Plan 75-B C3): the ASDK-1 `fetch failed` classifier arm, the DEFAULT_SPV_CHECKPOINT bump to 66,589, the `prepack` build hook and the transient-parity dist arm. The published 0.4.1 bytes still carry the ASDK-1 defect and the old anchor.
+Version and pins: `package.json`; releases are the `v*` git tags.
 
 Release-path fact worth keeping: `dist/` is gitignored and untracked, and `pnpm pack` fires `prepack` but NOT `prepublishOnly`. Before 0.4.2 there was no `prepack`, so the sanctioned pack-then-publish path could ship a dist older than its own source and the suite stayed green because the parity test reads `src`. Two controls now: the `prepack` hook, and `node scripts/verify-tarball.mjs` (extract, then assert the ASDK-1 arm plus a checkpoint byte-equal to swapguard's CP) which stays authoritative because no hook fires when a pre-made tarball is published. Run it with `CAIRN_REPO` pointing at the cairn tree that carries the merged C1 swapguard bump; against a tree still baking 38,142 it correctly exits 1.
 
@@ -115,5 +113,3 @@ Open items (do not act without a maintainer/release ask):
 ## Cross-repo map
 
 Depends on the published `@inversealtruism/csd-*` / `@inversealtruism/cairnx-core` packages from the csd-sdk monorepo (exact pins, installed from npm). Contract couplings: cairn-wallet's window.cairn provider (connect.ts is the dApp-side contract; WALLET-ERROR-CODES.md in the cairn-wallet repo), the cairn server endpoints (/api/*, /explorer/api, /trade/api/cairnx/*, POST /api/content), and the SPV checkpoint literal duplicated with cairn/public/trade/swapguard.js (test-enforced). The wallet-connector E2E builds against a sibling ../cairn-wallet checkout (override with WALLET_EXT).
-
-Published dependency versions as of 2026-08-02 (verify on npm before trusting): cairnx-core 0.1.41, csd-codec 0.1.16, csd-light 0.1.19, csd-registry 0.1.17, csd-siwc 0.1.16, csd-tx 0.1.17, csd-client 0.1.15, csd-crypto 0.1.15.
