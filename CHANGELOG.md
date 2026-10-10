@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.5 (2026-10-10) - single csd-codec / csd-crypto graph
+
+- Dependencies: `@inversealtruism/csd-crypto` 0.1.15 to 0.1.16, `@inversealtruism/csd-tx` 0.1.18 to 0.1.19,
+  `@inversealtruism/csd-registry` 0.1.17 to 0.1.18, and the dev dependency `@inversealtruism/csd-siwc`
+  0.1.16 to 0.1.17. All of them resolve `@inversealtruism/csd-codec` 0.1.16, so the lockfile now contains one
+  codec and one crypto copy. At 0.4.4 csd-crypto 0.1.15 pulled in csd-codec 0.1.15 beside the direct 0.1.16,
+  which the CI dep-pin hygiene step (single codec/crypto copy) rejected.
+- `cairnx-core` 0.1.42 and `csd-light` 0.1.21 are unchanged. No source behaviour change.
+- `SDK_VERSION` is 0.4.5.
+
 ## 0.4.4 (2026-09-25) - CairnX public launch (Plans 80 and 81)
 
 - Dependencies: `@inversealtruism/cairnx-core` 0.1.42 (the expiry index: `resolve()` sweeps only open offers,
