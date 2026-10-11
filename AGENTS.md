@@ -22,7 +22,7 @@ This repo follows the maintainers' cross-repo engineering standard (a private do
 - TypeScript `strict` with `noUncheckedIndexedAccess`, no `@ts-ignore`, `any` only at a parse boundary. Money is integer base units (`bigint`), never floats. No empty `catch {}`; on money paths no catch-and-continue that hides a failure, and error text says what happened.
 - Tests check behaviour at boundaries. A fix ships with a test that fails without it, plus an assertion that the honest path still passes with the call shape production sends. A skipped test names its reason and when it un-skips. `pnpm test` is offline; anything that touches mainnet is `test:live` or an e2e script.
 - Comments state constraints and non-obvious invariants, not history or audit IDs. Removing code needs the same evidence as adding it.
-- Docs: this file holds what stays true (no version tables, one dated snapshot at most). Dates are absolute, no em dashes.
+- Docs: this file holds what stays true (no version tables, no status snapshots; versions live in `package.json` and tags, live state comes from a live query). Dates are absolute, no em dashes.
 
 Known deviations (checked 2026-10-11, not exhaustive): `test/spv-checkpoint.test.ts` and `scripts/verify-tarball.mjs` read the sibling cairn checkout (`../cairn`, `CAIRN_REPO` or `CAIRN_SWAPGUARD`); the wallet-connector e2e builds against `../cairn-wallet`; there are no `typecheck` or `lint` scripts (CI runs `pnpm exec tsc --noEmit` directly); the heavy comment blocks and audit IDs in `src/` are trimmed per module, not as drive-by edits.
 
@@ -50,7 +50,7 @@ Deps: exact-pinned in `package.json`, which is the single source for every versi
 ## Invariants and red lines
 
 - Connection never pre-approves signatures: connect/getAddress are the only silent-after-consent calls; every signing method opens the wallet's clear-sign window (extension-enforced). Never imply otherwise in docs.
-- DEFAULT_SPV_CHECKPOINT MUST stay byte-identical to cairn/public/trade/swapguard.js's baked anchor (test/spv-checkpoint.test.ts enforces).
+- DEFAULT_SPV_CHECKPOINT MUST stay byte-identical to cairn/public/trade/swapguard.js's baked anchor (test/spv-checkpoint.test.ts enforces). The cairn repo keeps one more copy of the same number in its ops files; the parity test does not cover it, so check it in the cairn repo when the anchor moves.
 - Never over-claim trust levels: verified-inclusion requires a PoW-verified header; same-origin proxy setups honestly degrade to proof-consistent.
 - cairn.names.* and registry.resolveName() are SERVER-TRUSTED display reads. Never wire them straight into a payment target; payment-grade resolution is the wallet's on-device SPV path. (Trust-model note, evident from public source: the `fillOffer` provider call remains resolver-trusted AT THE SDK LAYER; `preverifyOffer`/fillverify (F13 + the B7b binds) is the diligent dApp's merkle-proven corroboration, fail-closed on a positive mismatch and fail-soft on an unreachable chain view, and the wallet's own on-device fill-SPV is the payment-grade boundary.)
 - SDK_VERSION in src/errors.ts bumps together with package.json.
@@ -101,10 +101,18 @@ Maintainers publish to npm (public access) manually, with a transient npm token 
 - mapProviderError and the write wrappers classify every code in WALLET-ERROR-CODES.md (the wallet repo's canonical contract) as retryable, in flight or final; add a new wallet code to `src/errors.ts` and `test/errors.test.ts` when the wallet adds one.
 - Large-tx submits: the hosted RPC proxy at cairn-substrate.com once rejected very large multi-input submits to POST /api/rpc/tx/submit with HTTP 400 before the tx reached the node, because of a 64KB body cap (hit at roughly 127+ inputs). The cairn server now has a scoped 512KB cap on that route. Symptom on a server that lacks it: a big Chain.send()/submit 400s with no node-side error. Suspect the proxy body cap on the server you target before blaming the SDK.
 
-## State snapshot (2026-10-11; verify with `git log`, `git tag` and `npm view @inversealtruism/cairn-sdk version`)
-
-`package.json` reads 0.4.6. `DEFAULT_SPV_CHECKPOINT` is height 101,998, equal to cairn's swapguard.js CP. cairn's `deploy/spv-checkpoint` carries the same number for the ops watchdog and is NOT covered by the parity test: check it in the cairn repo, not here. This block is not updated per release.
-
 ## Cross-repo map
 
 Depends on the published `@inversealtruism/csd-*` / `@inversealtruism/cairnx-core` packages from the csd-sdk monorepo (exact pins, installed from npm). Contract couplings: cairn-wallet's window.cairn provider (connect.ts is the dApp-side contract; WALLET-ERROR-CODES.md in the cairn-wallet repo), the cairn server endpoints (/api/*, /explorer/api, /trade/api/cairnx/*, POST /api/content), and the SPV checkpoint literal duplicated with cairn/public/trade/swapguard.js (test-enforced). The wallet-connector E2E builds against a sibling ../cairn-wallet checkout (override with WALLET_EXT).
+
+## Docs
+
+| Doc | Holds |
+|---|---|
+| `README.md` | what the package is, install, quick start |
+| `docs/SDK-GUIDE.md` | third-party developer guide, including the verifies-vs-trusts table |
+| `CHANGELOG.md` | one entry per release; every SPV checkpoint move names the affected band |
+| `test/e2e/README.md` | the four test layers and how to run them |
+| `.githooks/README.md` | the secret-scan pre-commit hook |
+
+The wallet error code contract is `WALLET-ERROR-CODES.md` in the cairn-wallet repo. The cross-repo standard is a private document; the summary above is the part that binds a contributor here.
