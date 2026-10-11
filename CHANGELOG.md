@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.6 (2026-10-11) - wallet 0.2.73 error codes
+
+- Errors: six wallet codes keep their code and the wallet's retry semantics instead of surfacing as `UNKNOWN`:
+  `WALLET_UNAVAILABLE` and `REVIEW_REQUIRED` are retryable (nothing was signed); `OFFER_SOURCE_CONFLICT`,
+  `FILL_LEGACY_SUNSET`, `VERIFY_HORIZON` and `VERIFY_UNREPRESENTABLE` are final. Before, every one of them was
+  final with code `UNKNOWN`. Every path threw before and still throws.
+- Tests: the offer-expiry boundary in `preverifyOffer` is pinned (an offer mined in its own expiry epoch is accepted,
+  one epoch later it is refused).
+- Docs: SDK-GUIDE no longer says the nested wallet codes are unmapped.
+
 ## 0.4.5 (2026-10-10) - single csd-codec / csd-crypto graph
 
 - Dependencies: `@inversealtruism/csd-crypto` 0.1.15 to 0.1.16, `@inversealtruism/csd-tx` 0.1.18 to 0.1.19,

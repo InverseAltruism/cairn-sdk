@@ -5,7 +5,7 @@
 // derived); each served-field lie (payto / seller / feeBps / spurious min) is REFUSED; and a below-checkpoint /
 // unprovable-author view fails SOFT (transient), never a hard decline. Pure unit test, no network.
 import { addrFromPriv, signDigest, buildScriptSig } from "@inversealtruism/csd-crypto";
-import { provenOfferTerms } from "@inversealtruism/cairnx-core";
+import { provenOfferTerms, epochOf } from "@inversealtruism/cairnx-core";
 import { txid, sighash, canonicalJson, payloadHash, rpcTxToTx } from "../src/chain.js";
 import {
   Cairn,
@@ -129,6 +129,19 @@ await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsemen
     const txX = proposeTx(SELLER_KEY, recX, 1, DOMAIN, 1000);
     await ok("[S-B4] an already-expired-at-anchor offer is REFUSED (a chain-rejected record)", async () => {
       const r = await preverifyOffer({ light: mockLight(txX.json, txX.phash), client: mockClient, offerId: txX.id, servedOffer: servedFor({ id: txX.id }) });
+      return r.ok === false && /expired/.test(r.reason ?? "");
+    });
+    // the expiry boundary (resolve.ts: an offer mined in its expiry epoch is live; one epoch later it is rejected).
+    // epochOf(H=40000) = 1333.
+    const recE = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
+    const txE = proposeTx(SELLER_KEY, recE, 1, DOMAIN, epochOf(H));
+    await ok("[S-B4] an offer mined in its own expiry epoch is accepted (boundary, honest path)", async () => {
+      const r = await preverifyOffer({ light: mockLight(txE.json, txE.phash), client: mockClient, offerId: txE.id, servedOffer: servedFor({ id: txE.id }) });
+      return r.ok === true && r.payto === SELLER;
+    });
+    const txE1 = proposeTx(SELLER_KEY, recE, 1, DOMAIN, epochOf(H) - 1);
+    await ok("[S-B4] an offer mined one epoch after its expiry is REFUSED (boundary)", async () => {
+      const r = await preverifyOffer({ light: mockLight(txE1.json, txE1.phash), client: mockClient, offerId: txE1.id, servedOffer: servedFor({ id: txE1.id }) });
       return r.ok === false && /expired/.test(r.reason ?? "");
     });
     // non-safe-integer expiry (>= 2^53): the codec's u64 refuses to even RE-DERIVE such a tx

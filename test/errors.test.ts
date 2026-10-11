@@ -51,12 +51,13 @@ console.log("=== F14: nested SubmitResult code buckets ===");
 // DEFINITIVE fund-safety refusals -> code preserved, retryable === false.
 for (const code of ["FILL_UNSAFE", "FILL_WRONG_TARGET", "SOURCE_DIVERGENCE", "VERIFY_TAMPER", "SUBMIT_REJECTED",
   "BAD_REQUEST", "BAD_FEE", "BAD_OUTPUTS", "NO_OUTPUTS", "ZERO_ADDR_REFUSED", "TOO_MANY_INPUTS", "INSUFFICIENT",
-  "FEE_CAP", "FEE_TOO_LOW", "ACCOUNT_CHANGED", "GHOST_INPUTS_SKIPPED", "NOTHING_TO_CONSOLIDATE"]) {
+  "FEE_CAP", "FEE_TOO_LOW", "ACCOUNT_CHANGED", "GHOST_INPUTS_SKIPPED", "NOTHING_TO_CONSOLIDATE",
+  "OFFER_SOURCE_CONFLICT", "FILL_LEGACY_SUNSET", "VERIFY_HORIZON", "VERIFY_UNREPRESENTABLE"]) {
   const e = mapSubmitResultError({ ok: false, code, error: `${code} refusal` });
   ok(`${code} -> terminal (code preserved, retryable=false)`, e.code === code && e.retryable === false && !(e instanceof SubmitInFlightError));
 }
 // TRANSIENT -> retryable === true.
-for (const code of ["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN"]) {
+for (const code of ["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN", "WALLET_UNAVAILABLE", "REVIEW_REQUIRED"]) {
   const e = mapSubmitResultError({ ok: false, code, error: `${code} transient` });
   ok(`${code} -> transient (retryable=true)`, e.code === code && e.retryable === true);
 }

@@ -98,12 +98,12 @@ Maintainers publish to npm (public access) manually, with a transient npm token 
 - SSE through a buffering reverse proxy needs `X-Accel-Buffering: no` from the origin (the hosted proxy sets it); WS subscribe still needs a direct indexer URL because the hosted proxy is REST+SSE only.
 - esbuild CLI shim ELF-errors under pnpm; scripts/build-example.mjs uses the JS API, keep it that way.
 - Hardening lineage in code comments (all remediated; the markers explain why the guards exist): M3 (no over-claimed verified-inclusion), H2/UTXO-VALUE-1 (Chain.send verified inputs), CAIRNSDK-DESER-1/3/4 (buffer caps, proof pre-validation), CAIRNSDK-VP-4 (submit rejection folded into ok), CONNECT-1/CTRL-ADOPT-1 (no forged-account adoption), F11 (ghost-reconnect).
-- mapProviderError maps the outer error-code set; the 13 nested wallet SubmitResult codes are documented but unmapped; WALLET-ERROR-CODES.md in the wallet repo is the canonical contract.
+- mapProviderError and the write wrappers classify every code in WALLET-ERROR-CODES.md (the wallet repo's canonical contract) as retryable, in flight or final; add a new wallet code to `src/errors.ts` and `test/errors.test.ts` when the wallet adds one.
 - Large-tx submits: the hosted RPC proxy at cairn-substrate.com once rejected very large multi-input submits to POST /api/rpc/tx/submit with HTTP 400 before the tx reached the node, because of a 64KB body cap (hit at roughly 127+ inputs). The cairn server now has a scoped 512KB cap on that route. Symptom on a server that lacks it: a big Chain.send()/submit 400s with no node-side error. Suspect the proxy body cap on the server you target before blaming the SDK.
 
 ## State snapshot (2026-10-11; verify with `git log`, `git tag` and `npm view @inversealtruism/cairn-sdk version`)
 
-`package.json` reads 0.4.5 and npm serves 0.4.5. `DEFAULT_SPV_CHECKPOINT` is height 101,998, equal to cairn's swapguard.js CP. cairn's `deploy/spv-checkpoint` carries the same number for the ops watchdog and is NOT covered by the parity test: check it in the cairn repo, not here. This block is not updated per release.
+`package.json` reads 0.4.6. `DEFAULT_SPV_CHECKPOINT` is height 101,998, equal to cairn's swapguard.js CP. cairn's `deploy/spv-checkpoint` carries the same number for the ops watchdog and is NOT covered by the parity test: check it in the cairn repo, not here. This block is not updated per release.
 
 ## Cross-repo map
 

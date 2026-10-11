@@ -1,4 +1,4 @@
-# Cairn SDK — third-party developer guide
+# Cairn SDK: third-party developer guide
 
 `@inversealtruism/cairn-sdk` is the dApp kit for the Compute Substrate (CSD) chain + the Cairn Wallet:
 wallet connection, audience-bound auth ("Sign in with CSD"), chain reads with a verifying light client,
@@ -33,15 +33,15 @@ Sign-in (passwordless): see `examples/siwc-login.mjs` for the full client + serv
 |---|---|
 | `@inversealtruism/cairn-sdk` | the `Cairn` facade + connectors + types |
 | `…/connect` | `connect` / `getWallet` / `detectProvider` / `discoverProviders` |
-| `…/controller` | `CairnController` — framework-agnostic reactive connection store |
-| `…/react` | `createCairnHooks(React)` — React hooks (zero react dependency; you pass React) |
+| `…/controller` | `CairnController`: framework-agnostic reactive connection store |
+| `…/react` | `createCairnHooks(React)`: React hooks (zero react dependency; you pass React) |
 | `…/chain` | `CsdClient`, tx builders, the verifying `LightClient` |
 | `…/indexer`, `…/board`, `…/content`, `…/registry` | service clients |
 | `@inversealtruism/csd-siwc` | **server-side** SIWC verify (`verifySiwc`, `generateNonce`) |
 
 ## What the SDK verifies vs trusts (read this)
 
-The honest trust model — funds are safe even against a malicious RPC, because **the wallet signs
+The honest trust model: funds are safe even against a malicious RPC, because **the wallet signs
 locally and the user clear-signs every signature**; a bad RPC can mislead *display*, not move funds.
 
 - **Verified (cryptographic):** transaction signing + sighash (in the wallet); `LightClient` tx
@@ -49,10 +49,10 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
   for, anchored to a baked checkpoint); content self-certification (`sha256(bytes) == payloadHash`);
   SIWC sign-ins (domain + nonce + chain + time + signature + `hash160(pub)==account`).
 - **RPC-trusted (display only):** balances / UTXO sets / history / prices. CSD headers carry no UTXO
-  commitment, so non-spend can't be proven from headers — `LightClient.balance()` is tagged
+  commitment, so non-spend can't be proven from headers, so `LightClient.balance()` is tagged
   `rpc-trusted` and never hides that. Verify what matters; treat balances as a hint.
 - **Indexer = untrusted derived view:** the `IndexerClient` re-folds Merkle proofs
-  (`verifyInclusion`) — it's a prover, not an authority.
+  (`verifyInclusion`); it's a prover, not an authority.
 
 **Filling an offer (F13, diligent-dApp pre-verify):** `fillOffer` is resolver-trusted at this SDK layer:
 the SDK does NOT SPV-verify the `outputs` you hand the wallet, so a lying resolver could redirect the
@@ -85,7 +85,7 @@ spoof it), so a signature for site A can't be replayed at site B.
 
 ## Capability / version negotiation
 
-The provider API evolves **additively** — detect features instead of assuming them:
+The provider API evolves **additively**: detect features instead of assuming them:
 
 ```ts
 const wallet = await getWallet();
@@ -117,23 +117,25 @@ catch (e) {
 Codes: `NOT_INSTALLED`, `USER_REJECTED`, `WALLET_LOCKED`, `UNSUPPORTED_METHOD`, `HTTP_ERROR`,
 `CONTENT_VERIFICATION`, `UNKNOWN`.
 
-> **[2026-07-06] Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md`
-> (cairn-wallet) is the source of truth: 10 outer codes plus 13 nested `SubmitResult` codes as of
-> wallet 0.2.54 (`GHOST_INPUTS_SKIPPED`, `VERIFY_UNAVAILABLE`, `VERIFY_TAMPER`, `INSUFFICIENT`,
-> `FEE_TOO_LOW`, `FEE_CAP`, `BAD_FEE`, `ZERO_ADDR_REFUSED`, `BAD_OUTPUTS`, `NO_OUTPUTS`,
-> `BAD_REQUEST`, `FILL_UNSAFE`, `SUBMIT_REJECTED`). Honest note: the SDK's `mapProviderError`
-> maps the outer set above today and does NOT yet map the nested 0.2.54 codes; they surface as
-> generic errors with the original message preserved (mapping planned for the next SDK release).
+> **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the
+> source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error and
+> classify every code listed there as of wallet 0.2.73: retryable (`VERIFY_UNAVAILABLE`, `OFFER_UNKNOWN`,
+> `WALLET_UNAVAILABLE`, `REVIEW_REQUIRED`: nothing was signed), in flight (`SUBMIT_MAYBE_INFLIGHT`,
+> `SUBMIT_DUPLICATE`: a `SubmitInFlightError` carrying the txid to reconcile, never retry blindly), and
+> final (every other code, including `OFFER_SOURCE_CONFLICT`, `FILL_LEGACY_SUNSET`, `VERIFY_HORIZON` and
+> `VERIFY_UNREPRESENTABLE`; `retryable: false`). A code the SDK does not know yet still throws, as a final
+> error with the wallet's message.
 
 ## Versioning & dependency hygiene
 
-- The SDK is **0.x** — minor versions may change the API until 1.0 (semver: 0.y.z makes no
+- The SDK is **0.x**: minor versions may change the API until 1.0 (semver: 0.y.z makes no
   compatibility promise). Read the changelog before upgrading.
 - **In apps: pin exactly** (`"@inversealtruism/cairn-sdk": "0.2.1"`) and commit your lockfile.
   **In libraries that depend on the SDK: use a range** (`^0.2.1`) to avoid duplicate installs.
-- The low-level **`@inversealtruism/csd-*` set ships in lockstep at one identical version** — if you
-  depend on more than one, pin them all to the SAME version (a codec that *signs* must match the one
-  that *verifies*).
+- The low-level **`@inversealtruism/csd-*` packages are versioned independently**, so their numbers differ.
+  If you depend on more than one, pin each exactly and make sure your lockfile resolves a single
+  `@inversealtruism/csd-codec` and a single `@inversealtruism/csd-crypto` (a codec that *signs* must be the
+  one that *verifies*). The SDK's own pins in `package.json` are a known-good set.
 - Pre-release / dormant builds are published under the `next` / `beta` dist-tag, so `npm i` (which
   resolves `latest`) never picks them up by accident.
 
