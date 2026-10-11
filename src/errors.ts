@@ -44,11 +44,18 @@ export type CairnErrorCode =
   | "SUBMIT_MAYBE_INFLIGHT"
   | "SUBMIT_DUPLICATE"
   | "NOTHING_TO_CONSOLIDATE"
+  // wallet 0.2.62+ codes listed in WALLET-ERROR-CODES.md
+  | "OFFER_SOURCE_CONFLICT"
+  | "FILL_LEGACY_SUNSET"
+  | "VERIFY_HORIZON"
+  | "VERIFY_UNREPRESENTABLE"
+  | "WALLET_UNAVAILABLE"
+  | "REVIEW_REQUIRED"
   | "UNKNOWN";
 
 // Kept in sync with package.json `version` (the build has no JSON import; bump both together). SDK-VERSION-DRIFT:
 // errors.test.ts now asserts SDK_VERSION === package.json.version (the old test compared the constant to itself).
-export const SDK_VERSION = "0.4.5";
+export const SDK_VERSION = "0.4.6";
 const DOCS_BASE = "https://cairn-substrate.com/docs/sdk";
 
 export interface CairnErrorOptions {
@@ -195,11 +202,12 @@ const NATIVE_CODES = new Set<CairnErrorCode>(["FIRST_PARTY_ONLY", "RATE_LIMITED"
 // safe to auto-retry shortly. TERMINAL = a definitive fund-safety / validation refusal, nothing was sent, no
 // auto-retry. The AMBIGUOUS-INFLIGHT pair (SUBMIT_MAYBE_INFLIGHT / SUBMIT_DUPLICATE) is handled separately by
 // mapSubmitResultError because it must carry the txid (SubmitInFlightError). WALLET-ERROR-CODES.md is canonical.
-const NESTED_TRANSIENT = new Set<CairnErrorCode>(["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN"]);
+const NESTED_TRANSIENT = new Set<CairnErrorCode>(["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN", "WALLET_UNAVAILABLE", "REVIEW_REQUIRED"]);
 const NESTED_TERMINAL = new Set<CairnErrorCode>([
   "FILL_UNSAFE", "FILL_WRONG_TARGET", "SOURCE_DIVERGENCE", "VERIFY_TAMPER", "SUBMIT_REJECTED",
   "BAD_REQUEST", "BAD_FEE", "BAD_OUTPUTS", "NO_OUTPUTS", "ZERO_ADDR_REFUSED", "TOO_MANY_INPUTS",
   "INSUFFICIENT", "FEE_CAP", "FEE_TOO_LOW", "ACCOUNT_CHANGED", "GHOST_INPUTS_SKIPPED", "NOTHING_TO_CONSOLIDATE",
+  "OFFER_SOURCE_CONFLICT", "FILL_LEGACY_SUNSET", "VERIFY_HORIZON", "VERIFY_UNREPRESENTABLE",
 ]);
 
 export function mapProviderError(error: string, code?: string): CairnError {
