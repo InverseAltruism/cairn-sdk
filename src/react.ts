@@ -42,7 +42,7 @@ export interface CairnHooks {
  * Optionally pass an existing controller; otherwise one is created from `opts`.
  */
 export function createCairnHooks(React: ReactLike, controllerOrOpts?: CairnController | CairnControllerOptions): CairnHooks {
-  const controller = controllerOrOpts instanceof CairnController ? controllerOrOpts : new CairnController(controllerOrOpts);
+  const controller = isController(controllerOrOpts) ? controllerOrOpts : new CairnController(controllerOrOpts);
   const useCairnState = (): CairnState =>
     React.useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const useCairnAccount = (): string | null => useCairnState().account;
@@ -53,6 +53,15 @@ export function createCairnHooks(React: ReactLike, controllerOrOpts?: CairnContr
     signInWithCsd: controller.signInWithCsd,
   });
   return { controller, useCairnState, useCairnAccount, useCairn };
+}
+
+// Duck-typed: `instanceof` fails when the controller came from the other build of this dual CJS/ESM package
+// (two copies of the class), and the hooks would then silently bind a second, never-connected controller.
+// An options object carries none of these methods, so it is not mistaken for a controller.
+function isController(v: unknown): v is CairnController {
+  const c = v as Partial<Record<"subscribe" | "getSnapshot" | "connect" | "disconnect" | "signInWithCsd", unknown>> | null | undefined;
+  return !!c && typeof c.subscribe === "function" && typeof c.getSnapshot === "function"
+    && typeof c.connect === "function" && typeof c.disconnect === "function" && typeof c.signInWithCsd === "function";
 }
 
 export { CairnController } from "./controller.js";

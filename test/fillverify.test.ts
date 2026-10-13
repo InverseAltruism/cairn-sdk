@@ -4,6 +4,7 @@
 // source tx so the prevout-owner author bind resolves. We assert: an honest offer verifies (payto/seller/terms
 // derived); each served-field lie (payto / seller / feeBps / spurious min) is REFUSED; and a below-checkpoint /
 // unprovable-author view fails SOFT (transient), never a hard decline. Pure unit test, no network.
+import { readFileSync } from "node:fs";
 import { addrFromPriv, signDigest, buildScriptSig } from "@inversealtruism/csd-crypto";
 import { provenOfferTerms, epochOf } from "@inversealtruism/cairnx-core";
 import { txid, sighash, canonicalJson, payloadHash, rpcTxToTx } from "../src/chain.js";
@@ -56,7 +57,8 @@ const mockClient = { async tx(id: string) { const b = prevoutOf.get(String(id).t
 const mockLight = (tx: object, appPayloadHash: string, blockHeight = H, trustLevel = "verified-inclusion", included = true) => ({
   async verifyTxInclusion(_id: string) { return { included, trustLevel, blockHeight, confirmations: 10, tx, appPayloadHash } as never; },
 });
-const servedFor = (extra: object = {}) => ({ id: "", seller: SELLER, feeBps: 150, height: H, want: { value: "500000000", payto: SELLER }, give: { ticker: "AAA", amount: "10" }, ...extra });
+// The resolver's served offer shape (cairnx-core OfferState), including the `status` every served offer carries.
+const servedFor = (extra: object = {}) => ({ id: "", seller: SELLER, feeBps: 150, height: H, status: "open", want: { value: "500000000", payto: SELLER }, give: { ticker: "AAA", amount: "10" }, ...extra });
 
 console.log("F13 offer pre-verify (preverifyOffer):");
 
@@ -171,20 +173,20 @@ await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsemen
 
   // B7b sums seam (W3/M1): a WHOLE fill of this non-partial CSD offer returns the PROVEN CSD output plan.
   await ok("[sums] passing `pay` returns the proven outputPlan (single-sourced fillOutputPlan)", async () => {
-    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000" });
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000" });
     return r.ok === true && Array.isArray(r.outputPlan) && r.outputPlan.length > 0 && r.outputPlan.some((o) => o.to === SELLER) && r.outputPlan.every((o) => typeof o.value === "bigint");
   });
   await ok("[sums honest] plannedOutputs equal to the proven plan is ACCEPTED (no false refusal)", async () => {
-    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000" });
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000" });
     const planned = Object.fromEntries((r.outputPlan ?? []).map((o) => [o.to, o.value.toString()]));
-    const r2 = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000", plannedOutputs: planned });
-    return r2.ok === true;
+    const r2 = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000", plannedOutputs: planned });
+    return r2.ok === true && r2.planBound === true && Object.keys(planned).length > 0;
   });
   await ok("[W3 overpay] a planned leg above the proven plan is REFUSED (N26 smuggle / overpay class)", async () => {
-    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000" });
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000" });
     const planned = Object.fromEntries((r.outputPlan ?? []).map((o) => [o.to, o.value.toString()]));
     planned[SELLER] = (BigInt(planned[SELLER] ?? "0") + 100000n).toString();   // overpay the recipient leg
-    const r2 = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000", plannedOutputs: planned });
+    const r2 = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000", plannedOutputs: planned });
     return r2.ok === false && /proven fill outputs/.test(r2.reason ?? "");
   });
   await ok("[not merkle-proven] a below-checkpoint/rpc-trusted view fails SOFT (transient), not a hard decline", async () => {
@@ -272,7 +274,7 @@ console.log("\nP75-5 fill-surface guards:");
   const rec2 = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000" } };
   const tx2 = proposeTx(SELLER_KEY, rec2, 7);
   await ok("[MF-08 happy] a payto-less offer + pay now sizes (plan pays the proven author; was a TypeError escape)", async () => {
-    const r = await preverifyOffer({ light: mockLight(tx2.json, tx2.phash), client: mockClient, offerId: tx2.id, pay: "500000000" });
+    const r = await preverifyOffer({ light: mockLight(tx2.json, tx2.phash), client: mockClient, offerId: tx2.id, servedOffer: servedFor({ id: tx2.id }), pay: "500000000" });
     return r.ok === true && Array.isArray(r.outputPlan) && r.outputPlan!.some((o) => o.to === SELLER);
   });
 }
@@ -300,13 +302,57 @@ console.log("\nP75-5 fill-surface guards:");
   });
 }
 
+// A9: no outputPlan for an offer whose liveness nobody stated. W15: plannedOutputs that could not be bound say
+// so (planBound:false + planReason) instead of returning a bare ok:true.
+{
+  const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
+  const tx = proposeTx(SELLER_KEY, rec, 10);
+  const planned = { [SELLER]: "500000000" };
+  await ok("[A9] pay without a served offer: no outputPlan, and planReason says liveness was not stated", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000" });
+    return r.ok === true && r.outputPlan === undefined && /no served offer status/.test(r.planReason ?? "");
+  });
+  await ok("[A9] a served offer without `status` is not sized either", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, status: undefined }), pay: "500000000" });
+    return r.ok === true && r.outputPlan === undefined && /no served offer status/.test(r.planReason ?? "");
+  });
+  await ok("[A9 honest] the resolver's offer (status open) is sized and the plan binds", async () => {
+    const call = (plannedOutputs?: Record<string, bigint>) => preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000", plannedOutputs });
+    const sized = await call();
+    const r = await call(Object.fromEntries((sized.outputPlan ?? []).map((o) => [o.to, o.value])));
+    return r.ok === true && Array.isArray(r.outputPlan) && r.outputPlan.length > 0 && r.planBound === true && r.planReason === undefined;
+  });
+  await ok("[W15] plannedOutputs without pay: planBound false with a reason (was a silent ok:true)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), plannedOutputs: planned });
+    return r.ok === true && r.planBound === false && /no `pay`/.test(r.planReason ?? "");
+  });
+  const tokRec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { ticker: "BBB", amount: "5", payto: SELLER } };
+  const tok = proposeTx(SELLER_KEY, tokRec, 11);
+  await ok("[W15] plannedOutputs on a token-priced offer: planBound false, reason names the token price", async () => {
+    const r = await preverifyOffer({ light: mockLight(tok.json, tok.phash), client: mockClient, offerId: tok.id, pay: "1", plannedOutputs: planned });
+    return r.ok === true && r.planBound === false && /token-priced/.test(r.planReason ?? "");
+  });
+  const partRec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER }, min: "100000000" };
+  const part = proposeTx(SELLER_KEY, partRec, 12);
+  await ok("[W15] plannedOutputs on a partially fillable offer: planBound false, reason names the partial", async () => {
+    const r = await preverifyOffer({ light: mockLight(part.json, part.phash), client: mockClient, offerId: part.id, pay: "100000000", plannedOutputs: planned });
+    return r.ok === true && r.planBound === false && /partially fillable/.test(r.planReason ?? "");
+  });
+  await ok("[W15 honest] no plannedOutputs and no pay: neither planBound nor planReason is set (the 2-arg shape is unchanged)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }) });
+    return r.ok === true && r.planBound === undefined && r.planReason === undefined && r.outputPlan === undefined;
+  });
+}
+
 // MF-11: the facade reaches the whole preverifyOffer surface, offline via the stubbed SPV seam.
 // (This also makes this file's line-2 header comment about Cairn.verifyOfferForFill TRUE at last.)
 {
   const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
   const tx = proposeTx(SELLER_KEY, rec, 9);
   const cairn = new Cairn({ baseUrls: { cairn: "https://example.test" } });
-  (cairn as unknown as { seededSpvLight: unknown }).seededSpvLight = async () => mockLight(tx.json, tx.phash);
+  // The facade reads the light client's cached tip (baseHeight + chain) for the near-tip reorg re-check; an
+  // empty cache starting at H means the inclusion came from a fresh sync, so no re-check request is made.
+  (cairn as unknown as { seededSpvLight: unknown }).seededSpvLight = async () => ({ ...mockLight(tx.json, tx.phash), baseHeight: H, chain: [] });
   (cairn as unknown as { chain: unknown }).chain = { client: mockClient };
   await ok("[MF-11] verifyOfferForFill(id, served, { pay }) reaches the proven outputPlan seam", async () => {
     const r = await cairn.verifyOfferForFill(tx.id, servedFor({ id: tx.id }), { pay: "500000000" });
@@ -320,6 +366,61 @@ console.log("\nP75-5 fill-surface guards:");
     const r = await cairn.verifyOfferForFill(tx.id, servedFor({ id: tx.id }));
     return r.ok === true && r.outputPlan === undefined;
   });
+}
+
+// The real facade over the real SPV header fixture (checkpoint 115,403; rows 115358..115437), so the light
+// client, the near-tip re-check and csd-light's own below-base answer all run for real.
+{
+  type Row = { height: number; header: Record<string, unknown>; hash: string };
+  const ROWS = (JSON.parse(readFileSync(new URL("./fixtures/spv-headers-115358-80.json", import.meta.url), "utf8")) as { headers: Row[] }).headers;
+  const BASE = ROWS[0]!.height, TIP = ROWS[ROWS.length - 1]!.height;
+  const mkCairn = (seen: string[], txHeight?: number) => new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    seen.push(url);
+    const m = url.match(/\/api\/headers\/(\d+)\/(\d+)$/);
+    const j = (o: unknown) => new Response(JSON.stringify(o), { status: 200, headers: { "content-type": "application/json" } });
+    if (m) return j({ ok: true, headers: ROWS.slice(Number(m[1]) - BASE, Number(m[1]) - BASE + Number(m[2])) });
+    if (/\/api\/rpc\/tip$/.test(url)) return j({ height: TIP });
+    if (/\/api\/rpc\/tx\//.test(url) && txHeight !== undefined) return j({ ok: true, height: txHeight });
+    return new Response("not found", { status: 404 });
+  }) as unknown as typeof fetch });
+  const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
+
+  // F2 paired honest path: a near-tip offer whose cached header passes the re-check still verifies (ok, trust
+  // verified) through verifyOfferForFill. The inclusion is real-shaped (a real signed Propose with its tx body
+  // and committed payload hash); it stands in for csd-light's merkle fold, which no fixture header can satisfy.
+  {
+    const near = TIP - 2;
+    const tx = proposeTx(SELLER_KEY, rec, 13);
+    const seen: string[] = [];
+    const cairn = mkCairn(seen);
+    const lc = await (cairn as unknown as { seededSpvLight(): Promise<{ verifyTxInclusion: unknown }> }).seededSpvLight();
+    lc.verifyTxInclusion = async () => ({ trustLevel: "verified-inclusion", included: true, blockHeight: near, confirmations: 3, tx: tx.json, appPayloadHash: tx.phash });
+    (cairn as unknown as { chain: unknown }).chain = { client: mockClient };
+    // The production call shape: the resolver's offer object (served at the offer's height) plus pay and the
+    // planned outputs, which a dApp sizes locally (here with the pure preverifyOffer over the same inclusion).
+    const served = servedFor({ id: tx.id, height: near });
+    const sized = await preverifyOffer({ light: mockLight(tx.json, tx.phash, near), client: mockClient, offerId: tx.id, servedOffer: served, pay: "500000000" });
+    const plannedOutputs = Object.fromEntries((sized.outputPlan ?? []).map((o) => [o.to, o.value]));
+    await ok("[F2 honest] a near-tip offer that passes the re-check returns ok:true, trust verified, a bound outputPlan", async () => {
+      const r = await cairn.verifyOfferForFill(tx.id, served, { pay: "500000000", plannedOutputs });
+      return r.ok === true && r.trust === "verified" && r.blockHeight === near && r.seller === SELLER
+        && Array.isArray(r.outputPlan) && r.outputPlan.length > 0 && r.planBound === true;
+    });
+    await ok("[F2] that verification ran the near-tip re-check (one single-header request) without a reseed", () =>
+      seen.filter((u) => u.endsWith(`/api/headers/${near}/1`)).length === 1 && seen.filter((u) => u.endsWith(`/api/headers/${BASE}/46`)).length === 1);
+  }
+
+  // F4: an offer mined below the synced base is permanent for this checkpoint, so it is not transient, and the
+  // reason names config.spvCheckpoint. csd-light's real verifyTxInclusion produces the below-base answer here.
+  {
+    const seen: string[] = [];
+    const r = await mkCairn(seen, 110_000).verifyOfferForFill("0x" + "cd".repeat(32));
+    await ok("[F4] an offer below the synced base is not transient", () => r.ok === false && r.transient !== true && r.trust === "unverified");
+    await ok("[F4] the reason says it is below the checkpoint window and names config.spvCheckpoint", () => /below this SDK's SPV checkpoint window \(base 115358\)/.test(r.reason ?? "") && /config\.spvCheckpoint/.test(r.reason ?? ""));
+    const r2 = await mkCairn([], undefined).verifyOfferForFill("0x" + "cd".repeat(32));
+    await ok("[F4 honest] a tx the node does not place in a block (mempool/unknown) stays transient", () => r2.ok === false && r2.transient === true);
+  }
 }
 
 console.log(`\nfillverify (F13): ${pass} passed, ${fail} failed`);

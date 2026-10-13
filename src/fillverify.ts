@@ -55,13 +55,24 @@ export interface OfferFillCheck {
   blockHeight?: number;
   /** B7b (REBIND W3/M1): the PROVEN CSD outputs to build for `pay` (a WHOLE fill of a non-partial offer),
    *  sized from the merkle-proven offer by the single-sourced `fillOutputPlan`. Present only when `pay` was
-   *  passed and the offer could be sized. Build EXACTLY these; never the resolver-served outputs a lying
-   *  resolver could redirect. A partial (min-bearing) offer is left unsized (its running paid/delivered is
-   *  not provable at this corroboration layer; the wallet's fill-SPV is the payment-grade sizer). */
+   *  passed, the served offer carried a `status` and the offer could be sized. Build EXACTLY these; never the
+   *  resolver-served outputs a lying resolver could redirect. A partial (min-bearing) offer is left unsized
+   *  (its running paid/delivered is not provable at this corroboration layer; the wallet's fill-SPV is the
+   *  payment-grade sizer). Liveness is never proven here: the plan is sized only for the status the resolver
+   *  served, so an offer with no served status gets no plan. */
   outputPlan?: { to: string; value: bigint }[];
+  /** Present when `plannedOutputs` was passed: `true` when they were bound to `outputPlan` (a mismatch
+   *  refuses with `ok: false`), `false` when there was no proven plan to bind them to (`planReason` says why).
+   *  `ok: true` with `planBound: false` means your planned outputs were NOT checked. */
+  planBound?: boolean;
+  /** Why no output plan was sized (set whenever `outputPlan` is absent after `pay` or `plannedOutputs` was passed). */
+  planReason?: string;
 }
 
 const ADDR = /^0x[0-9a-f]{40}$/;
+// csd-light's verifyTxInclusion reason for a tx below the light client's synced base (the start of the
+// checkpoint seed window). That holds for as long as the checkpoint does, so it is not a transient failure.
+const BELOW_BASE = /^tx below the synced base \((\d+)\)/;
 const HASH = /^0x[0-9a-f]{64}$/;
 const COINBASE = "0x" + "00".repeat(32);
 
@@ -157,8 +168,12 @@ export async function preverifyOffer(opts: {
   // The PoW light client yields "verified-inclusion" (merkle-proven against a PoW-verified header) or a fail
   // reason ("rpc-trusted"/not-included for a below-checkpoint, mempool, or unreachable tx). Only the former is
   // trustworthy for a payment corroboration; anything else is a soft "chain catching up" (never a hard decline).
-  if (!incl.included || incl.trustLevel !== "verified-inclusion" || !incl.tx || !incl.appPayloadHash)
+  if (!incl.included || incl.trustLevel !== "verified-inclusion" || !incl.tx || !incl.appPayloadHash) {
+    const below = BELOW_BASE.exec(incl.reason ?? "");
+    if (below)
+      return { ok: false, trust: "unverified", blockHeight: incl.blockHeight, reason: `the offer was mined below this SDK's SPV checkpoint window (base ${below[1]}), so it cannot be merkle-proven here and retrying will not change that; pass an older anchor in config.spvCheckpoint to verify it` };
     return { ok: false, trust: "unverified", transient: true, blockHeight: incl.blockHeight, reason: incl.reason ?? `offer not merkle-proven on-chain (${incl.trustLevel})` };
+  }
   const blockHeight = Number(incl.blockHeight);
 
   let provenTx: ReturnType<typeof rpcTxToTx>, provenId: string;
@@ -213,19 +228,25 @@ export async function preverifyOffer(opts: {
   // resolver could redirect. Scoped to a WHOLE fill of a non-partial (min-less) offer: the running
   // paid/delivered of a PARTIALLY-fillable offer is not merkle-provable at this corroboration layer (that
   // is the wallet's fill-SPV, cairn-wallet 0.2.60+), so a partial is LEFT UNSIZED rather than false-refused.
-  // P75-5 MF-07 truth correction: the state fed to the sizer is record-derived (record + merkle-proven
-  // height + prevout-bound seller + the derived payto) EXCEPT liveness, which is NOT provable at this
-  // layer. `status` is taken from the resolver-SERVED offer when one carries it, so the sizer's own
-  // status gate refuses a non-open offer instead of being asserted past; with no served status the sizer
-  // ASSUMES open, and the wallet's fill-SPV stays the payment-grade liveness check. `expiresEpoch` is
-  // likewise unproven; the sizer never reads it, so the 0 is a placeholder, not a claim.
+  // The state fed to the sizer is record-derived (record + merkle-proven height + prevout-bound seller + the
+  // derived payto) EXCEPT liveness, which is NOT provable at this layer: `status` comes from the
+  // resolver-served offer, so the sizer's own status gate refuses a non-open offer, and with no served status
+  // nothing is sized (a plan for an offer of unknown liveness would invite a fill of a dead one).
+  // `expiresEpoch` is likewise unproven; the sizer never reads it, so the 0 is a placeholder, not a claim.
   let outputPlan: { to: string; value: bigint }[] | undefined;
   let sumsMismatch: string | undefined;
-  if (opts.pay !== undefined && opts.pay !== null && !isTokenWant(offerRec.want) && offerRec.min === undefined) {
-    const servedStatus = (opts.servedOffer as { status?: unknown } | null | undefined)?.status;
+  let planReason: string | undefined;
+  let planBound = false;
+  const has = <T>(v: T): v is NonNullable<T> => v !== undefined && v !== null;
+  const servedStatus = (opts.servedOffer as { status?: unknown } | null | undefined)?.status;
+  if (!has(opts.pay)) planReason = "no `pay` was given, so no output plan was sized";
+  else if (isTokenWant(offerRec.want)) planReason = "the offer is token-priced: the payment is a token transfer, not CSD outputs";
+  else if (offerRec.min !== undefined) planReason = "the offer is partially fillable: its running paid/delivered is not provable here (the wallet's fill-SPV sizes it)";
+  else if (typeof servedStatus !== "string") planReason = "no served offer status: liveness is not provable here, so no output plan was sized (pass the resolver's offer object)";
+  else {
     const provenState = {
       id, seller, give: offerRec.give, want: { ...offerRec.want, payto }, taker: offerRec.taker, bid: offerRec.bid,
-      status: typeof servedStatus === "string" ? servedStatus : "open", expiresEpoch: 0, height: blockHeight, feeBps: terms.feeBps,
+      status: servedStatus, expiresEpoch: 0, height: blockHeight, feeBps: terms.feeBps,
     } as OfferState;
     // P75-5 MF-08 valve: the sizer consumes the caller's `pay` (untrusted) plus record-derived values; a
     // throw MUST become a refusal. Escaping would reject the whole call before the served-terms binds
@@ -235,16 +256,25 @@ export async function preverifyOffer(opts: {
       const plan = fillOutputPlan(provenState, opts.pay);
       if (plan.kind === "csd-outputs") {
         outputPlan = plan.outputs;
-        if (opts.plannedOutputs !== undefined && opts.plannedOutputs !== null)
+        if (has(opts.plannedOutputs)) {
           sumsMismatch = bindPlannedSums(opts.plannedOutputs, plan.outputs);
+          planBound = true;
+        }
       } else if (plan.kind === "undeliverable") {
         sumsMismatch = `this pay would not deliver against the proven offer (${plan.reason}) - refusing (the CSD would be lost)`;
+      } else {
+        planReason = `the proven offer settles without CSD outputs (${plan.kind})`;
       }
     } catch (e) {
       sumsMismatch = `couldn't size the fill against the proven offer (${(e as Error)?.message ?? e}) - refusing rather than sizing from served fields`;
     }
   }
-  const base = { payto, seller, terms, blockHeight, ...(outputPlan ? { outputPlan } : {}) };
+  const planFields = {
+    ...(outputPlan ? { outputPlan } : {}),
+    ...(has(opts.plannedOutputs) ? { planBound } : {}),
+    ...(!outputPlan && planReason && (has(opts.pay) || has(opts.plannedOutputs)) ? { planReason } : {}),
+  };
+  const base = { payto, seller, terms, blockHeight, ...planFields };
 
   if (opts.servedOffer !== undefined && opts.servedOffer !== null) {
     const so = opts.servedOffer as { want?: { payto?: unknown; ticker?: unknown; amount?: unknown }; seller?: unknown };

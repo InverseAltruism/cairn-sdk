@@ -1,23 +1,21 @@
 // @inversealtruism/cairn-sdk — the Compute Substrate dApp kit.
 //
 // One cohesive `Cairn` object that composes everything we built on CSD:
-//   cairn.wallet    — connect the Cairn Wallet, sign things (clear-signed approvals)
-//   cairn.chain     — node RPC + tx builders + verifying light client
-//   cairn.board     — the signal board + work graph (reads public; writes wallet-signed)
-//   cairn.index     — the L2 explorer/indexer: REST + merkle proofs + live SSE/WS
-//   cairn.content   — self-certifying content (publish via board, fetch verified)
-//   cairn.registry  — L3 peer/gateway/identity resolution
+//   cairn.wallet   : connect the Cairn Wallet, sign things (clear-signed approvals)
+//   cairn.chain    : node RPC + tx builders + verifying light client
+//   cairn.index    : the L2 explorer/indexer: REST + merkle proofs + live SSE/WS
+//   cairn.content  : self-certifying content (fetched and verified against its hash)
+//   cairn.registry : L3 peer/gateway/identity resolution
+//   cairn.names    : .csd names + CairnX market reads
 //
 // Quick start:
 //   import { Cairn } from "@inversealtruism/cairn-sdk";
 //   const cairn = new Cairn({ network: "mainnet" });
+//   const tip = await cairn.chain.tip();
 //   await cairn.connect();                       // prompts the wallet once
-//   const top = await cairn.board.top({ domain: "csd:apps" });
-//   await cairn.board.propose({ domain: "csd:apps", title: "My dApp", body: "…" });
 
-import { Http, readCapped, type FetchLike } from "./http.js";
+import { Http, readCapped, retryAfterMs, RetryWaitBudget, type FetchLike } from "./http.js";
 import { Chain, LightClient, type BlockHeader } from "./chain.js";
-import { BoardClient } from "./board.js";
 import { IndexerClient } from "./indexer.js";
 import { ContentClient } from "./content.js";
 import { RegistryClient } from "./registry.js";
@@ -26,7 +24,7 @@ import { WalletConnection, connect as connectWallet, type DetectOptions } from "
 import { preverifyOffer, type OfferFillCheck } from "./fillverify.js";
 
 export interface CairnBaseUrls {
-  /** Cairn board server (board + /api/rpc proxy + /content origin). Default https://cairn-substrate.com */
+  /** Cairn server (/api/rpc proxy, /api/headers, /content origin, /trade/api names reads). Default https://cairn-substrate.com */
   cairn?: string;
   /** Node RPC base. Default `${cairn}/api/rpc` (the public proxy — no local node needed). */
   rpc?: string;
@@ -81,7 +79,7 @@ export interface CairnConfig {
 // consumer pays on a cold start drops from about 29,400 headers to about 1,000, one or two batched
 // /api/headers requests instead of about 58. cairn's `deploy/spv-checkpoint` carries the same number for the
 // ops watchdog; it is NOT covered by the parity test, so bump it in the cairn repo alongside swapguard.js.
-export const DEFAULT_SPV_CHECKPOINT = { height: 101998, hash: "0x0000000000085295c9e13bbf276a11affb5470059235d1ea85d6334c8b43c49c" };
+export const DEFAULT_SPV_CHECKPOINT = { height: 115403, hash: "0x00000000000052e29166597d598827b137af1dea7542123b848637fee0b67347" };
 
 const DEFAULT_CAIRN = "https://cairn-substrate.com";
 
@@ -111,7 +109,19 @@ const spvIsTransient = (e: unknown): boolean => {
   return SPV_TRANSIENT_RE.test(msg) || SPV_TRANSIENT_JSON_RE.test(msg);
 };
 const spvSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-const spvRetryDelayMs = (attempt: number, retryAfterSecs: number) => Math.min(4000, Math.max(700 * (attempt + 1), retryAfterSecs * 1000));
+// Own backoff ladder (0.7, 1.4, 2.1, 2.8 s). A server Retry-After wins when longer, because retrying inside the
+// server's window spends an attempt it will refuse again, but only while it fits SPV_RETRY_WAIT_BUDGET_MS.
+const spvBackoffMs = (attempt: number) => Math.min(4000, 700 * (attempt + 1));
+// Total retry sleep for one /api/headers request: 16 s is the 0.4.6 worst case (four retries at its 4 s cap).
+// A longer hint fails the request at once as transient, so the read degrades instead of waiting out a window.
+const SPV_RETRY_WAIT_BUDGET_MS = 16_000;
+// A cached header at most this many blocks below the cached tip is re-checked against the served chain before it
+// backs a "verified-inclusion"; anything deeper is treated as final. 12 is the deepest finality used in the stack
+// (cairnx's scanner; the indexer finalizes at 6). The hosted cairn server edge-caches /api/headers rows at or
+// below its tip - 6 as immutable, so against cairn-substrate.com the re-check only sees reorgs of up to 6
+// blocks; a self-hosted base without that cache gets the full 12.
+const SPV_RECHECK_DEPTH = 12;
+const spvTipOf = (lc: LightClient): number => lc.baseHeight + lc.chain.length - 1;
 
 
 export class Cairn {
@@ -122,7 +132,6 @@ export class Cairn {
   readonly registry: RegistryClient;
   /** .csd names + CairnX market READS (server-trusted display reads; see names.ts trust note). */
   readonly names: NamesClient;
-  board: BoardClient;
   wallet?: WalletConnection;
 
   private readonly cairnHttp: Http;
@@ -156,7 +165,6 @@ export class Cairn {
     this._spvCp = config.spvCheckpoint ?? DEFAULT_SPV_CHECKPOINT;
     this.chain = new Chain({ rpcUrl: rpc, fetch, timeoutMs });
     this.wallet = config.wallet;
-    this.board = new BoardClient(this.cairnHttp, this.wallet);
     // "verified-inclusion" requires a PoW-VERIFIED header to check the proof root against (audit M3).
     // A raw `blockByHeight(h).header.merkle` read is NOT that — a lying node serves a fake header
     // whose merkle matches a fake proof (and the same-origin case lets ONE server control both). So
@@ -183,16 +191,17 @@ export class Cairn {
    * to the honest "proof-consistent" instead of over-claiming "verified-inclusion". The verified
    * header chain is cached across calls; the first call near tip syncs the post-checkpoint span.
    * MF-03: a STRUCTURAL forward-sync break (a reorg orphaned the cached tip) reseeds ONCE via
-   * withSpvReseed. RESIDUAL: a height at or below the cached tip answers from the cached branch with
-   * NO network touch, so a tx in a reorg-orphaned block can still read "verified-inclusion" until a
-   * read PAST the tip trips the reseed; this closes the permanent post-reorg brick, not reorg-blindness.
+   * withSpvReseed. A height within SPV_RECHECK_DEPTH of the cached tip is re-checked against the served
+   * chain first (recheckCachedHeader), so a block orphaned after it was cached stops backing
+   * "verified-inclusion". Deeper heights answer from the cache with no network touch.
    */
   private async verifiedHeaderMerkleAt(height: number): Promise<string> {
     if (!Number.isInteger(height) || height < this._spvCp.height)
       throw new Error(`height ${height} is below the SPV checkpoint ${this._spvCp.height} (cannot PoW-verify backward)`);
     return this.withSpvReseed(async (lc) => {
-      const haveTo = lc.baseHeight + lc.chain.length - 1;
+      const haveTo = spvTipOf(lc);
       if (haveTo < height) await lc.sync(height);
+      else await this.recheckCachedHeader(lc, height, haveTo);
       const vh = lc.chain[height - lc.baseHeight];
       if (!vh) throw new Error(`light client has no verified header at ${height}`);
       return String(vh.header.merkle);
@@ -205,11 +214,8 @@ export class Cairn {
   // this._spvLight first - the wallet G8 lesson, same shape as the MF-14 seed). A TRANSIENT failure
   // (rate limit / gateway / timeout / non-dense / CF 200-HTML) keeps the cache and rethrows: wiping
   // on those turns one /api/headers 429 into a reseed storm (DOS-HDR-3). A second structural
-  // failure propagates fail-closed; there is no loop.
-  // RESIDUAL (recorded, not closed): heights at or below the cached tip answer from the cached
-  // branch with NO network touch, so after a reorg "verified-inclusion" can still be over-claimed
-  // for a tx in an orphaned block until some read past the tip trips this reseed. This fix closes
-  // the permanent-brick leg only.
+  // failure propagates fail-closed; there is no loop. recheckCachedHeader feeds this path: a near-tip
+  // cached header that the served chain no longer carries is a structural failure.
   private async withSpvReseed<T>(op: (lc: LightClient) => Promise<T>): Promise<T> {
     const lc = await this.seededSpvLight();
     try { return await op(lc); }
@@ -220,6 +226,17 @@ export class Cairn {
       this._spvLight = fresh;
       return out;
     }
+  }
+
+  // A near-tip cached header the served chain no longer carries is a reorg: throw a structural error so
+  // withSpvReseed rebuilds. The message must not match SPV_TRANSIENT_RE, or it would be retried on the stale cache.
+  private async recheckCachedHeader(lc: LightClient, height: number, haveTo: number): Promise<void> {
+    if (height <= haveTo - SPV_RECHECK_DEPTH) return;
+    const cached = lc.chain[height - lc.baseHeight];
+    if (!cached) return;   // the caller reports the missing header
+    const [served] = await this.fetchHeadersBatch(height, 1);
+    if (String(served?.hash ?? "").toLowerCase() !== String(cached.hash).toLowerCase())
+      throw new Error(`SPV cached block at height ${height} is no longer on the served chain (reorg); reseeding`);
   }
 
   // Build + seed + tip-advance a FRESH light client into a LOCAL. Never touches this._spvLight:
@@ -242,7 +259,7 @@ export class Cairn {
     // (also batched) to a tx's height on demand, so fall soft and keep the seeded client usable.
     try {
       const tipHeight = Number((await this.chain.tip()).height);
-      const have = lc.baseHeight + lc.chain.length - 1;
+      const have = spvTipOf(lc);
       if (Number.isFinite(tipHeight) && tipHeight > have) await lc.sync(tipHeight);
     } catch { /* keep the seeded client; on-demand batched sync covers what this pre-warm missed */ }
     return lc;
@@ -285,6 +302,7 @@ export class Cairn {
     if (!g) throw new Error("No fetch available for SPV header sync - pass `fetch` in the SDK options.");
     const doFetch: FetchLike = this.config.fetch ? this.config.fetch : (g.bind(globalThis) as FetchLike);
     const url = `${this._cairnBase}/api/headers/${from}/${count}`;
+    const budget = new RetryWaitBudget(SPV_RETRY_WAIT_BUDGET_MS);
     for (let attempt = 0; ; attempt++) {
       let res: Response | undefined;
       let parsed: unknown;
@@ -300,8 +318,9 @@ export class Cairn {
           parsed = JSON.parse(new TextDecoder().decode(await readCapped(res, SPV_MAX_BATCH_BYTES)));
         }
       } catch (e) {
-        if (attempt >= SPV_HTTP_MAX_RETRIES) throw e;   // transport / timeout / oversize / bad body: bounded retry, then fail closed
-        await spvSleep(spvRetryDelayMs(attempt, 0));
+        const waitMs = attempt < SPV_HTTP_MAX_RETRIES ? budget.take(spvBackoffMs(attempt), 0) : null;
+        if (waitMs === null) throw e;   // transport / timeout / oversize / bad body: bounded retry, then fail closed
+        await spvSleep(waitMs);
         continue;
       } finally { clearTimeout(timer); }
       if (res!.ok) {
@@ -313,7 +332,9 @@ export class Cairn {
       }
       if ((res!.status === 429 || res!.status === 502 || res!.status === 503) && attempt < SPV_HTTP_MAX_RETRIES) {
         res!.body?.cancel?.().catch(() => {});   // drain the discarded body (undici holds the socket otherwise)
-        await spvSleep(spvRetryDelayMs(attempt, Number(res!.headers.get("retry-after")) || 0));
+        const waitMs = budget.take(spvBackoffMs(attempt), retryAfterMs(res!));
+        if (waitMs === null) throw new Error(`/api/headers ${res!.status}: Retry-After exceeds the remaining retry budget`);
+        await spvSleep(waitMs);
         continue;
       }
       throw new Error(`/api/headers ${res!.status}`);
@@ -344,13 +365,22 @@ export class Cairn {
     // MF-03: the reseed also covers the fill path. preverifyOffer's own catch (fillverify.ts) otherwise
     // eats a structural (reorg) throw and reports transient forever, so we hand it a light handle whose
     // verifyTxInclusion reseeds ONCE on a structural break. Structurally typed, so fillverify.ts is untouched.
-    const light = { verifyTxInclusion: (txidHex: string) => this.withSpvReseed((lc) => lc.verifyTxInclusion(txidHex)) };
+    // A verified inclusion answered from a cached near-tip header gets the same reorg re-check as verifyInclusion.
+    const light = {
+      verifyTxInclusion: (txidHex: string) => this.withSpvReseed(async (lc) => {
+        const haveTo = spvTipOf(lc);
+        const r = await lc.verifyTxInclusion(txidHex);
+        if (r.trustLevel === "verified-inclusion" && typeof r.blockHeight === "number" && r.blockHeight <= haveTo)
+          await this.recheckCachedHeader(lc, r.blockHeight, haveTo);
+        return r;
+      }),
+    };
     return preverifyOffer({ light, client: this.chain.client, offerId, servedOffer, pay: opts?.pay, plannedOutputs: opts?.plannedOutputs });
   }
 
   /**
-   * Detect + connect the Cairn Wallet (browser only). Wires the wallet into
-   * `cairn.board` for signed writes. Resolves to the connected address.
+   * Detect + connect the Cairn Wallet (browser only) and attach it as `cairn.wallet`.
+   * Resolves to the connected address.
    */
   async connect(opts: DetectOptions = {}): Promise<string> {
     const { wallet, address } = await connectWallet(opts);
@@ -361,7 +391,6 @@ export class Cairn {
   /** Attach an already-connected wallet (e.g. one you constructed yourself). */
   attachWallet(wallet: WalletConnection): void {
     this.wallet = wallet;
-    this.board = new BoardClient(this.cairnHttp, wallet);
   }
 
   /** True if a wallet is attached. */
@@ -375,9 +404,7 @@ export { Http } from "./http.js";
 export type { FetchLike, HttpOptions } from "./http.js";
 export { Chain } from "./chain.js";
 export { NamesClient } from "./names.js";
-export type { NameResolution, NameDetail, TokenInfo, PrimaryName } from "./names.js";
-export { BoardClient } from "./board.js";
-export type { BoardWindow, RankedItem, BoardItemContent, ProposeInput, ProposeResult, SupportInput } from "./board.js";
+export type { NameResolution, NameDetail, TokenInfo, PrimaryName, NameHistory, NameHistoryEntry } from "./names.js";
 export { IndexerClient } from "./indexer.js";
 export type { MerkleProof, InclusionResult, IndexEvent, StreamHandlers, StreamHandle, TrustLevel } from "./indexer.js";
 export { ContentClient } from "./content.js";

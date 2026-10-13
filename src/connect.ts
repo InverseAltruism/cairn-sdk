@@ -46,7 +46,7 @@ export interface SignInResult {
   [k: string]: unknown;
 }
 
-/** Low-level Propose params (matches the wallet exactly). Prefer `cairn.board.propose()` for ergonomics. */
+/** Low-level Propose params (matches the wallet exactly). `payloadHash` is csd-codec `payloadHash` of your content. */
 export interface ProposeParams {
   domain: string;
   payloadHash: string;
@@ -457,7 +457,7 @@ export class WalletConnection {
     return this.call(() => this.provider.send(params), "send").then(unwrapWrite);
   }
 
-  /** Low-level Propose (always prompts). Prefer `cairn.board.propose()` which computes the hash/uri/expiry. */
+  /** Low-level Propose (always prompts). The caller computes the payload hash, uri and expiry epoch. */
   propose(params: ProposeParams): Promise<TxResult> {
     return this.call(() => this.provider.propose(params), "propose").then(unwrapWrite);
   }

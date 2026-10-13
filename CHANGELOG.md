@@ -1,5 +1,113 @@
 # Changelog
 
+## 0.5.0 (unreleased) - SPV trust honesty, dApp API guards, board client removed
+
+### Removed (breaking for importers of the board client)
+
+The Wall is gone from cairn-substrate.com and the board page redirects to `/uplink`; the remaining board API
+routes are being retired with the server's legacy surfaces, so the client for them goes now.
+Replacement: none; the board is retired.
+
+- `BoardClient` (export), its types `BoardWindow`, `RankedItem`, `BoardItemContent`, `ProposeInput`,
+  `ProposeResult` and `SupportInput`, the `cairn.board` namespace, and the
+  `@inversealtruism/cairn-sdk/board` subpath export. That removes `board.top()/board()`, `item()`,
+  `domains()`, `quests()/quest()`, `profile()`, `leaderboard()`, `network()/networkSeries()/networkBlocks()`,
+  `miner()`, `activity()`, `wall()`, `health()`, and the writes `propose()`, `registerContent()` and
+  `support()`. Where a read has an indexer equivalent, use it: `cairn.index.domains()`,
+  `cairn.index.domainProposals(domain)`, `cairn.index.proposal(id)`, `cairn.index.attestations(id)`,
+  `cairn.index.reputation(addr)`, `cairn.index.health()`. The low-level wallet calls `wallet.propose()` and
+  `wallet.attest()` stay; they never registered content with the board server.
+- The live write e2e (`pnpm test:e2e:write`, `test/e2e/e2e-write.mjs`, `test/e2e/verify-pending-write.mjs`):
+  its pipeline was board propose, content registration and board support. `examples/hello-csd` no longer
+  publishes; it reads recent proposals from the indexer. `examples/read-only.mjs` reads proposals from the
+  indexer. The error codes and their `/docs/sdk/*` paths are unchanged (the board client set none).
+
+### Behaviour changes (read these if you gate on inclusion)
+
+- **`index.verifyInclusion()`: `included` is `true` only with `trustLevel: "verified-inclusion"`.** Through
+  0.4.6 a proof that folded but had no PoW-verified header behind it (below the SPV checkpoint, header
+  source unreachable, or no `headerMerkleAt` configured) returned `included: true, trustLevel:
+  "proof-consistent"`. It now returns `included: false` with the same `trustLevel` and a `reason` naming
+  why the header was not verified. An empty merkle branch whose root equals the txid folds for any txid, so
+  without a verified header it never reads as included. If you read `included` alone, proof-consistent
+  results now read as not included; if you need the old reading, test `trustLevel !== "not-found"`.
+- **Reorgs near the tip:** the SPV light client cached its verified header chain and answered heights at or
+  below its cached tip from that cache, so a tx in a block orphaned by a reorg kept reading
+  `verified-inclusion` until some read went past the cached tip. A cached header within 12 blocks of the
+  cached tip is now compared with the header the base serves at that height (one single-header
+  `/api/headers` request per such read); a mismatch reseeds from the checkpoint and the read runs again on
+  the live branch, so the orphaned tx no longer reads as verified. Deeper heights still answer from the cache
+  with no request. `verifyOfferForFill` gets the same re-check. What it detects depends on the base: the
+  hosted cairn-substrate.com serves `/api/headers` rows at or below its tip minus 6 as immutable from the
+  edge cache, so there it catches reorgs of up to 6 blocks; a self-hosted base without that cache gets the
+  full 12.
+- **`DEFAULT_SPV_CHECKPOINT` moves from height 101,998 to 115,403**
+  (`0x00000000000052e29166597d598827b137af1dea7542123b848637fee0b67347`), copied from cairn's
+  `public/trade/swapguard.js` (cairn `d5c00a9`). The hash was checked against two local nodes, and both
+  re-derive it from the header they serve. A cold checkpoint-to-tip seed is about 13,400 headers shorter.
+  What a caller sees differently for **heights 101,998 to 115,402**:
+  - `index.verifyInclusion(txid)` returns `trustLevel: "proof-consistent"`, `included: false`, where 0.4.6
+    returned `"verified-inclusion"`, `included: true`. The `reason` reads `indexer proof only, header at <h>
+    not verified (height <h> is below the SPV checkpoint 115403 (cannot PoW-verify backward))`.
+  - `verifyOfferForFill` for an offer mined at 101,998 to 115,357 returns `ok: false, trust: "unverified"`
+    (not transient) with a reason naming the checkpoint window base 115,358 and `config.spvCheckpoint`
+    (csd-light's base is the start of the 46-header seed window). Offers mined at 115,358 to 115,402 sit inside that seed window and still
+    verify on this path, as the 45 heights below the old anchor did before.
+  - Pass `config.spvCheckpoint: { height: 101998, hash: "0x0000000000085295c9e13bbf276a11affb5470059235d1ea85d6334c8b43c49c" }`
+    to keep the old anchor.
+- **Retry-After, inside a per-call wait budget:** the SPV header batch and `Http.getJson`'s opt-in GET
+  retries now wait as long as the server's `Retry-After` says, as long as it fits a per-call budget for the
+  total time spent sleeping between retries. A hint larger than what is left fails the call at once
+  (transient for the SPV read, which degrades to `proof-consistent`; the server's `HttpError` for `Http`)
+  instead of sleeping. The SPV batch used to cut every wait at 4 s and spend its retries inside the window;
+  `Http` ignored the header. Per-call worst cases:
+  - one `/api/headers` request: at most 16 s of retry sleep, the same as 0.4.6 (four retries at its 4 s
+    cap), so with five attempts at the 15 s per-attempt timeout the worst case stays 91 s. A near-tip
+    `verifyInclusion` without a reorg is the proof GET (15 s) plus one re-check (91 s): 106 s at worst. After
+    a reorg it makes about 10 such requests, each bounded at 91 s: the re-check, the reseed's seed batch, a
+    forward sync from the checkpoint to the tip in 512-header batches (7 at tip 118,652; the count grows as
+    the tip moves away from the checkpoint), and the re-check again.
+  - `Http.getJson`: at most 30 s of retry sleep (the jitter ladder at the 10-retry cap sums to about 27.75 s,
+    so no hint-free schedule changes), plus one `timeoutMs` per attempt. With the default `retries: 0` it
+    makes one attempt and never sleeps.
+- **`verifyOfferForFill` / `preverifyOffer`: an offer mined below the SPV checkpoint window is not
+  `transient`.** csd-light answers "tx below the synced base" for it, which holds for as long as the
+  checkpoint does, but it was reported as `transient: true` (retryable), so a dApp would retry forever. It now
+  returns `ok: false, trust: "unverified"` without `transient`, and the reason says the offer is below the
+  SDK's SPV checkpoint window and names `config.spvCheckpoint`. Other unverified answers (mempool, unreachable
+  chain) stay transient.
+- **`preverifyOffer` / `verifyOfferForFill`: no `outputPlan` without a served status.** The sizer used to
+  assume an offer was open when the caller passed `pay` without the resolver's offer object (or one without
+  `status`). It now sizes only for the status the resolver served; otherwise `outputPlan` is absent and
+  `planReason` says why. Pass the resolver's offer object to get a plan.
+- **`plannedOutputs` that were not bound say so.** With a token-priced or partially fillable offer, without
+  `pay`, or without a served status, `plannedOutputs` used to be ignored silently under `ok: true`. The result
+  now carries `planBound: false` and `planReason`; `planBound: true` when they were bound to `outputPlan`.
+- **`CairnController`:** the wallet's `disconnect` event and an empty `accountsChanged` (lock, account switch,
+  revoke) now cancel a `connect()` in flight, the same way `disconnect()` does, so a lock during a repeat
+  connect no longer ends in "connected". That `connect()` rejects; a fresh `connect()` works as before.
+- **`createCairnHooks(React, controller)`** recognises a controller by its methods instead of `instanceof`,
+  so a controller created by the other build of this dual CJS/ESM package is bound instead of silently
+  replaced by a new, never-connected one.
+- **`names` reads are shape-checked:** `tokens()` and `token()` throw a typed `HttpError` ("malformed
+  response") when a row's ticker, `decimals` (non-negative integer), `supply`, `minted` or `mintLimit`
+  (base-unit integer strings) is malformed; `names()`, `tokens()`, `offers()` and `bids()` throw the same
+  error when the body is not an array (an error object served with status 200 used to be returned as the
+  list). `token()` validates the ticker with cairnx-core's `TICKER_RE` instead of a local copy.
+- **`names.nameHistory(name)`** is typed as what cairnx serves, `NameHistory` (`{ ok, name, tipHeight, resolve,
+  record, events, scopedReplaySufficient, caveat? }`, exported with `NameHistoryEntry`), instead of
+  `unknown[]`; the body was always this object, never an array. It throws a typed `HttpError` ("malformed
+  response") when the body is not that object, names another name, or carries a malformed `events` entry,
+  `resolve` or `scopedReplaySufficient`. Code that treated the result as an array was already wrong at runtime.
+- **`content.getBytes()`** skips a source whose bytes do not match the hash and tries the next one; it throws
+  `ContentVerificationError` only when no source served verified bytes and at least one served mismatching
+  bytes. **`content.get()`** throws a `CairnError` with the new code `CONTENT_NOT_JSON` (cause: the parse
+  error) instead of a raw `SyntaxError` when verified bytes are not JSON.
+- **`Http`:** `retries: NaN` (or a non-number) now means 0; it used to make a failing GET retry forever.
+  `maxBytes` that is NaN, infinite, zero or negative now falls back to the 16 MiB default; NaN used to turn
+  the cap off.
+- `SDK_VERSION` is 0.5.0. Dependencies are unchanged.
+
 ## 0.4.6 (2026-10-11) - wallet 0.2.73 error codes
 
 - Errors: six wallet codes keep their code and the wallet's retry semantics instead of surfacing as `UNKNOWN`:

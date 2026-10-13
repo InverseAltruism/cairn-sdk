@@ -6,9 +6,8 @@ The **Compute Substrate dApp kit:** one cohesive toolkit for building apps on CS
 |---|---|
 | `cairn.wallet` | Connect the **Cairn Wallet**, sign things (clear-signed approvals). The key never leaves the extension. |
 | `cairn.chain` | Node RPC + transaction builders + a verifying **light client** (re-exports the `csd-*` primitives). |
-| `cairn.board` | The signal **board** + work graph. Reads are public; writes are wallet-signed. |
 | `cairn.index` | The L2 **explorer/indexer**: REST + merkle proofs + live SSE/WS feeds. |
-| `cairn.content` | **Self-certifying content:** publish via the board, fetch with client-side verification. |
+| `cairn.content` | **Self-certifying content:** hash for an on-chain Propose, fetch with client-side verification. |
 | `cairn.registry` | L3 **peer / gateway / identity** resolution. |
 | `cairn.names` | **.csd names + CairnX reads:** name resolution, reverse/primary lookup, tokens, offers, bids, canonical state. |
 
@@ -24,21 +23,17 @@ import { Cairn } from "@inversealtruism/cairn-sdk";
 const cairn = new Cairn({ network: "mainnet" });   // defaults to cairn-substrate.com
 
 // reads need no wallet
-const top = await cairn.board.top({ domain: "csd:apps" });
 const tip = await cairn.chain.tip();
+const domains = await cairn.index.domains();
 
 // connect the user's wallet (browser): prompts once, then "connected"
 await cairn.connect();
 
-// publish a board item, signed by the user's wallet (clear-signed approval)
-const { txid } = await cairn.board.propose({
-  domain: "csd:apps",
-  title: "My dApp",
-  body: "Built with the Cairn SDK",
-});
+// a payment, signed by the user's wallet (clear-signed approval every time)
+const { txid } = await cairn.wallet!.send({ to: "0x…", amount: 100_000_000 }); // 1 CSD
 
-// watch it land, live
-cairn.index.streamAll({ onProposal: (e) => console.log("new proposal", e) });
+// watch the chain, live
+cairn.index.streamAll({ onBlock: (e) => console.log("new block", e) });
 ```
 
 ## How wallet connection works (and why it's safe)
@@ -62,9 +57,7 @@ try {
 
 ## API by namespace
 
-**`cairn.board`:** `top()/board({domain,window})`, `item(id)`, `domains()`, `quests()/quest(id)`, `profile(addr)`, `leaderboard()`, `network()/networkSeries()/miner(addr)`, `activity()`, `wall()`; writes `propose({domain,title,body,links?,fee?})`, `support(id,{score?,confidence?,fee?})`.
-
-**`cairn.index`:** `tipHeight()`, `block()/blockTxids()`, `tx()/txStatus()/txMerkleProof()`, `address()/addressTxs()/addressUtxo()`, `proposal()/attestations()`, `reputation()`, `registryPeers()/registryGateways()/identity()`, **`verifyInclusion(txid)`** (trust-minimized), `streamAll()/streamBlocks()/streamDomain()` (SSE), `subscribe()` (WS).
+**`cairn.index`:** `tipHeight()`, `block()/blockTxids()`, `tx()/txStatus()/txMerkleProof()`, `address()/addressTxs()/addressUtxo()`, `domains()/domainProposals(domain)`, `proposal()/attestations()`, `reputation()`, `registryPeers()/registryGateways()/identity()`, **`verifyInclusion(txid)`** (trust-minimized), `streamAll()/streamBlocks()/streamDomain()` (SSE), `subscribe()` (WS).
 
 **`cairn.names`:** `resolve(name)` (display-path name to address), `name(name)`/`nameHistory(name)`, `primary(addr)` (reverse lookup)/`namesOf(addr)`, `names()`, `tokens()/token(ticker)`, `offers()`, `bids()`, `state()` (the canonical CairnX state). Reads go through the public `/trade/api/cairnx/*` proxy; for payment-grade name resolution verify through the wallet or a replaying resolver, not a bare read (see `src/names.ts` header).
 
@@ -74,17 +67,17 @@ try {
 
 **`cairn.registry`:** `gateways()`, `peers()`, `resolveName(handle)`, `reverseName(addr)`, `.fromRecords` (deterministic local resolvers).
 
-Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{connect,board,indexer,content,registry,chain}`.
+Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{connect,indexer,content,registry,chain,controller,react}`.
 
 ## Examples
 
-- **`examples/read-only.mjs`:** runs today against live mainnet, no wallet, no build: `npm run test:live`. Demonstrates chain/board/indexer/registry reads + verified merkle inclusion + verified content fetch.
-- **`examples/hello-csd/`:** a no-framework browser dApp (connect → read board → publish → live feed). Build the bundle with `npm run build:example`, then serve the folder from **localhost** (the wallet injects there) with the Cairn Wallet installed.
+- **`examples/read-only.mjs`:** runs today against live mainnet, no wallet, no build: `npm run test:live`. Demonstrates chain/indexer/registry reads + verified merkle inclusion + verified content fetch.
+- **`examples/hello-csd/`:** a no-framework browser dApp (connect → read recent proposals → live feed). Build the bundle with `npm run build:example`, then serve the folder from **localhost** (the wallet injects there) with the Cairn Wallet installed.
 
 ## Trust model & honest limits
 
 - **Content is always verified client-side.** `cairn.content.get()` rejects bytes that don't hash to the requested `payloadHash`, an untrusted gateway can't serve tampered content.
-- **Merkle inclusion is trust-minimized, to the strength of your header source.** `verifyInclusion()` folds the proof and, when a header-merkle source is wired, cross-checks the root against it → `trustLevel: "verified-inclusion"`; otherwise `"proof-consistent"` (indexer trusted). That cross-check only means something against an *independent* header, so the default `Cairn` wiring enables it ONLY when your node RPC is a different origin than the indexer (the default same-origin proxy stays at `"proof-consistent"`, a single compromised server can't be cross-checked against itself). For full trust-minimization against a lying node too, supply a PoW-verifying `headerMerkleAt` (e.g. backed by `cairn.chain.light()`).
+- **Merkle inclusion is trust-minimized, to the strength of your header source.** `verifyInclusion()` folds the proof and cross-checks its root against a header merkle from `headerMerkleAt`. The default `Cairn` wiring backs that with a light client that PoW-verifies headers forward from a pinned checkpoint, so a match reads `trustLevel: "verified-inclusion"` with `included: true`. A header within 12 blocks of the light client's cached tip is first compared with the header the base serves at that height, so a block orphaned by a reorg stops counting; the hosted base edge-caches rows at or below its tip minus 6, so there this catches reorgs of up to 6 blocks. When no header can be verified (below the checkpoint, header source unreachable, no source configured) the result is `"proof-consistent"` with `included: false` and a `reason`: the indexer alone vouches for it. Gate on `included` or on `trustLevel === "verified-inclusion"`; they agree.
 - **Balances are RPC-trusted.** Headers don't commit to the UTXO set; balance reads trust the node/proxy (same as every light client).
 - **Indexer/swarm run behind the cairn proxy.** By default `cairn.index` and content resolution use the cairn server's hardened, read-only, rate-limited `/explorer/api` reverse proxy (no separate public indexer needed). **SSE works through it; `subscribe()` (WebSocket) needs a direct indexer endpoint:** set `baseUrls.indexer` to a private/localhost indexer for WS.
 - **The wallet injects on every site** (connect-anywhere shipped in 0.2.4x) behind a per-origin consent gate: a site sees nothing until the user approves the connection, and some request kinds stay first-party-only (the `FIRST_PARTY_ONLY` error code).
@@ -95,7 +88,7 @@ Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{con
 new Cairn({
   network: "mainnet",
   baseUrls: {
-    cairn:   "https://cairn-substrate.com",        // board + /api/rpc proxy + /content origin
+    cairn:   "https://cairn-substrate.com",        // /api/rpc proxy + /api/headers + /content origin + names
     rpc:     "https://cairn-substrate.com/api/rpc", // node RPC (proxy)
     indexer: "https://cairn-substrate.com/explorer/api",
     swarm:   undefined,                             // optional direct swarm gateway
@@ -112,10 +105,9 @@ new Cairn({
 pnpm build && pnpm test         # unit (offline): error mapping, client paths, content+merkle verify
 pnpm test:e2e:read              # live reads vs mainnet + adversarial (free)
 pnpm test:e2e:wallet            # real extension + real connector under Xvfb: connect/consent/sign (free)
-pnpm test:e2e:write             # full pipeline incl. a real on-chain Propose+Attest (spends ~0.3 CSD)
 ```
 
-See [`test/e2e/README.md`](test/e2e/README.md) for coverage, requirements, and cost of each layer. The unit + live-read + wallet-connector suites are CI-friendly and free; the write suite needs a funded key and is opt-in.
+See [`test/e2e/README.md`](test/e2e/README.md) for coverage, requirements, and cost of each layer. All three suites are free; none spends CSD.
 
 ## License
 

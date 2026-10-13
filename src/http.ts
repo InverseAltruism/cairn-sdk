@@ -27,6 +27,37 @@ export interface HttpOptions {
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024;
 const ERR_TEXT_CAP = 8 * 1024; // error-body text is only for a message — cap it hard (DESER-4 safeText sink)
 
+/** Upper bound on a server's Retry-After hint. Every cairn server rate-limit window is 60 s, so an honest
+ *  hint from it stays at or under that; a larger value is clamped rather than obeyed. */
+export const MAX_RETRY_AFTER_MS = 60_000;
+
+/** A response's Retry-After (delta-seconds form) in ms, clamped to [0, MAX_RETRY_AFTER_MS]. An absent,
+ *  HTTP-date or malformed header reads as 0, so the caller's own backoff applies. */
+export function retryAfterMs(res: Response): number {
+  const secs = Number(res.headers.get("retry-after"));
+  return Number.isFinite(secs) && secs > 0 ? Math.min(secs * 1000, MAX_RETRY_AFTER_MS) : 0;
+}
+
+/** A per-call cap on the total time spent sleeping between retries. A server hint that does not fit in
+ *  what is left is not slept on: `take` returns null and the caller fails at once (transient), so a read
+ *  never waits minutes for a rate-limit window. */
+export class RetryWaitBudget {
+  private left: number;
+  constructor(totalMs: number) { this.left = totalMs; }
+  /** The ms to sleep before the next attempt (`ownMs` is the caller's backoff, clipped to what is left), or
+   *  null when the server's hint exceeds the remaining budget. */
+  take(ownMs: number, serverMs: number): number | null {
+    if (serverMs > this.left) return null;
+    const ms = Math.min(Math.max(ownMs, serverMs), this.left);
+    this.left -= ms;
+    return ms;
+  }
+}
+
+// Total retry sleep for one Http.getJson call: the jitter ladder at the 10-retry cap sums to about 27.75 s,
+// so 30 s keeps every no-hint retry schedule as it was while bounding Retry-After.
+const HTTP_RETRY_WAIT_BUDGET_MS = 30_000;
+
 // Read a Response body with a running byte cap: a Content-Length precheck rejects a declared-oversize body,
 // and a streamed reader aborts the moment the running total exceeds the cap (defeats a no-Content-Length
 // slow-stream OOM). Falls back to a buffered read + post-check when the body stream is unavailable.
@@ -72,9 +103,13 @@ export class Http {
     // Bind to globalThis so the browser doesn't throw "Illegal invocation".
     this._fetch = opts.fetch ? opts.fetch : (f.bind(globalThis) as FetchLike);
     this.timeoutMs = opts.timeoutMs ?? 15000;
-    this.maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
+    // A cap that is not a finite number of at least 1 byte (NaN, Infinity, 0.5, 0, negative) falls back to the
+    // default; Math.min/max pass NaN straight through, which would disable the cap.
+    this.maxBytes = Number.isFinite(opts.maxBytes) && (opts.maxBytes as number) >= 1 ? Math.floor(opts.maxBytes as number) : DEFAULT_MAX_BYTES;
     this.headers = opts.headers ?? {};
-    this.retries = Math.min(10, Math.max(0, Math.floor(opts.retries ?? 0))); // clamped: an Infinity budget must not loop forever
+    // clamped to 0..10; NaN or a non-number reads as 0 (Infinity clamps to 10)
+    const retries = Number(opts.retries ?? 0);
+    this.retries = Number.isNaN(retries) ? 0 : Math.min(10, Math.max(0, Math.floor(retries)));
   }
 
   /** Build an absolute URL from a path + optional query params. */
@@ -131,14 +166,19 @@ export class Http {
 
   async getJson<T = unknown>(path: string, query?: Record<string, string | number | boolean | undefined>): Promise<T> {
     const url = this.url(path, query);
-    // Opt-in GET retry (default 0): network errors/timeouts and 5xx only, full-jitter backoff.
+    // Opt-in GET retry (default 0): network errors/timeouts and 5xx only, full-jitter backoff, total sleep
+    // bounded by HTTP_RETRY_WAIT_BUDGET_MS.
+    const budget = new RetryWaitBudget(HTTP_RETRY_WAIT_BUDGET_MS);
     for (let attempt = 0; ; attempt++) {
+      let serverWaitMs = 0;
+      let last: HttpError | undefined;
       try {
         const { res, body } = await this.raw("GET", path, { query });
         if (!res.ok) {
           // the body is already read (byte-capped, socket drained); build the error message from it.
-          if (!(res.status >= 500 && attempt < this.retries)) throw new HttpError(res.status, url, errText(body));
-          // else: fall through to the jittered sleep and retry
+          last = new HttpError(res.status, url, errText(body));
+          if (!(res.status >= 500 && attempt < this.retries)) throw last;
+          serverWaitMs = retryAfterMs(res);   // a 503 may say when to come back; retrying sooner wastes the attempt
         } else {
           return this.parseJson<T>(res, new TextDecoder().decode(body), url);
         }
@@ -146,7 +186,10 @@ export class Http {
         if (e instanceof HttpError && e.status < 500) throw e;      // 4xx: terminal, never retried
         if (attempt >= this.retries) throw e;
       }
-      await new Promise((r) => setTimeout(r, Math.floor(Math.random() * Math.min(4000, 250 * 2 ** attempt))));
+      const jitterMs = Math.floor(Math.random() * Math.min(4000, 250 * 2 ** attempt));
+      const waitMs = budget.take(jitterMs, serverWaitMs);
+      if (waitMs === null) throw last ?? new HttpError(0, url, "retry wait budget exhausted");
+      await new Promise((r) => setTimeout(r, waitMs));
     }
   }
 

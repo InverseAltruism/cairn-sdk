@@ -41,6 +41,19 @@ async function main() {
   const hooks2 = createCairnHooks(React as any, { timeoutMs: 500 });
   ok("createCairnHooks(React, opts) builds its own controller", hooks2.controller instanceof CairnController && hooks2.useCairnAccount() === null);
 
+  // W34: a controller built by the OTHER copy of the class (the dual CJS/ESM package hazard, reproduced with a
+  // second module instance of controller.ts) must be bound, not replaced by a fresh, never-connected one.
+  const dualSpec = "../src/controller.ts?dual-package";
+  const { CairnController: OtherCopy } = await import(dualSpec);
+  const foreign = new OtherCopy({ getWallet: async () => new WalletConnection(mockProvider("0xdef")) });
+  ok("W34 setup: the second copy really fails instanceof", !(foreign instanceof CairnController));
+  const hooks3 = createCairnHooks(React as any, foreign);
+  ok("W34: createCairnHooks binds the controller from the other copy (no silent second controller)", hooks3.controller === foreign);
+  await foreign.connect();
+  ok("W34: the hooks see that controller's connection", hooks3.useCairnAccount() === "0xdef");
+  const hooks4 = createCairnHooks(React as any, { getWallet: async () => new WalletConnection(mockProvider()) });
+  ok("W34 honest: an options object (even with getWallet) still builds a new controller", hooks4.controller instanceof CairnController && hooks4.useCairnAccount() === null);
+
   console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"}: ${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
 }

@@ -1,5 +1,6 @@
 // B10 surfaces (Plan 57): the names/CairnX read namespace, native wallet error-code mapping,
 // and the http hardening (opt-in GET retry + typed malformed-JSON errors). All offline.
+import { readFileSync } from "node:fs";
 import { NamesClient } from "../src/names.js";
 import { Http } from "../src/http.js";
 import { mapProviderError, UserRejectedError, WalletLockedError, UnsupportedMethodError, CairnError, HttpError } from "../src/errors.js";
@@ -42,6 +43,68 @@ async function main() {
     const { fetch: f500 } = mockFetch(() => ({ status: 500, body: "boom" }));
     try { await new NamesClient(new Http({ baseUrl: "https://x.example", fetch: f500 })).names(); } catch (e) { threw = e; }
     check("a 5xx surfaces as a typed HttpError (outage != null)", threw instanceof HttpError && (threw as HttpError).status === 500);
+  }
+
+  console.log("W37: shape guards on the reads a dApp does arithmetic or iteration on");
+  {
+    const good = { ticker: "BTC", deployId: "0x00", deployer: "0x00", decimals: 8, supply: "2100000000000000", minted: "0", height: 1 };
+    let body = "";
+    const { fetch } = mockFetch((u) => (u.includes("/trade/api/cairnx/") ? { status: 200, body } : undefined));
+    const names = new NamesClient(new Http({ baseUrl: "https://x.example", fetch }));
+    const throwsMalformed = async (label: string, json: unknown, call: () => Promise<unknown>, needle: RegExp) => {
+      body = JSON.stringify(json);
+      let threw: unknown;
+      try { await call(); } catch (e) { threw = e; }
+      check(label, threw instanceof HttpError && /malformed response/.test(String((threw as Error).message)) && needle.test(String((threw as Error).message)));
+    };
+    await throwsMalformed("tokens(): an error object served with 200 is refused (was cast to TokenInfo[])", { ok: false, error: "cairnx backend unavailable" }, () => names.tokens(), /expected an array/);
+    await throwsMalformed("tokens(): decimals as a string is refused", [{ ...good, decimals: "8" }], () => names.tokens(), /token row 0: bad decimals/);
+    await throwsMalformed("tokens(): a fractional decimals is refused", [good, { ...good, decimals: 1.5 }], () => names.tokens(), /token row 1: bad decimals/);
+    await throwsMalformed("token(): a negative decimals is refused", { ...good, decimals: -1 }, () => names.token("BTC"), /bad decimals/);
+    await throwsMalformed("token(): supply as a float number is refused", { ...good, supply: 1e30 }, () => names.token("BTC"), /supply/);
+    await throwsMalformed("token(): minted with a decimal point is refused", { ...good, minted: "1.5" }, () => names.token("BTC"), /minted/);
+    await throwsMalformed("offers(): a non-array is refused", { offers: [] }, () => names.offers(), /expected an array/);
+    await throwsMalformed("bids(): a non-array is refused", null, () => names.bids(), /expected an array/);
+    await throwsMalformed("names(): a non-array is refused", "names", () => names.names(), /expected an array/);
+
+    body = JSON.stringify([good, { ...good, ticker: "CAIRN", decimals: 0, supply: "0", mintLimit: "1000", mint: "open" }]);
+    const list = await names.tokens();
+    check("W37 honest: well-formed token rows pass unchanged", list.length === 2 && list[1]!.ticker === "CAIRN" && list[0]!.decimals === 8);
+    body = JSON.stringify(good);
+    check("W37 honest: a well-formed token() body passes", (await names.token("BTC"))?.supply === "2100000000000000");
+    body = "[]";
+    check("W37 honest: empty lists pass", (await names.offers()).length === 0 && (await names.bids()).length === 0 && (await names.names()).length === 0);
+  }
+
+  console.log("nameHistory(): the cairnx object shape, guarded");
+  {
+    // Captured verbatim from 127.0.0.1:8794/cairnx/name-history/{cairn,6} (read-only GET, 2026-10-13).
+    const LIVE = JSON.parse(readFileSync(new URL("./fixtures/name-history-8794.json", import.meta.url), "utf8")) as Record<string, any>;
+    let body = "";
+    let status = 200;
+    const { fetch } = mockFetch((u) => (u.includes("/trade/api/cairnx/name-history/") ? { status, body } : undefined));
+    const names = new NamesClient(new Http({ baseUrl: "https://x.example", fetch }));
+    body = JSON.stringify(LIVE.cairn);
+    const a = await names.nameHistory("cairn");
+    check("nameHistory honest: the live body for `cairn` passes with its events and resolution", a?.events.length === 1 && a.events[0]!.kind === "name" && a.resolve.owner === LIVE.cairn.resolve.owner && a.scopedReplaySufficient === true);
+    body = JSON.stringify(LIVE["6"]);
+    const b = await names.nameHistory("6");
+    check("nameHistory honest: the live body for `6` keeps scopedReplaySufficient false and its caveat", b?.scopedReplaySufficient === false && typeof b.caveat === "string" && b.events.length === 10);
+    status = 404; body = JSON.stringify({ ok: false });
+    check("nameHistory honest: 404 -> null", (await names.nameHistory("cairn")) === null);
+    status = 200;
+    const bad = async (label: string, json: unknown, needle: RegExp) => {
+      body = JSON.stringify(json);
+      let threw: unknown;
+      try { await names.nameHistory("cairn"); } catch (e) { threw = e; }
+      check(label, threw instanceof HttpError && /malformed response/.test(String((threw as Error).message)) && needle.test(String((threw as Error).message)));
+    };
+    await bad("nameHistory: a bare array (the old declared type) is refused", LIVE.cairn.events, /not an object/);
+    await bad("nameHistory: a body for another name is refused", { ...LIVE.cairn, name: "other" }, /expected "cairn"/);
+    await bad("nameHistory: a missing events array is refused", { ...LIVE.cairn, events: undefined }, /events is not an array/);
+    await bad("nameHistory: scopedReplaySufficient as a string is refused", { ...LIVE.cairn, scopedReplaySufficient: "false" }, /scopedReplaySufficient/);
+    await bad("nameHistory: an event with a malformed txid is refused", { ...LIVE.cairn, events: [{ ...LIVE.cairn.events[0], txid: "0x12" }] }, /event 0 is malformed/);
+    await bad("nameHistory: a missing resolve is refused", { ...LIVE.cairn, resolve: null }, /resolve/);
   }
 
   console.log("— native wallet error codes (0.2.46) preferred over string matching —");

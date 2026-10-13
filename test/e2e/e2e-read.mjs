@@ -5,7 +5,9 @@ import { Cairn, ContentVerificationError } from "../../dist/index.js";
 import { makeHarness, until } from "./harness.mjs";
 
 const h = makeHarness("read");
-const cairn = new Cairn({ network: "mainnet" });
+// CAIRN_BASE points every read at another cairn front door (e.g. http://127.0.0.1:7777); default is mainnet.
+const base = process.env.CAIRN_BASE;
+const cairn = new Cairn({ network: "mainnet", ...(base ? { baseUrls: { cairn: base } } : {}) });
 
 h.section("chain (node RPC via the public proxy)");
 const tip = await cairn.chain.tip();
@@ -18,32 +20,23 @@ h.ok("index.health ok", ih.ok === true, `indexed ${ih.indexed_height}, ${ih.prop
 const itipH = await cairn.index.tipHeight();
 h.ok("index.tipHeight is a number near the tip", Number.isFinite(itipH) && Math.abs(itipH - tip.height) < 50, `idx ${itipH} vs node ${tip.height}`);
 
-h.section("board (signal board + work graph)");
-const board = await cairn.board.top({ window: "all" });
-h.ok("board.top returns items", Array.isArray(board.items) && board.count >= 0, `${board.count} items`);
-const domains = await cairn.board.domains();
-h.ok("board.domains returns domains", Array.isArray(domains.domains));
-const sample = board.items[0];
-h.ok("board has at least one item to drill into", !!sample, sample ? `"${sample.title}"` : "none");
-let proposalId = sample?.id;
-if (proposalId) {
-  const item = await cairn.board.item(proposalId);
-  h.ok("board.item returns the item + integrity flag", item.ok !== false && !!item.item);
-  if (sample.proposer) {
-    // profile() throws HttpError(404) for an address with no registered profile — a
-    // normal, catchable outcome (the SDK's contract: non-2xx → typed HttpError).
-    try {
-      const prof = await cairn.board.profile(sample.proposer);
-      h.ok("board.profile resolves a proposer", prof.ok !== false);
-    } catch (e) {
-      h.ok("board.profile throws a catchable HttpError(404) when no profile exists", e?.name === "HttpError" && e.status === 404);
-    }
+h.section("indexer proposals");
+const domains = await cairn.index.domains();
+h.ok("index.domains returns domains", Array.isArray(domains) && domains.length > 0, `${domains.length} domains`);
+// The newest proposal across the busiest domains sits above the SPV checkpoint, so verified-inclusion is reachable.
+let newest = null;
+for (const d of domains.slice(0, 3)) for (const p of await cairn.index.domainProposals(d.domain)) if (!newest || p.height > newest.height) newest = p;
+h.ok("a recent proposal to drill into", !!newest, newest ? `${newest.domain} @ ${newest.height}` : "none");
+const proposalId = newest?.txid;
+// A proposal whose payload some content source stores (not every domain stores its payloads).
+let contentHash = null;
+for (const d of domains.slice(0, 10)) {
+  for (const p of (await cairn.index.domainProposals(d.domain)).slice(0, 3)) {
+    if (await cairn.content.getBytes(p.payload_hash)) { contentHash = p.payload_hash; break; }
   }
+  if (contentHash) break;
 }
-const lb = await cairn.board.leaderboard();
-h.ok("board.leaderboard returns a list", Array.isArray(lb.leaderboard));
-const net = await cairn.board.network();
-h.ok("board.network returns a snapshot", net && typeof net === "object");
+h.ok("a proposal with stored content", !!contentHash, contentHash ? String(contentHash).slice(0, 14) : "none");
 
 h.section("indexer drill-down + trust-minimized inclusion");
 if (proposalId) {
@@ -57,13 +50,20 @@ if (proposalId) {
   h.ok("index.txMerkleProof returns {block_height,pos,merkle,merkle_root}", Number.isFinite(proof.block_height) && Array.isArray(proof.merkle) && /^0x[0-9a-f]{64}$/.test(proof.merkle_root));
   const incl = await cairn.index.verifyInclusion(proposalId);
   h.ok("verifyInclusion → VERIFIED-INCLUSION (proof root == on-chain header merkle)", incl.trustLevel === "verified-inclusion" && incl.included === true, `block ${incl.blockHeight}`);
-
+}
+{
+  // A tx a couple of blocks under the tip: inside the light client's re-check window, so this leg also runs
+  // the near-tip reorg re-check against the live chain.
+  const nearH = Number(tip.height) - 2;
+  const txids = await cairn.index.blockTxids(await cairn.index.blockHashAtHeight(nearH));
+  const near = await cairn.index.verifyInclusion(txids[0]);
+  h.ok("verifyInclusion of a near-tip tx → VERIFIED-INCLUSION (re-checked against the served chain)", near.trustLevel === "verified-inclusion" && near.included === true, `block ${near.blockHeight}`);
+}
+if (contentHash) {
   h.section("content (self-certifying)");
-  const prop2 = await cairn.index.proposal(proposalId);
-  const ph = prop2.payload_hash;
-  const got = await cairn.content.get(ph);
+  const got = await cairn.content.get(contentHash);
   h.ok("content.get fetches + verifies the on-chain payload", got && typeof got === "object", JSON.stringify(got).slice(0, 60));
-  h.ok("content.hash(obj) reproduces the on-chain payload_hash", cairn.content.hash(got) === String(ph).toLowerCase(), "byte-identical canonicalization");
+  h.ok("content.hash(obj) reproduces the on-chain payload_hash", cairn.content.hash(got) === String(contentHash).toLowerCase(), "byte-identical canonicalization");
 }
 
 h.section("registry (L3)");
@@ -78,9 +78,8 @@ h.ok("verifyInclusion of a bogus txid → not included", bogus.included === fals
 const missing = await cairn.content.getBytes("0x" + "ab".repeat(32));
 h.ok("content.get of an unknown hash → null", missing === null);
 // fetch real bytes for a known hash, then assert verify() fails them against a DIFFERENT hash
-if (proposalId) {
-  const ph = (await cairn.index.proposal(proposalId)).payload_hash;
-  const realBytes = await cairn.content.getBytes(ph);
+if (contentHash) {
+  const realBytes = await cairn.content.getBytes(contentHash);
   h.ok("content.verify(realBytes, wrongHash) === false (tamper detection)", realBytes && cairn.content.verify(realBytes, "0x" + "cd".repeat(32)) === false);
 }
 // a ContentClient pointed at a source that serves mismatched bytes must THROW
