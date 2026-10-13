@@ -27,6 +27,17 @@ export interface HttpOptions {
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024;
 const ERR_TEXT_CAP = 8 * 1024; // error-body text is only for a message — cap it hard (DESER-4 safeText sink)
 
+/** Upper bound on a server's Retry-After hint. The cairn server's rate-limit windows are 60 s, so it never
+ *  asks for a longer wait; a larger value is clamped rather than obeyed. */
+export const MAX_RETRY_AFTER_MS = 60_000;
+
+/** A response's Retry-After (delta-seconds form) in ms, clamped to [0, MAX_RETRY_AFTER_MS]. An absent,
+ *  HTTP-date or malformed header reads as 0, so the caller's own backoff applies. */
+export function retryAfterMs(res: Response): number {
+  const secs = Number(res.headers.get("retry-after"));
+  return Number.isFinite(secs) && secs > 0 ? Math.min(secs * 1000, MAX_RETRY_AFTER_MS) : 0;
+}
+
 // Read a Response body with a running byte cap: a Content-Length precheck rejects a declared-oversize body,
 // and a streamed reader aborts the moment the running total exceeds the cap (defeats a no-Content-Length
 // slow-stream OOM). Falls back to a buffered read + post-check when the body stream is unavailable.
@@ -133,12 +144,13 @@ export class Http {
     const url = this.url(path, query);
     // Opt-in GET retry (default 0): network errors/timeouts and 5xx only, full-jitter backoff.
     for (let attempt = 0; ; attempt++) {
+      let serverWaitMs = 0;
       try {
         const { res, body } = await this.raw("GET", path, { query });
         if (!res.ok) {
           // the body is already read (byte-capped, socket drained); build the error message from it.
           if (!(res.status >= 500 && attempt < this.retries)) throw new HttpError(res.status, url, errText(body));
-          // else: fall through to the jittered sleep and retry
+          serverWaitMs = retryAfterMs(res);   // a 503 may say when to come back; retrying sooner wastes the attempt
         } else {
           return this.parseJson<T>(res, new TextDecoder().decode(body), url);
         }
@@ -146,7 +158,8 @@ export class Http {
         if (e instanceof HttpError && e.status < 500) throw e;      // 4xx: terminal, never retried
         if (attempt >= this.retries) throw e;
       }
-      await new Promise((r) => setTimeout(r, Math.floor(Math.random() * Math.min(4000, 250 * 2 ** attempt))));
+      const jitterMs = Math.floor(Math.random() * Math.min(4000, 250 * 2 ** attempt));
+      await new Promise((r) => setTimeout(r, Math.max(jitterMs, serverWaitMs)));
     }
   }
 

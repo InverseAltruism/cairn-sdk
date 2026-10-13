@@ -141,8 +141,10 @@ console.log("=== IndexerClient: merkle inclusion (real fixture) ===");
   // (a) no header cross-check → proof-consistent
   const idx1 = new IndexerClient(new Http({ baseUrl: "https://i.com", fetch: proofFetch() }));
   const r1 = await idx1.verifyInclusion(target);
-  ok("verifyInclusion folds the branch → included", r1.included === true);
-  ok("without headerMerkleAt → trustLevel proof-consistent", r1.trustLevel === "proof-consistent");
+  // 0.4.7 contract (A4): a branch that folds without a matched verified header is NOT `included`; it is
+  // proof-consistent with a reason. Through 0.4.6 this asserted included === true.
+  ok("verifyInclusion folds the branch but no header source → included false", r1.included === false);
+  ok("without headerMerkleAt → trustLevel proof-consistent, with a reason", r1.trustLevel === "proof-consistent" && /no header source/.test(r1.reason ?? ""));
 
   // (b) header cross-check matching → verified-inclusion
   const idx2 = new IndexerClient(new Http({ baseUrl: "https://i.com", fetch: proofFetch() }), { headerMerkleAt: async () => root });
@@ -166,7 +168,7 @@ console.log("=== IndexerClient: merkle inclusion (real fixture) ===");
   //     PoW-verify, so the over-claim is impossible.
   const idx5 = new IndexerClient(new Http({ baseUrl: "https://i.com", fetch: proofFetch() }), { headerMerkleAt: async () => { throw new Error("below SPV checkpoint"); } });
   const r5 = await idx5.verifyInclusion(target);
-  ok("M3: headerMerkleAt throwing → degrades to proof-consistent (no over-claim, no crash)", r5.included === true && r5.trustLevel === "proof-consistent");
+  ok("M3: headerMerkleAt throwing → degrades to proof-consistent (no over-claim, no crash)", r5.included === false && r5.trustLevel === "proof-consistent" && /below SPV checkpoint/.test(r5.reason ?? ""));
 }
 
 console.log(`\nsdk.test: ${pass} passed, ${fail} failed`);

@@ -17,6 +17,9 @@ export interface MerkleProof {
 export type TrustLevel = "verified-inclusion" | "proof-consistent" | "not-found";
 
 export interface InclusionResult {
+  /** True only when the proof root matched a header the `headerMerkleAt` source verified (trustLevel
+   *  "verified-inclusion"). A proof that merely folds is "proof-consistent" with `included: false` and a
+   *  `reason`: the indexer alone vouches for it, and an empty branch whose root is the txid folds trivially. */
   included: boolean;
   trustLevel: TrustLevel;
   blockHeight?: number;
@@ -199,20 +202,31 @@ export class IndexerClient {
     if (!folds) {
       return { included: false, trustLevel: "not-found", blockHeight: proof.block_height, reason: "merkle branch does not fold to the claimed root" };
     }
+    let unverified: string | undefined;
     if (this.opts.headerMerkleAt) {
+      let onchain: string;
       try {
-        const onchain = await this.opts.headerMerkleAt(proof.block_height);
+        onchain = await this.opts.headerMerkleAt(proof.block_height);
+      } catch (e) {
+        onchain = "";
+        unverified = `header at ${proof.block_height} not verified (${(e as Error)?.message ?? String(e)})`;
+      }
+      if (onchain) {
         if (norm(onchain) !== norm(proof.merkle_root)) {
           // CAIRN-SPV-3: a folding proof whose root != the PoW-verified header is active equivocation, not
           // absence — flag it distinctly so chain↔indexer disagreement monitoring isn't lost in "not-found".
           return { included: false, trustLevel: "not-found", equivocation: true, blockHeight: proof.block_height, reason: "proof root != on-chain header merkle (indexer disagrees with chain)" };
         }
         return { included: true, trustLevel: "verified-inclusion", blockHeight: proof.block_height, pos: proof.pos, merkleRoot: proof.merkle_root };
-      } catch {
-        // fall through to proof-consistent if the header couldn't be fetched
       }
+      unverified ??= `header source returned no merkle root for ${proof.block_height}`;
+    } else {
+      unverified = "no header source configured (headerMerkleAt)";
     }
-    return { included: true, trustLevel: "proof-consistent", blockHeight: proof.block_height, pos: proof.pos, merkleRoot: proof.merkle_root };
+    // Without a matched header the proof is only the indexer's word: an empty branch whose root is the txid
+    // folds for any txid, so `included` stays false and the reason says why the proof was not upgraded.
+    const trivial = proof.merkle.length === 0 && norm(proof.merkle_root) === norm(txid) ? "; empty branch (root equals the txid)" : "";
+    return { included: false, trustLevel: "proof-consistent", blockHeight: proof.block_height, pos: proof.pos, merkleRoot: proof.merkle_root, reason: `indexer proof only, ${unverified}${trivial}` };
   }
 
   // ---- live streams ------------------------------------------------------

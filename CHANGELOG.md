@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.7 (unreleased) - SPV trust honesty, dApp API guards, board client removed
+
+### Behaviour changes (read these if you gate on inclusion)
+
+- **`index.verifyInclusion()`: `included` is `true` only with `trustLevel: "verified-inclusion"`.** Through
+  0.4.6 a proof that folded but had no PoW-verified header behind it (below the SPV checkpoint, header
+  source unreachable, or no `headerMerkleAt` configured) returned `included: true, trustLevel:
+  "proof-consistent"`. It now returns `included: false` with the same `trustLevel` and a `reason` naming
+  why the header was not verified. An empty merkle branch whose root equals the txid folds for any txid, so
+  without a verified header it never reads as included. If you read `included` alone, proof-consistent
+  results now read as not included; if you need the old reading, test `trustLevel !== "not-found"`.
+- **Reorgs near the tip:** the SPV light client cached its verified header chain and answered heights at or
+  below its cached tip from that cache, so a tx in a block orphaned by a reorg kept reading
+  `verified-inclusion` until some read went past the cached tip. A cached header within 12 blocks of the
+  cached tip is now re-checked against the served chain (one single-header `/api/headers` request per such
+  read); a mismatch reseeds from the checkpoint and the read runs again on the live branch, so the orphaned
+  tx no longer reads as verified. Deeper heights still answer from the cache with no request.
+  `verifyOfferForFill` gets the same re-check.
+- **Retry-After:** the SPV header batch and `Http.getJson`'s opt-in GET retries now wait as long as the
+  server's `Retry-After` says, up to 60 s (the cairn server's rate-limit window). The SPV batch used to cut
+  the wait at 4 s and spend its retries inside the window; `Http` ignored the header.
+
 ## 0.4.6 (2026-10-11) - wallet 0.2.73 error codes
 
 - Errors: six wallet codes keep their code and the wallet's retry semantics instead of surfacing as `UNKNOWN`:

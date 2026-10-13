@@ -306,7 +306,9 @@ console.log("\nP75-5 fill-surface guards:");
   const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
   const tx = proposeTx(SELLER_KEY, rec, 9);
   const cairn = new Cairn({ baseUrls: { cairn: "https://example.test" } });
-  (cairn as unknown as { seededSpvLight: unknown }).seededSpvLight = async () => mockLight(tx.json, tx.phash);
+  // The facade reads the light client's cached tip (baseHeight + chain) for the near-tip reorg re-check; an
+  // empty cache starting at H means the inclusion came from a fresh sync, so no re-check request is made.
+  (cairn as unknown as { seededSpvLight: unknown }).seededSpvLight = async () => ({ ...mockLight(tx.json, tx.phash), baseHeight: H, chain: [] });
   (cairn as unknown as { chain: unknown }).chain = { client: mockClient };
   await ok("[MF-11] verifyOfferForFill(id, served, { pay }) reaches the proven outputPlan seam", async () => {
     const r = await cairn.verifyOfferForFill(tx.id, servedFor({ id: tx.id }), { pay: "500000000" });

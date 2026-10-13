@@ -52,7 +52,9 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
   commitment, so non-spend can't be proven from headers, so `LightClient.balance()` is tagged
   `rpc-trusted` and never hides that. Verify what matters; treat balances as a hint.
 - **Indexer = untrusted derived view:** the `IndexerClient` re-folds Merkle proofs
-  (`verifyInclusion`); it's a prover, not an authority.
+  (`verifyInclusion`); it's a prover, not an authority. `included` is `true` only with
+  `trustLevel: "verified-inclusion"` (the proof root matched a PoW-verified header). A proof that
+  only folds is `"proof-consistent"` with `included: false` and a `reason`.
 
 **Filling an offer (F13, diligent-dApp pre-verify):** `fillOffer` is resolver-trusted at this SDK layer:
 the SDK does NOT SPV-verify the `outputs` you hand the wallet, so a lying resolver could redirect the

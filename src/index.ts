@@ -15,7 +15,7 @@
 //   const top = await cairn.board.top({ domain: "csd:apps" });
 //   await cairn.board.propose({ domain: "csd:apps", title: "My dApp", body: "…" });
 
-import { Http, readCapped, type FetchLike } from "./http.js";
+import { Http, readCapped, retryAfterMs, type FetchLike } from "./http.js";
 import { Chain, LightClient, type BlockHeader } from "./chain.js";
 import { BoardClient } from "./board.js";
 import { IndexerClient } from "./indexer.js";
@@ -111,7 +111,14 @@ const spvIsTransient = (e: unknown): boolean => {
   return SPV_TRANSIENT_RE.test(msg) || SPV_TRANSIENT_JSON_RE.test(msg);
 };
 const spvSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-const spvRetryDelayMs = (attempt: number, retryAfterSecs: number) => Math.min(4000, Math.max(700 * (attempt + 1), retryAfterSecs * 1000));
+// Our own backoff ladder stays under 4 s; a server Retry-After (already clamped by retryAfterMs) wins when longer,
+// because retrying inside the server's window spends an attempt on a guaranteed 429.
+const spvRetryDelayMs = (attempt: number, serverWaitMs: number) => Math.max(Math.min(4000, 700 * (attempt + 1)), serverWaitMs);
+// A cached header at most this many blocks below the cached tip is re-checked against the served chain before it
+// backs a "verified-inclusion"; anything deeper is treated as final. 12 is the deepest finality used in the stack
+// (cairnx's scanner; the indexer finalizes at 6).
+const SPV_RECHECK_DEPTH = 12;
+const spvTipOf = (lc: LightClient): number => lc.baseHeight + lc.chain.length - 1;
 
 
 export class Cairn {
@@ -183,16 +190,17 @@ export class Cairn {
    * to the honest "proof-consistent" instead of over-claiming "verified-inclusion". The verified
    * header chain is cached across calls; the first call near tip syncs the post-checkpoint span.
    * MF-03: a STRUCTURAL forward-sync break (a reorg orphaned the cached tip) reseeds ONCE via
-   * withSpvReseed. RESIDUAL: a height at or below the cached tip answers from the cached branch with
-   * NO network touch, so a tx in a reorg-orphaned block can still read "verified-inclusion" until a
-   * read PAST the tip trips the reseed; this closes the permanent post-reorg brick, not reorg-blindness.
+   * withSpvReseed. A height within SPV_RECHECK_DEPTH of the cached tip is re-checked against the served
+   * chain first (recheckCachedHeader), so a block orphaned after it was cached stops backing
+   * "verified-inclusion". Deeper heights answer from the cache with no network touch.
    */
   private async verifiedHeaderMerkleAt(height: number): Promise<string> {
     if (!Number.isInteger(height) || height < this._spvCp.height)
       throw new Error(`height ${height} is below the SPV checkpoint ${this._spvCp.height} (cannot PoW-verify backward)`);
     return this.withSpvReseed(async (lc) => {
-      const haveTo = lc.baseHeight + lc.chain.length - 1;
+      const haveTo = spvTipOf(lc);
       if (haveTo < height) await lc.sync(height);
+      else await this.recheckCachedHeader(lc, height, haveTo);
       const vh = lc.chain[height - lc.baseHeight];
       if (!vh) throw new Error(`light client has no verified header at ${height}`);
       return String(vh.header.merkle);
@@ -205,11 +213,8 @@ export class Cairn {
   // this._spvLight first - the wallet G8 lesson, same shape as the MF-14 seed). A TRANSIENT failure
   // (rate limit / gateway / timeout / non-dense / CF 200-HTML) keeps the cache and rethrows: wiping
   // on those turns one /api/headers 429 into a reseed storm (DOS-HDR-3). A second structural
-  // failure propagates fail-closed; there is no loop.
-  // RESIDUAL (recorded, not closed): heights at or below the cached tip answer from the cached
-  // branch with NO network touch, so after a reorg "verified-inclusion" can still be over-claimed
-  // for a tx in an orphaned block until some read past the tip trips this reseed. This fix closes
-  // the permanent-brick leg only.
+  // failure propagates fail-closed; there is no loop. recheckCachedHeader feeds this path: a near-tip
+  // cached header that the served chain no longer carries is a structural failure.
   private async withSpvReseed<T>(op: (lc: LightClient) => Promise<T>): Promise<T> {
     const lc = await this.seededSpvLight();
     try { return await op(lc); }
@@ -220,6 +225,22 @@ export class Cairn {
       this._spvLight = fresh;
       return out;
     }
+  }
+
+  // MF-03: a cached header within SPV_RECHECK_DEPTH of the cached tip may have been orphaned since it was
+  // verified. Compare its hash with the one the server serves at that height now; a mismatch throws a
+  // STRUCTURAL error, so withSpvReseed rebuilds from the checkpoint and reruns the read on the live branch.
+  // The served row carries no trust: a match only means the server has not reported a reorg, and a
+  // mismatch costs a reseed, after which every header is re-verified. Transport faults surface as transient
+  // (the read degrades to proof-consistent and the cache is kept). The message must not match
+  // SPV_TRANSIENT_RE, or the reorg would be retried on the stale cache instead of reseeded.
+  private async recheckCachedHeader(lc: LightClient, height: number, haveTo: number): Promise<void> {
+    if (height <= haveTo - SPV_RECHECK_DEPTH) return;
+    const cached = lc.chain[height - lc.baseHeight];
+    if (!cached) return;   // the caller reports the missing header
+    const [served] = await this.fetchHeadersBatch(height, 1);
+    if (String(served?.hash ?? "").toLowerCase() !== String(cached.hash).toLowerCase())
+      throw new Error(`SPV cached block at height ${height} is no longer on the served chain (reorg); reseeding`);
   }
 
   // Build + seed + tip-advance a FRESH light client into a LOCAL. Never touches this._spvLight:
@@ -242,7 +263,7 @@ export class Cairn {
     // (also batched) to a tx's height on demand, so fall soft and keep the seeded client usable.
     try {
       const tipHeight = Number((await this.chain.tip()).height);
-      const have = lc.baseHeight + lc.chain.length - 1;
+      const have = spvTipOf(lc);
       if (Number.isFinite(tipHeight) && tipHeight > have) await lc.sync(tipHeight);
     } catch { /* keep the seeded client; on-demand batched sync covers what this pre-warm missed */ }
     return lc;
@@ -313,7 +334,7 @@ export class Cairn {
       }
       if ((res!.status === 429 || res!.status === 502 || res!.status === 503) && attempt < SPV_HTTP_MAX_RETRIES) {
         res!.body?.cancel?.().catch(() => {});   // drain the discarded body (undici holds the socket otherwise)
-        await spvSleep(spvRetryDelayMs(attempt, Number(res!.headers.get("retry-after")) || 0));
+        await spvSleep(spvRetryDelayMs(attempt, retryAfterMs(res!)));
         continue;
       }
       throw new Error(`/api/headers ${res!.status}`);
@@ -344,7 +365,16 @@ export class Cairn {
     // MF-03: the reseed also covers the fill path. preverifyOffer's own catch (fillverify.ts) otherwise
     // eats a structural (reorg) throw and reports transient forever, so we hand it a light handle whose
     // verifyTxInclusion reseeds ONCE on a structural break. Structurally typed, so fillverify.ts is untouched.
-    const light = { verifyTxInclusion: (txidHex: string) => this.withSpvReseed((lc) => lc.verifyTxInclusion(txidHex)) };
+    // A verified inclusion answered from a cached near-tip header gets the same reorg re-check as verifyInclusion.
+    const light = {
+      verifyTxInclusion: (txidHex: string) => this.withSpvReseed(async (lc) => {
+        const haveTo = spvTipOf(lc);
+        const r = await lc.verifyTxInclusion(txidHex);
+        if (r.trustLevel === "verified-inclusion" && typeof r.blockHeight === "number" && r.blockHeight <= haveTo)
+          await this.recheckCachedHeader(lc, r.blockHeight, haveTo);
+        return r;
+      }),
+    };
     return preverifyOffer({ light, client: this.chain.client, offerId, servedOffer, pay: opts?.pay, plannedOutputs: opts?.plannedOutputs });
   }
 
