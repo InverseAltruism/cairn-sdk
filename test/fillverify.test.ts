@@ -397,9 +397,15 @@ console.log("\nP75-5 fill-surface guards:");
     const lc = await (cairn as unknown as { seededSpvLight(): Promise<{ verifyTxInclusion: unknown }> }).seededSpvLight();
     lc.verifyTxInclusion = async () => ({ trustLevel: "verified-inclusion", included: true, blockHeight: near, confirmations: 3, tx: tx.json, appPayloadHash: tx.phash });
     (cairn as unknown as { chain: unknown }).chain = { client: mockClient };
-    await ok("[F2 honest] a near-tip offer that passes the re-check returns ok:true, trust verified, at its height", async () => {
-      const r = await cairn.verifyOfferForFill(tx.id);
-      return r.ok === true && r.trust === "verified" && r.blockHeight === near && r.seller === SELLER;
+    // The production call shape: the resolver's offer object (served at the offer's height) plus pay and the
+    // planned outputs, which a dApp sizes locally (here with the pure preverifyOffer over the same inclusion).
+    const served = servedFor({ id: tx.id, height: near });
+    const sized = await preverifyOffer({ light: mockLight(tx.json, tx.phash, near), client: mockClient, offerId: tx.id, servedOffer: served, pay: "500000000" });
+    const plannedOutputs = Object.fromEntries((sized.outputPlan ?? []).map((o) => [o.to, o.value]));
+    await ok("[F2 honest] a near-tip offer that passes the re-check returns ok:true, trust verified, a bound outputPlan", async () => {
+      const r = await cairn.verifyOfferForFill(tx.id, served, { pay: "500000000", plannedOutputs });
+      return r.ok === true && r.trust === "verified" && r.blockHeight === near && r.seller === SELLER
+        && Array.isArray(r.outputPlan) && r.outputPlan.length > 0 && r.planBound === true;
     });
     await ok("[F2] that verification ran the near-tip re-check (one single-header request) without a reseed", () =>
       seen.filter((u) => u.endsWith(`/api/headers/${near}/1`)).length === 1 && seen.filter((u) => u.endsWith(`/api/headers/${BASE}/46`)).length === 1);

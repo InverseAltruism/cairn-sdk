@@ -63,7 +63,10 @@ Replacement: none; the board is retired.
   `Http` ignored the header. Per-call worst cases:
   - one `/api/headers` request: at most 16 s of retry sleep, the same as 0.4.6 (four retries at its 4 s
     cap), so with five attempts at the 15 s per-attempt timeout the worst case stays 91 s. A near-tip
-    `verifyInclusion` can make two such requests (the re-check, then a forward sync after a reorg).
+    `verifyInclusion` without a reorg is the proof GET (15 s) plus one re-check (91 s): 106 s at worst. After
+    a reorg it makes about 10 such requests, each bounded at 91 s: the re-check, the reseed's seed batch, a
+    forward sync from the checkpoint to the tip in 512-header batches (7 at tip 118,652; the count grows as
+    the tip moves away from the checkpoint), and the re-check again.
   - `Http.getJson`: at most 30 s of retry sleep (the jitter ladder at the 10-retry cap sums to about 27.75 s,
     so no hint-free schedule changes), plus one `timeoutMs` per attempt. With the default `retries: 0` it
     makes one attempt and never sleeps.
