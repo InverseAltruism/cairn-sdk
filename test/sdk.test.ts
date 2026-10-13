@@ -42,7 +42,7 @@ console.log("=== Http: url building ===");
   ok("omits undefined query params", h.url("/x", { a: 1, b: undefined }) === "https://example.com/x?a=1");
 }
 
-console.log("=== the board client is retired (0.4.7) ===");
+console.log("=== the board client is retired (0.5.0) ===");
 {
   const cairn = new Cairn({ baseUrls: { cairn: "https://c.com" }, fetch: routerFetch([]) });
   ok("Cairn has no `board` namespace", !("board" in cairn));
@@ -96,7 +96,7 @@ console.log("=== IndexerClient: merkle inclusion (real fixture) ===");
   // (a) no header cross-check → proof-consistent
   const idx1 = new IndexerClient(new Http({ baseUrl: "https://i.com", fetch: proofFetch() }));
   const r1 = await idx1.verifyInclusion(target);
-  // 0.4.7 contract (A4): a branch that folds without a matched verified header is NOT `included`; it is
+  // 0.5.0 contract (A4): a branch that folds without a matched verified header is NOT `included`; it is
   // proof-consistent with a reason. Through 0.4.6 this asserted included === true.
   ok("verifyInclusion folds the branch but no header source → included false", r1.included === false);
   ok("without headerMerkleAt → trustLevel proof-consistent, with a reason", r1.trustLevel === "proof-consistent" && /no header source/.test(r1.reason ?? ""));

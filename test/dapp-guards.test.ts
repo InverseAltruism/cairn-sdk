@@ -1,4 +1,4 @@
-// dApp API guards (cairn-sdk 0.4.7): ContentClient tries the next source after a mismatching one (W21) and
+// dApp API guards (cairn-sdk 0.5.0): ContentClient tries the next source after a mismatching one (W21) and
 // gives a typed error for verified non-JSON content; Http's maxBytes and retries reject NaN (M-67). Offline.
 import { ContentClient } from "../src/content.js";
 import { Http } from "../src/http.js";

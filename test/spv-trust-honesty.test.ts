@@ -1,4 +1,4 @@
-// SPV trust honesty (cairn-sdk 0.4.7): the reorg re-check on cached near-tip headers (MF-03), the
+// SPV trust honesty (cairn-sdk 0.5.0): the reorg re-check on cached near-tip headers (MF-03), the
 // `included` contract and the proof-consistent `reason` (A4, C-11), and Retry-After (W18). Drives the
 // REAL Cairn facade over the REAL 115358..115437 header fixture through a routing fetch stub; no network.
 // Fixture capture: one read-only `GET 127.0.0.1:7777/api/headers/115358/80`, stored verbatim (shared with
