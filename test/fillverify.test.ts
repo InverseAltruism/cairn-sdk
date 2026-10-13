@@ -56,7 +56,8 @@ const mockClient = { async tx(id: string) { const b = prevoutOf.get(String(id).t
 const mockLight = (tx: object, appPayloadHash: string, blockHeight = H, trustLevel = "verified-inclusion", included = true) => ({
   async verifyTxInclusion(_id: string) { return { included, trustLevel, blockHeight, confirmations: 10, tx, appPayloadHash } as never; },
 });
-const servedFor = (extra: object = {}) => ({ id: "", seller: SELLER, feeBps: 150, height: H, want: { value: "500000000", payto: SELLER }, give: { ticker: "AAA", amount: "10" }, ...extra });
+// The resolver's served offer shape (cairnx-core OfferState), including the `status` every served offer carries.
+const servedFor = (extra: object = {}) => ({ id: "", seller: SELLER, feeBps: 150, height: H, status: "open", want: { value: "500000000", payto: SELLER }, give: { ticker: "AAA", amount: "10" }, ...extra });
 
 console.log("F13 offer pre-verify (preverifyOffer):");
 
@@ -171,20 +172,20 @@ await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsemen
 
   // B7b sums seam (W3/M1): a WHOLE fill of this non-partial CSD offer returns the PROVEN CSD output plan.
   await ok("[sums] passing `pay` returns the proven outputPlan (single-sourced fillOutputPlan)", async () => {
-    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000" });
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000" });
     return r.ok === true && Array.isArray(r.outputPlan) && r.outputPlan.length > 0 && r.outputPlan.some((o) => o.to === SELLER) && r.outputPlan.every((o) => typeof o.value === "bigint");
   });
   await ok("[sums honest] plannedOutputs equal to the proven plan is ACCEPTED (no false refusal)", async () => {
-    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000" });
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000" });
     const planned = Object.fromEntries((r.outputPlan ?? []).map((o) => [o.to, o.value.toString()]));
-    const r2 = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000", plannedOutputs: planned });
-    return r2.ok === true;
+    const r2 = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000", plannedOutputs: planned });
+    return r2.ok === true && r2.planBound === true && Object.keys(planned).length > 0;
   });
   await ok("[W3 overpay] a planned leg above the proven plan is REFUSED (N26 smuggle / overpay class)", async () => {
-    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000" });
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000" });
     const planned = Object.fromEntries((r.outputPlan ?? []).map((o) => [o.to, o.value.toString()]));
     planned[SELLER] = (BigInt(planned[SELLER] ?? "0") + 100000n).toString();   // overpay the recipient leg
-    const r2 = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000", plannedOutputs: planned });
+    const r2 = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000", plannedOutputs: planned });
     return r2.ok === false && /proven fill outputs/.test(r2.reason ?? "");
   });
   await ok("[not merkle-proven] a below-checkpoint/rpc-trusted view fails SOFT (transient), not a hard decline", async () => {
@@ -272,7 +273,7 @@ console.log("\nP75-5 fill-surface guards:");
   const rec2 = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000" } };
   const tx2 = proposeTx(SELLER_KEY, rec2, 7);
   await ok("[MF-08 happy] a payto-less offer + pay now sizes (plan pays the proven author; was a TypeError escape)", async () => {
-    const r = await preverifyOffer({ light: mockLight(tx2.json, tx2.phash), client: mockClient, offerId: tx2.id, pay: "500000000" });
+    const r = await preverifyOffer({ light: mockLight(tx2.json, tx2.phash), client: mockClient, offerId: tx2.id, servedOffer: servedFor({ id: tx2.id }), pay: "500000000" });
     return r.ok === true && Array.isArray(r.outputPlan) && r.outputPlan!.some((o) => o.to === SELLER);
   });
 }
@@ -297,6 +298,48 @@ console.log("\nP75-5 fill-surface guards:");
   await ok("[MF-09 happy] NO servedOffer still verifies (the optional param stays optional)", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id });
     return r.ok === true;
+  });
+}
+
+// A9: no outputPlan for an offer whose liveness nobody stated. W15: plannedOutputs that could not be bound say
+// so (planBound:false + planReason) instead of returning a bare ok:true.
+{
+  const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
+  const tx = proposeTx(SELLER_KEY, rec, 10);
+  const planned = { [SELLER]: "500000000" };
+  await ok("[A9] pay without a served offer: no outputPlan, and planReason says liveness was not stated", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000" });
+    return r.ok === true && r.outputPlan === undefined && /no served offer status/.test(r.planReason ?? "");
+  });
+  await ok("[A9] a served offer without `status` is not sized either", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, status: undefined }), pay: "500000000" });
+    return r.ok === true && r.outputPlan === undefined && /no served offer status/.test(r.planReason ?? "");
+  });
+  await ok("[A9 honest] the resolver's offer (status open) is sized and the plan binds", async () => {
+    const call = (plannedOutputs?: Record<string, bigint>) => preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000", plannedOutputs });
+    const sized = await call();
+    const r = await call(Object.fromEntries((sized.outputPlan ?? []).map((o) => [o.to, o.value])));
+    return r.ok === true && Array.isArray(r.outputPlan) && r.outputPlan.length > 0 && r.planBound === true && r.planReason === undefined;
+  });
+  await ok("[W15] plannedOutputs without pay: planBound false with a reason (was a silent ok:true)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), plannedOutputs: planned });
+    return r.ok === true && r.planBound === false && /no `pay`/.test(r.planReason ?? "");
+  });
+  const tokRec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { ticker: "BBB", amount: "5", payto: SELLER } };
+  const tok = proposeTx(SELLER_KEY, tokRec, 11);
+  await ok("[W15] plannedOutputs on a token-priced offer: planBound false, reason names the token price", async () => {
+    const r = await preverifyOffer({ light: mockLight(tok.json, tok.phash), client: mockClient, offerId: tok.id, pay: "1", plannedOutputs: planned });
+    return r.ok === true && r.planBound === false && /token-priced/.test(r.planReason ?? "");
+  });
+  const partRec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER }, min: "100000000" };
+  const part = proposeTx(SELLER_KEY, partRec, 12);
+  await ok("[W15] plannedOutputs on a partially fillable offer: planBound false, reason names the partial", async () => {
+    const r = await preverifyOffer({ light: mockLight(part.json, part.phash), client: mockClient, offerId: part.id, pay: "100000000", plannedOutputs: planned });
+    return r.ok === true && r.planBound === false && /partially fillable/.test(r.planReason ?? "");
+  });
+  await ok("[W15 honest] no plannedOutputs and no pay: neither planBound nor planReason is set (the 2-arg shape is unchanged)", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }) });
+    return r.ok === true && r.planBound === undefined && r.planReason === undefined && r.outputPlan === undefined;
   });
 }
 

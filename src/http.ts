@@ -83,9 +83,13 @@ export class Http {
     // Bind to globalThis so the browser doesn't throw "Illegal invocation".
     this._fetch = opts.fetch ? opts.fetch : (f.bind(globalThis) as FetchLike);
     this.timeoutMs = opts.timeoutMs ?? 15000;
-    this.maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
+    // A non-finite or non-positive cap (NaN, Infinity, 0, negative) falls back to the default; Math.min/max
+    // pass NaN straight through, which would disable the cap.
+    this.maxBytes = Number.isFinite(opts.maxBytes) && (opts.maxBytes as number) > 0 ? Math.floor(opts.maxBytes as number) : DEFAULT_MAX_BYTES;
     this.headers = opts.headers ?? {};
-    this.retries = Math.min(10, Math.max(0, Math.floor(opts.retries ?? 0))); // clamped: an Infinity budget must not loop forever
+    // clamped to 0..10; NaN or a non-number reads as 0 (Infinity clamps to 10)
+    const retries = Number(opts.retries ?? 0);
+    this.retries = Number.isNaN(retries) ? 0 : Math.min(10, Math.max(0, Math.floor(retries)));
   }
 
   /** Build an absolute URL from a path + optional query params. */

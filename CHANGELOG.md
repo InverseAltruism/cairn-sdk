@@ -21,6 +21,31 @@
 - **Retry-After:** the SPV header batch and `Http.getJson`'s opt-in GET retries now wait as long as the
   server's `Retry-After` says, up to 60 s (the cairn server's rate-limit window). The SPV batch used to cut
   the wait at 4 s and spend its retries inside the window; `Http` ignored the header.
+- **`preverifyOffer` / `verifyOfferForFill`: no `outputPlan` without a served status.** The sizer used to
+  assume an offer was open when the caller passed `pay` without the resolver's offer object (or one without
+  `status`). It now sizes only for the status the resolver served; otherwise `outputPlan` is absent and
+  `planReason` says why. Pass the resolver's offer object to get a plan.
+- **`plannedOutputs` that were not bound say so.** With a token-priced or partially fillable offer, without
+  `pay`, or without a served status, `plannedOutputs` used to be ignored silently under `ok: true`. The result
+  now carries `planBound: false` and `planReason`; `planBound: true` when they were bound to `outputPlan`.
+- **`CairnController`:** the wallet's `disconnect` event and an empty `accountsChanged` (lock, account switch,
+  revoke) now cancel a `connect()` in flight, the same way `disconnect()` does, so a lock during a repeat
+  connect no longer ends in "connected". That `connect()` rejects; a fresh `connect()` works as before.
+- **`createCairnHooks(React, controller)`** recognises a controller by its methods instead of `instanceof`,
+  so a controller created by the other build of this dual CJS/ESM package is bound instead of silently
+  replaced by a new, never-connected one.
+- **`names` reads are shape-checked:** `tokens()` and `token()` throw a typed `HttpError` ("malformed
+  response") when a row's ticker, `decimals` (non-negative integer), `supply`, `minted` or `mintLimit`
+  (base-unit integer strings) is malformed; `names()`, `tokens()`, `offers()` and `bids()` throw the same
+  error when the body is not an array (an error object served with status 200 used to be returned as the
+  list). `token()` validates the ticker with cairnx-core's `TICKER_RE` instead of a local copy.
+- **`content.getBytes()`** skips a source whose bytes do not match the hash and tries the next one; it throws
+  `ContentVerificationError` only when no source served verified bytes and at least one served mismatching
+  bytes. **`content.get()`** throws a `CairnError` with the new code `CONTENT_NOT_JSON` (cause: the parse
+  error) instead of a raw `SyntaxError` when verified bytes are not JSON.
+- **`Http`:** `retries: NaN` (or a non-number) now means 0; it used to make a failing GET retry forever.
+  `maxBytes` that is NaN, infinite, zero or negative now falls back to the 16 MiB default; NaN used to turn
+  the cap off.
 
 ## 0.4.6 (2026-10-11) - wallet 0.2.73 error codes
 

@@ -70,9 +70,13 @@ pass the resolver's full offer object or omit `servedOffer`).
 
 Pass `opts.pay` (the CSD base units you intend to pay) to receive the PROVEN `outputPlan` for a whole fill of
 a non-partial offer, and `opts.plannedOutputs` (your planned per-address sums) to bind them to that plan
-before signing. It returns a trust-labeled `OfferFillCheck` (`{ ok, trust, payto, seller, terms, reason,
-transient, outputPlan }`): fail-closed on a positive mismatch, fail-soft (`transient`) on a lagging or
-below-checkpoint chain view. Build EXACTLY the `outputPlan`, never the resolver-served outputs a lying
+before signing. The plan is sized only when you also pass the resolver's offer object with its `status`:
+liveness is not provable at this layer, so an offer of unknown status gets no plan. When `plannedOutputs`
+could not be bound (no `pay`, a token-priced or partially fillable offer, no served status), the result says
+so with `planBound: false` and a `planReason`; `ok: true` with `planBound: false` means your outputs were not
+checked. It returns a trust-labeled `OfferFillCheck` (`{ ok, trust, payto, seller, terms, reason,
+transient, outputPlan, planBound, planReason }`): fail-closed on a positive mismatch, fail-soft
+(`transient`) on a lagging or below-checkpoint chain view. Build EXACTLY the `outputPlan`, never the resolver-served outputs a lying
 resolver could redirect. This is best-effort corroboration, not the payment-grade boundary (the Cairn
 Wallet's own on-device fill-SPV in 0.2.60+ is what fails-closed before signing), but a dApp settling real
 value should clear it first. The standalone `preverifyOffer({ light, client, offerId, servedOffer, pay,
@@ -116,8 +120,9 @@ catch (e) {
 }
 ```
 
-Codes: `NOT_INSTALLED`, `USER_REJECTED`, `WALLET_LOCKED`, `UNSUPPORTED_METHOD`, `HTTP_ERROR`,
-`CONTENT_VERIFICATION`, `UNKNOWN`.
+Codes: `NOT_INSTALLED`, `USER_REJECTED`, `WALLET_LOCKED`, `UNSUPPORTED_METHOD`, `HTTP_ERROR` (also
+a 2xx body whose shape is wrong, such as a names list read that is not an array), `CONTENT_VERIFICATION`,
+`CONTENT_NOT_JSON` (`content.get()` on verified bytes that are not JSON), `UNKNOWN`.
 
 > **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the
 > source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error and

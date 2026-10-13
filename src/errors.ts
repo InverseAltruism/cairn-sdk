@@ -12,6 +12,7 @@ export type CairnErrorCode =
   | "UNSUPPORTED_METHOD"
   | "HTTP_ERROR"
   | "CONTENT_VERIFICATION"
+  | "CONTENT_NOT_JSON"
   // native wallet codes (0.2.46+): relayed verbatim when the provider supplies them
   | "ACCOUNT_CHANGED"
   | "FIRST_PARTY_ONLY"

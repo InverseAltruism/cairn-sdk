@@ -44,6 +44,37 @@ async function main() {
     check("a 5xx surfaces as a typed HttpError (outage != null)", threw instanceof HttpError && (threw as HttpError).status === 500);
   }
 
+  console.log("— W37: shape guards on the reads a dApp does arithmetic or iteration on —");
+  {
+    const good = { ticker: "BTC", deployId: "0x00", deployer: "0x00", decimals: 8, supply: "2100000000000000", minted: "0", height: 1 };
+    let body = "";
+    const { fetch } = mockFetch((u) => (u.includes("/trade/api/cairnx/") ? { status: 200, body } : undefined));
+    const names = new NamesClient(new Http({ baseUrl: "https://x.example", fetch }));
+    const throwsMalformed = async (label: string, json: unknown, call: () => Promise<unknown>, needle: RegExp) => {
+      body = JSON.stringify(json);
+      let threw: unknown;
+      try { await call(); } catch (e) { threw = e; }
+      check(label, threw instanceof HttpError && /malformed response/.test(String((threw as Error).message)) && needle.test(String((threw as Error).message)));
+    };
+    await throwsMalformed("tokens(): an error object served with 200 is refused (was cast to TokenInfo[])", { ok: false, error: "cairnx backend unavailable" }, () => names.tokens(), /expected an array/);
+    await throwsMalformed("tokens(): decimals as a string is refused", [{ ...good, decimals: "8" }], () => names.tokens(), /token row 0: bad decimals/);
+    await throwsMalformed("tokens(): a fractional decimals is refused", [good, { ...good, decimals: 1.5 }], () => names.tokens(), /token row 1: bad decimals/);
+    await throwsMalformed("token(): a negative decimals is refused", { ...good, decimals: -1 }, () => names.token("BTC"), /bad decimals/);
+    await throwsMalformed("token(): supply as a float number is refused", { ...good, supply: 1e30 }, () => names.token("BTC"), /supply/);
+    await throwsMalformed("token(): minted with a decimal point is refused", { ...good, minted: "1.5" }, () => names.token("BTC"), /minted/);
+    await throwsMalformed("offers(): a non-array is refused", { offers: [] }, () => names.offers(), /expected an array/);
+    await throwsMalformed("bids(): a non-array is refused", null, () => names.bids(), /expected an array/);
+    await throwsMalformed("names(): a non-array is refused", "names", () => names.names(), /expected an array/);
+
+    body = JSON.stringify([good, { ...good, ticker: "CAIRN", decimals: 0, supply: "0", mintLimit: "1000", mint: "open" }]);
+    const list = await names.tokens();
+    check("W37 honest: well-formed token rows pass unchanged", list.length === 2 && list[1]!.ticker === "CAIRN" && list[0]!.decimals === 8);
+    body = JSON.stringify(good);
+    check("W37 honest: a well-formed token() body passes", (await names.token("BTC"))?.supply === "2100000000000000");
+    body = "[]";
+    check("W37 honest: empty lists pass", (await names.offers()).length === 0 && (await names.bids()).length === 0 && (await names.names()).length === 0);
+  }
+
   console.log("— native wallet error codes (0.2.46) preferred over string matching —");
   {
     check("code USER_REJECTED -> UserRejectedError even with novel UX copy", mapProviderError("the human copy changed!", "USER_REJECTED") instanceof UserRejectedError);

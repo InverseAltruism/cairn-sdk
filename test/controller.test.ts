@@ -150,6 +150,33 @@ async function main() {
     ok("MF-15 E0c happy: w.send() on a normal provider still resolves the txid", (await w.send({ to: "0xd", amount: 1 })).txid === "0xSEND");
   }
 
+  // W33: the wallet locks (accountsChanged([]) then disconnect, the order the wallet's lock path emits) while
+  // a REPEAT connect() is awaiting the provider's reply. The listeners are attached from the first connect,
+  // so the events reach the controller mid-connect; before the fix connect()'s tail wrote "connected" over them.
+  for (const [label, emit] of [
+    ["an empty accountsChanged", (p: any) => p._emit("accountsChanged", [])],
+    ["a disconnect event", (p: any) => p._emit("disconnect", { reason: "locked" })],
+  ] as const) {
+    const prov: any = mockProvider();
+    const c = overT(prov, 0);
+    await c.connect();
+    let resolveConnect!: (r: any) => void;
+    prov.connect = () => new Promise((res) => { resolveConnect = res; });
+    let rejected = false;
+    const p = c.connect();
+    p.then(() => {}, () => { rejected = true; });
+    await tick();
+    emit(prov);
+    resolveConnect({ ok: true, result: { addr: "0xabc" } });
+    await tick();
+    ok(`W33: ${label} during connecting is not overwritten by connect()'s tail (stays disconnected)`,
+      c.getSnapshot().status === "disconnected" && c.getSnapshot().account === null);
+    ok(`W33: the straddled connect() rejects after ${label}`, rejected === true);
+    prov.connect = () => Promise.resolve({ ok: true, result: { addr: "0xabc" } });
+    const again = await c.connect();
+    ok(`W33 honest: after ${label}, a fresh connect() reaches connected`, again === "0xabc" && c.getSnapshot().status === "connected");
+  }
+
   console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"}: ${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
 }

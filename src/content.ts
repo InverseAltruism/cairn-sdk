@@ -8,7 +8,7 @@
 
 import { payloadHash, canonicalJson, verifyContentBytes } from "@inversealtruism/csd-codec";
 import type { Http } from "./http.js";
-import { ContentVerificationError } from "./errors.js";
+import { CairnError, ContentVerificationError } from "./errors.js";
 
 export interface ContentClientOptions {
   /** Swarm gateway HTTP client (e.g. https://cairn-substrate.com/swarm). */
@@ -64,12 +64,15 @@ export class ContentClient {
 
   /**
    * Fetch content by hash and VERIFY it self-certifies (sha256(bytes) == hash).
-   * Tries each configured source in order. Returns raw bytes, or null if no
-   * source holds it. Throws ContentVerificationError if a source returns bytes
-   * that don't match the hash (tampering / wrong object).
+   * Tries each configured source in order; a source that is unreachable, lacks
+   * the content or serves bytes that don't match the hash is skipped. Returns the
+   * first verified bytes, or null if no source holds it. Throws
+   * ContentVerificationError only when no source served verified bytes and at
+   * least one served mismatching bytes (tampering / wrong object).
    */
   async getBytes(hash: string): Promise<Uint8Array | null> {
     const h = normalizeHash(hash);
+    let mismatched = false;
     for (const src of this.sources) {
       let got: { bytes: Uint8Array; headers: Headers } | null = null;
       try {
@@ -78,19 +81,23 @@ export class ContentClient {
         continue; // source unreachable — try the next
       }
       if (!got) continue; // 404 from this source
-      if (!verifyContentBytes(got.bytes, h)) {
-        throw new ContentVerificationError(h);
-      }
+      if (!verifyContentBytes(got.bytes, h)) { mismatched = true; continue; }
       return got.bytes;
     }
+    if (mismatched) throw new ContentVerificationError(h);
     return null;
   }
 
-  /** Fetch + verify + parse as UTF-8 JSON. Returns null if not found. */
+  /** Fetch + verify + parse as UTF-8 JSON. Returns null if not found. Throws a CairnError with code
+   *  CONTENT_NOT_JSON when the verified bytes are not JSON. */
   async get<T = unknown>(hash: string): Promise<T | null> {
     const bytes = await this.getBytes(hash);
     if (!bytes) return null;
-    return JSON.parse(new TextDecoder().decode(bytes)) as T;
+    try {
+      return JSON.parse(new TextDecoder().decode(bytes)) as T;
+    } catch (e) {
+      throw new CairnError(`Content ${normalizeHash(hash)} verified against its hash but is not JSON; use getBytes() for raw content.`, { code: "CONTENT_NOT_JSON", cause: e });
+    }
   }
 
   /** Verify already-fetched bytes against a hash (no network). */

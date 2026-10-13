@@ -26,8 +26,9 @@ export interface CairnControllerOptions extends DetectOptions {
 export class CairnController {
   private state: CairnState = DISCONNECTED;
   private conn: WalletConnection | null = null;
-  // MF-15: connect/disconnect generation token. disconnect() bumps it; a connect() whose await straddled
-  // the bump must never commit "connected" over the torn-down session (a zombie null-connection session).
+  // MF-15: connect/disconnect generation token. disconnect(), the wallet's `disconnect` event and an empty
+  // accountsChanged (lock, account switch, revoke) bump it; a connect() whose await straddled the bump must
+  // never commit "connected" over the torn-down session.
   private epoch = 0;
   private readonly listeners = new Set<() => void>();
   private readonly getWalletFn: (opts?: DetectOptions) => Promise<WalletConnection>;
@@ -57,7 +58,7 @@ export class CairnController {
   }
 
   private onAccounts = (accounts: unknown): void => {
-    if (!Array.isArray(accounts) || accounts.length === 0) { this.setState({ status: "disconnected", account: null }); return; }
+    if (!Array.isArray(accounts) || accounts.length === 0) { this.epoch++; this.setState({ status: "disconnected", account: null }); return; }
     const next = String(accounts[0]);
     // CONNECT-1/CTRL-ADOPT-1: only TRACK accountsChanged when it matches the address we connected to. Never
     // silently adopt a different/forged address — a spoofed provider emitting accountsChanged([attacker])
@@ -68,7 +69,7 @@ export class CairnController {
       this.setState({ status: "disconnected", account: null });
     }
   };
-  private onDisconnect = (): void => { this.setState({ status: "disconnected", account: null }); };
+  private onDisconnect = (): void => { this.epoch++; this.setState({ status: "disconnected", account: null }); };
 
   // Detach the provider listeners (ghost-reconnect fix). Idempotent + best-effort.
   private detach(): void {
