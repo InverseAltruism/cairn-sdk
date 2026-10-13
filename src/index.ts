@@ -110,7 +110,7 @@ const spvIsTransient = (e: unknown): boolean => {
 };
 const spvSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 // Our own backoff ladder stays under 4 s; a server Retry-After (already clamped by retryAfterMs) wins when longer,
-// because retrying inside the server's window spends an attempt on a guaranteed 429.
+// because retrying inside the server's window spends an attempt the server will refuse again.
 const spvRetryDelayMs = (attempt: number, serverWaitMs: number) => Math.max(Math.min(4000, 700 * (attempt + 1)), serverWaitMs);
 // A cached header at most this many blocks below the cached tip is re-checked against the served chain before it
 // backs a "verified-inclusion"; anything deeper is treated as final. 12 is the deepest finality used in the stack

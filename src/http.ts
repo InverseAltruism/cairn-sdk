@@ -27,8 +27,8 @@ export interface HttpOptions {
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024;
 const ERR_TEXT_CAP = 8 * 1024; // error-body text is only for a message — cap it hard (DESER-4 safeText sink)
 
-/** Upper bound on a server's Retry-After hint. The cairn server's rate-limit windows are 60 s, so it never
- *  asks for a longer wait; a larger value is clamped rather than obeyed. */
+/** Upper bound on a server's Retry-After hint. Every cairn server rate-limit window is 60 s, so an honest
+ *  hint from it stays at or under that; a larger value is clamped rather than obeyed. */
 export const MAX_RETRY_AFTER_MS = 60_000;
 
 /** A response's Retry-After (delta-seconds form) in ms, clamped to [0, MAX_RETRY_AFTER_MS]. An absent,

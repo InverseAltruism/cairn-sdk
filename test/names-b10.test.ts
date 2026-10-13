@@ -44,7 +44,7 @@ async function main() {
     check("a 5xx surfaces as a typed HttpError (outage != null)", threw instanceof HttpError && (threw as HttpError).status === 500);
   }
 
-  console.log("— W37: shape guards on the reads a dApp does arithmetic or iteration on —");
+  console.log("W37: shape guards on the reads a dApp does arithmetic or iteration on");
   {
     const good = { ticker: "BTC", deployId: "0x00", deployer: "0x00", decimals: 8, supply: "2100000000000000", minted: "0", height: 1 };
     let body = "";
