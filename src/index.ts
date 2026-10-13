@@ -79,7 +79,7 @@ export interface CairnConfig {
 // consumer pays on a cold start drops from about 29,400 headers to about 1,000, one or two batched
 // /api/headers requests instead of about 58. cairn's `deploy/spv-checkpoint` carries the same number for the
 // ops watchdog; it is NOT covered by the parity test, so bump it in the cairn repo alongside swapguard.js.
-export const DEFAULT_SPV_CHECKPOINT = { height: 101998, hash: "0x0000000000085295c9e13bbf276a11affb5470059235d1ea85d6334c8b43c49c" };
+export const DEFAULT_SPV_CHECKPOINT = { height: 115403, hash: "0x00000000000052e29166597d598827b137af1dea7542123b848637fee0b67347" };
 
 const DEFAULT_CAIRN = "https://cairn-substrate.com";
 

@@ -109,7 +109,7 @@ Depends on the published `@inversealtruism/csd-*` / `@inversealtruism/cairnx-cor
 | `README.md` | what the package is, install, quick start |
 | `docs/SDK-GUIDE.md` | third-party developer guide, including the verifies-vs-trusts table |
 | `CHANGELOG.md` | one entry per release; every SPV checkpoint move names the affected band |
-| `test/e2e/README.md` | the four test layers and how to run them |
+| `test/e2e/README.md` | the test layers and how to run them |
 | `.githooks/README.md` | the secret-scan pre-commit hook |
 
 The wallet error code contract is `WALLET-ERROR-CODES.md` in the cairn-wallet repo. The cross-repo standard is a private document; the summary above is the part that binds a contributor here.

@@ -1,8 +1,8 @@
 // SPV trust honesty (cairn-sdk 0.4.7): the reorg re-check on cached near-tip headers (MF-03), the
 // `included` contract and the proof-consistent `reason` (A4, C-11), and Retry-After (W18). Drives the
-// REAL Cairn facade over the REAL 101953..102032 header fixture through a routing fetch stub; no network.
-// Fixture capture: one read-only `GET 127.0.0.1:7777/api/headers/101953/80`, stored verbatim; its first
-// 56 rows are byte-identical to spv-headers-101953-56.json.
+// REAL Cairn facade over the REAL 115358..115437 header fixture through a routing fetch stub; no network.
+// Fixture capture: one read-only `GET 127.0.0.1:7777/api/headers/115358/80`, stored verbatim (shared with
+// spv-fault-tolerance and spv-transport-bounds).
 import { readFileSync } from "node:fs";
 import { Cairn, Http, IndexerClient } from "../src/index.js";
 import { retryAfterMs, MAX_RETRY_AFTER_MS } from "../src/http.js";
@@ -12,9 +12,9 @@ let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { c ? (pass++, console.log("  PASS " + n)) : (fail++, console.log("  FAIL " + n)); };
 
 type Row = { height: number; header: { version: number; prev: string; merkle: string; time: number; bits: number; nonce: number }; hash: string };
-const ROWS = (JSON.parse(readFileSync(new URL("./fixtures/spv-headers-101953-80.json", import.meta.url), "utf8")) as { headers: Row[] }).headers;
-const BASE = ROWS[0]!.height;                 // 101953
-const TIP = ROWS[ROWS.length - 1]!.height;    // 102032
+const ROWS = (JSON.parse(readFileSync(new URL("./fixtures/spv-headers-115358-80.json", import.meta.url), "utf8")) as { headers: Row[] }).headers;
+const BASE = ROWS[0]!.height;                 // 115358
+const TIP = ROWS[ROWS.length - 1]!.height;    // 115437
 const rowAt = (h: number): Row => ROWS[h - BASE]!;
 const sliceRows = (from: number, count: number): Row[] => ROWS.slice(from - BASE, from - BASE + count);
 const jsonRes = (obj: unknown, status = 200, headers: Record<string, string> = {}) =>
@@ -47,7 +47,7 @@ function mkStub(opts: { seen: string[]; proofHeight: number; orphanFrom?: () => 
     return new Response("not found", { status: 404 });
   }) as unknown as typeof fetch;
 }
-const seedCount = (seen: string[]) => seen.filter((u) => /\/api\/headers\/101953\/46$/.test(u)).length;
+const seedCount = (seen: string[]) => seen.filter((u) => /\/api\/headers\/115358\/46$/.test(u)).length;
 const singleRowReads = (seen: string[], h: number) => seen.filter((u) => u.endsWith(`/api/headers/${h}/1`)).length;
 
 console.log("SPV trust honesty:");
@@ -55,13 +55,13 @@ console.log("SPV trust honesty:");
 // MF-03 red: a tx in a block orphaned after the header was cached. Before the fix, the second read answered
 // from the cached branch with no network touch and still said verified-inclusion.
 {
-  const H = TIP - 2;   // 102030: inside the re-check window of the cached tip
+  const H = TIP - 2;   // 115435: inside the re-check window of the cached tip
   const seen: string[] = [];
   let reorgAt: number | undefined;
   const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: mkStub({ seen, proofHeight: H, orphanFrom: () => reorgAt }) });
   const before = await cairn.index.verifyInclusion(rowAt(H).header.merkle);
   ok("MF-03 setup: the first read is verified-inclusion from a fresh seed", before.trustLevel === "verified-inclusion" && before.included === true);
-  reorgAt = H - 1;     // the server now serves another branch from 102029 up
+  reorgAt = H - 1;     // the server now serves another branch from 115434 up
   const after = await cairn.index.verifyInclusion(rowAt(H).header.merkle);
   ok("MF-03: after the reorg the cached near-tip header no longer backs verified-inclusion", after.trustLevel !== "verified-inclusion" && after.included === false);
   ok("MF-03: the re-check asked the server for that one header", singleRowReads(seen, H) >= 1);
@@ -81,7 +81,7 @@ console.log("SPV trust honesty:");
   ok("MF-03 honest: one single-header re-check per cached near-tip read (2 reads, 2 requests)", singleRowReads(seen, H) === 2);
 }
 {
-  const D = TIP - 26;  // 102006: deeper than the window
+  const D = TIP - 26;  // 115411: deeper than the window
   const seen: string[] = [];
   const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: mkStub({ seen, proofHeight: D }) });
   const r1 = await cairn.index.verifyInclusion(rowAt(D).header.merkle);
@@ -126,6 +126,17 @@ console.log("SPV trust honesty:");
   ok("MF-03 fill: the check is not trusted", r.ok === false && r.trust !== "verified");
 }
 
+// Checkpoint band: a tx confirmed below DEFAULT_SPV_CHECKPOINT (115,403) is not upgraded, even when the
+// header is in the fixture: verifyInclusion reads proof-consistent, included false, and the reason names the anchor.
+{
+  const B = 115400;
+  const seen: string[] = [];
+  const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: mkStub({ seen, proofHeight: B }) });
+  const r = await cairn.index.verifyInclusion(rowAt(B).header.merkle);
+  ok("checkpoint band: a tx at 115,400 reads proof-consistent, included false", r.trustLevel === "proof-consistent" && r.included === false);
+  ok("checkpoint band: the reason names the anchor", /below the SPV checkpoint 115403/.test(r.reason ?? ""));
+}
+
 // A4 + C-11: `included` is true only behind a matched verified header; the fallback carries a reason.
 {
   const H = TIP - 26;
@@ -155,7 +166,7 @@ console.log("SPV trust honesty:");
   const seen: string[] = [];
   let first = true;
   const onHeaders = (from: number) => {
-    if (from === 101953 && first) { first = false; return jsonRes({ ok: false }, 429, { "retry-after": "5" }); }
+    if (from === 115358 && first) { first = false; return jsonRes({ ok: false }, 429, { "retry-after": "5" }); }
     return undefined;
   };
   const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: mkStub({ seen, proofHeight: TIP - 26, onHeaders }) });

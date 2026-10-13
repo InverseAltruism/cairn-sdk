@@ -38,6 +38,20 @@ Replacement: none; the board is retired.
   read); a mismatch reseeds from the checkpoint and the read runs again on the live branch, so the orphaned
   tx no longer reads as verified. Deeper heights still answer from the cache with no request.
   `verifyOfferForFill` gets the same re-check.
+- **`DEFAULT_SPV_CHECKPOINT` moves from height 101,998 to 115,403**
+  (`0x00000000000052e29166597d598827b137af1dea7542123b848637fee0b67347`), copied from cairn's
+  `public/trade/swapguard.js` (cairn `d5c00a9`). The hash was checked against two local nodes, and both
+  re-derive it from the header they serve. A cold checkpoint-to-tip seed is about 13,400 headers shorter.
+  What a caller sees differently for **heights 101,998 to 115,402**:
+  - `index.verifyInclusion(txid)` returns `trustLevel: "proof-consistent"`, `included: false`, where 0.4.6
+    returned `"verified-inclusion"`, `included: true`. The `reason` reads `indexer proof only, header at <h>
+    not verified (height <h> is below the SPV checkpoint 115403 (cannot PoW-verify backward))`.
+  - `verifyOfferForFill` for an offer mined at 101,998 to 115,357 returns `ok: false, trust: "unverified",
+    transient: true` with the reason `tx below the synced base (115358)` (csd-light's base is the start of
+    the 46-header seed window). Offers mined at 115,358 to 115,402 sit inside that seed window and still
+    verify on this path, as the 45 heights below the old anchor did before.
+  - Pass `config.spvCheckpoint: { height: 101998, hash: "0x0000000000085295c9e13bbf276a11affb5470059235d1ea85d6334c8b43c49c" }`
+    to keep the old anchor.
 - **Retry-After:** the SPV header batch and `Http.getJson`'s opt-in GET retries now wait as long as the
   server's `Retry-After` says, up to 60 s (the cairn server's rate-limit window). The SPV batch used to cut
   the wait at 4 s and spend its retries inside the window; `Http` ignored the header.
@@ -66,7 +80,7 @@ Replacement: none; the board is retired.
 - **`Http`:** `retries: NaN` (or a non-number) now means 0; it used to make a failing GET retry forever.
   `maxBytes` that is NaN, infinite, zero or negative now falls back to the 16 MiB default; NaN used to turn
   the cap off.
-- `SDK_VERSION` is 0.4.7. Dependencies and `DEFAULT_SPV_CHECKPOINT` are unchanged.
+- `SDK_VERSION` is 0.4.7. Dependencies are unchanged.
 
 ## 0.4.6 (2026-10-11) - wallet 0.2.73 error codes
 
