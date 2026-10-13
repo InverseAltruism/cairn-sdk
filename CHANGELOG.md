@@ -2,6 +2,26 @@
 
 ## 0.4.7 (unreleased) - SPV trust honesty, dApp API guards, board client removed
 
+### Removed (breaking for importers of the board client)
+
+The Wall is gone from cairn-substrate.com and the board page redirects to `/uplink`; the remaining board API
+routes are being retired with the server's legacy surfaces, so the client for them goes now.
+Replacement: none; the board is retired.
+
+- `BoardClient` (export), its types `BoardWindow`, `RankedItem`, `BoardItemContent`, `ProposeInput`,
+  `ProposeResult` and `SupportInput`, the `cairn.board` namespace, and the
+  `@inversealtruism/cairn-sdk/board` subpath export. That removes `board.top()/board()`, `item()`,
+  `domains()`, `quests()/quest()`, `profile()`, `leaderboard()`, `network()/networkSeries()/networkBlocks()`,
+  `miner()`, `activity()`, `wall()`, `health()`, and the writes `propose()`, `registerContent()` and
+  `support()`. Where a read has an indexer equivalent, use it: `cairn.index.domains()`,
+  `cairn.index.domainProposals(domain)`, `cairn.index.proposal(id)`, `cairn.index.attestations(id)`,
+  `cairn.index.reputation(addr)`, `cairn.index.health()`. The low-level wallet calls `wallet.propose()` and
+  `wallet.attest()` stay; they never registered content with the board server.
+- The live write e2e (`pnpm test:e2e:write`, `test/e2e/e2e-write.mjs`, `test/e2e/verify-pending-write.mjs`):
+  its pipeline was board propose, content registration and board support. `examples/hello-csd` no longer
+  publishes; it reads recent proposals from the indexer. `examples/read-only.mjs` reads proposals from the
+  indexer. The error codes and their `/docs/sdk/*` paths are unchanged (the board client set none).
+
 ### Behaviour changes (read these if you gate on inclusion)
 
 - **`index.verifyInclusion()`: `included` is `true` only with `trustLevel: "verified-inclusion"`.** Through

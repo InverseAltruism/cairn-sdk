@@ -6,9 +6,8 @@ The **Compute Substrate dApp kit:** one cohesive toolkit for building apps on CS
 |---|---|
 | `cairn.wallet` | Connect the **Cairn Wallet**, sign things (clear-signed approvals). The key never leaves the extension. |
 | `cairn.chain` | Node RPC + transaction builders + a verifying **light client** (re-exports the `csd-*` primitives). |
-| `cairn.board` | The signal **board** + work graph. Reads are public; writes are wallet-signed. |
 | `cairn.index` | The L2 **explorer/indexer**: REST + merkle proofs + live SSE/WS feeds. |
-| `cairn.content` | **Self-certifying content:** publish via the board, fetch with client-side verification. |
+| `cairn.content` | **Self-certifying content:** hash for an on-chain Propose, fetch with client-side verification. |
 | `cairn.registry` | L3 **peer / gateway / identity** resolution. |
 | `cairn.names` | **.csd names + CairnX reads:** name resolution, reverse/primary lookup, tokens, offers, bids, canonical state. |
 
@@ -24,21 +23,17 @@ import { Cairn } from "@inversealtruism/cairn-sdk";
 const cairn = new Cairn({ network: "mainnet" });   // defaults to cairn-substrate.com
 
 // reads need no wallet
-const top = await cairn.board.top({ domain: "csd:apps" });
 const tip = await cairn.chain.tip();
+const domains = await cairn.index.domains();
 
 // connect the user's wallet (browser): prompts once, then "connected"
 await cairn.connect();
 
-// publish a board item, signed by the user's wallet (clear-signed approval)
-const { txid } = await cairn.board.propose({
-  domain: "csd:apps",
-  title: "My dApp",
-  body: "Built with the Cairn SDK",
-});
+// a payment, signed by the user's wallet (clear-signed approval every time)
+const { txid } = await cairn.wallet!.send({ to: "0x…", amount: 100_000_000 }); // 1 CSD
 
-// watch it land, live
-cairn.index.streamAll({ onProposal: (e) => console.log("new proposal", e) });
+// watch the chain, live
+cairn.index.streamAll({ onBlock: (e) => console.log("new block", e) });
 ```
 
 ## How wallet connection works (and why it's safe)
@@ -62,9 +57,7 @@ try {
 
 ## API by namespace
 
-**`cairn.board`:** `top()/board({domain,window})`, `item(id)`, `domains()`, `quests()/quest(id)`, `profile(addr)`, `leaderboard()`, `network()/networkSeries()/miner(addr)`, `activity()`, `wall()`; writes `propose({domain,title,body,links?,fee?})`, `support(id,{score?,confidence?,fee?})`.
-
-**`cairn.index`:** `tipHeight()`, `block()/blockTxids()`, `tx()/txStatus()/txMerkleProof()`, `address()/addressTxs()/addressUtxo()`, `proposal()/attestations()`, `reputation()`, `registryPeers()/registryGateways()/identity()`, **`verifyInclusion(txid)`** (trust-minimized), `streamAll()/streamBlocks()/streamDomain()` (SSE), `subscribe()` (WS).
+**`cairn.index`:** `tipHeight()`, `block()/blockTxids()`, `tx()/txStatus()/txMerkleProof()`, `address()/addressTxs()/addressUtxo()`, `domains()/domainProposals(domain)`, `proposal()/attestations()`, `reputation()`, `registryPeers()/registryGateways()/identity()`, **`verifyInclusion(txid)`** (trust-minimized), `streamAll()/streamBlocks()/streamDomain()` (SSE), `subscribe()` (WS).
 
 **`cairn.names`:** `resolve(name)` (display-path name to address), `name(name)`/`nameHistory(name)`, `primary(addr)` (reverse lookup)/`namesOf(addr)`, `names()`, `tokens()/token(ticker)`, `offers()`, `bids()`, `state()` (the canonical CairnX state). Reads go through the public `/trade/api/cairnx/*` proxy; for payment-grade name resolution verify through the wallet or a replaying resolver, not a bare read (see `src/names.ts` header).
 
@@ -74,12 +67,12 @@ try {
 
 **`cairn.registry`:** `gateways()`, `peers()`, `resolveName(handle)`, `reverseName(addr)`, `.fromRecords` (deterministic local resolvers).
 
-Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{connect,board,indexer,content,registry,chain}`.
+Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{connect,indexer,content,registry,chain,controller,react}`.
 
 ## Examples
 
-- **`examples/read-only.mjs`:** runs today against live mainnet, no wallet, no build: `npm run test:live`. Demonstrates chain/board/indexer/registry reads + verified merkle inclusion + verified content fetch.
-- **`examples/hello-csd/`:** a no-framework browser dApp (connect → read board → publish → live feed). Build the bundle with `npm run build:example`, then serve the folder from **localhost** (the wallet injects there) with the Cairn Wallet installed.
+- **`examples/read-only.mjs`:** runs today against live mainnet, no wallet, no build: `npm run test:live`. Demonstrates chain/indexer/registry reads + verified merkle inclusion + verified content fetch.
+- **`examples/hello-csd/`:** a no-framework browser dApp (connect → read recent proposals → live feed). Build the bundle with `npm run build:example`, then serve the folder from **localhost** (the wallet injects there) with the Cairn Wallet installed.
 
 ## Trust model & honest limits
 
@@ -95,7 +88,7 @@ Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{con
 new Cairn({
   network: "mainnet",
   baseUrls: {
-    cairn:   "https://cairn-substrate.com",        // board + /api/rpc proxy + /content origin
+    cairn:   "https://cairn-substrate.com",        // /api/rpc proxy + /api/headers + /content origin + names
     rpc:     "https://cairn-substrate.com/api/rpc", // node RPC (proxy)
     indexer: "https://cairn-substrate.com/explorer/api",
     swarm:   undefined,                             // optional direct swarm gateway
@@ -112,10 +105,9 @@ new Cairn({
 pnpm build && pnpm test         # unit (offline): error mapping, client paths, content+merkle verify
 pnpm test:e2e:read              # live reads vs mainnet + adversarial (free)
 pnpm test:e2e:wallet            # real extension + real connector under Xvfb: connect/consent/sign (free)
-pnpm test:e2e:write             # full pipeline incl. a real on-chain Propose+Attest (spends ~0.3 CSD)
 ```
 
-See [`test/e2e/README.md`](test/e2e/README.md) for coverage, requirements, and cost of each layer. The unit + live-read + wallet-connector suites are CI-friendly and free; the write suite needs a funded key and is opt-in.
+See [`test/e2e/README.md`](test/e2e/README.md) for coverage, requirements, and cost of each layer. All three suites are free; none spends CSD.
 
 ## License
 

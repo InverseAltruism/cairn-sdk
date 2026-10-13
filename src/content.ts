@@ -3,8 +3,8 @@
 // Content is addressed by `payloadHash` = sha256(canonicalJson(obj)). Retrieval is
 // ALWAYS verified client-side: bytes that don't hash to the requested hash are
 // rejected (ContentVerificationError), so an untrusted gateway/transport cannot
-// serve tampered content. Publishing is anchored on-chain via a board Propose
-// (see BoardClient.propose) — `put()` here computes the hash/bytes for that.
+// serve tampered content. Publishing is anchored on-chain by a Propose carrying the
+// payload hash (`wallet.propose`); `put()` here computes the hash/bytes for that.
 
 import { payloadHash, canonicalJson, verifyContentBytes } from "@inversealtruism/csd-codec";
 import type { Http } from "./http.js";
@@ -52,7 +52,7 @@ export class ContentClient {
     };
   }
 
-  /** Alias for `prepare()` — emphasises this does not itself publish (anchor via board.propose). */
+  /** Alias for `prepare()`. It does not publish anything; anchor the hash with a Propose. */
   put(obj: unknown): PreparedContent {
     return this.prepare(obj);
   }

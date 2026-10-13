@@ -2,7 +2,7 @@
 
 `@inversealtruism/cairn-sdk` is the dApp kit for the Compute Substrate (CSD) chain + the Cairn Wallet:
 wallet connection, audience-bound auth ("Sign in with CSD"), chain reads with a verifying light client,
-the signal board, the indexer, content, and registries. Framework-agnostic core + an optional React
+the indexer, .csd names, content, and registries. Framework-agnostic core + an optional React
 adapter. See also the runnable references in `examples/`.
 
 ## Install
@@ -19,10 +19,10 @@ npm i @inversealtruism/csd-siwc
 import { Cairn, connect } from "@inversealtruism/cairn-sdk";
 
 const cairn = new Cairn({ network: "mainnet" });          // reads need no wallet
-const top = await cairn.board.top({ domain: "cairn:quests" });
+const tip = await cairn.chain.tip();
 
 const { wallet, address } = await connect();              // prompts the user once per origin
-await cairn.board.support(top[0].id, { confidence: 100 });// wallet clear-signs every signature
+await wallet.send({ to: "0x…", amount: 100_000_000 });    // wallet clear-signs every signature
 ```
 
 Sign-in (passwordless): see `examples/siwc-login.mjs` for the full client + server flow.
@@ -36,7 +36,7 @@ Sign-in (passwordless): see `examples/siwc-login.mjs` for the full client + serv
 | `…/controller` | `CairnController`: framework-agnostic reactive connection store |
 | `…/react` | `createCairnHooks(React)`: React hooks (zero react dependency; you pass React) |
 | `…/chain` | `CsdClient`, tx builders, the verifying `LightClient` |
-| `…/indexer`, `…/board`, `…/content`, `…/registry` | service clients |
+| `…/indexer`, `…/content`, `…/registry` | service clients |
 | `@inversealtruism/csd-siwc` | **server-side** SIWC verify (`verifySiwc`, `generateNonce`) |
 
 ## What the SDK verifies vs trusts (read this)
@@ -146,8 +146,8 @@ a 2xx body whose shape is wrong, such as a names list read that is not an array)
 - Pre-release / dormant builds are published under the `next` / `beta` dist-tag, so `npm i` (which
   resolves `latest`) never picks them up by accident.
 
-## Testnet & faucet
+## Getting CSD for development
 
-cairn serves a scarcity-honest faucet at `/faucet` for development CSD. (A dedicated public testnet
-network id + endpoint is operator-provisioned; until then, develop against mainnet reads + the faucet,
-and use the wallet's RPC switcher to point at a local node.)
+There is no faucet and no public testnet. Reads need no CSD, so most of a dApp can be built against
+mainnet reads. Anything that signs a transaction spends real mainnet CSD from the user's wallet; to
+exercise those paths you need CSD from an existing holder. The wallet can also point at a local node.

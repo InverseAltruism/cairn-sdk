@@ -6,7 +6,6 @@
 
 - `cairn.wallet`: connect the Cairn Wallet extension (window.cairn), clear-signed writes; keys never leave the extension
 - `cairn.chain`: node RPC, tx builders, verifying LightClient (re-exports csd-client/tx/codec/crypto/light)
-- `cairn.board`: signal board + work graph (reads; wallet-signed propose/support writes)
 - `cairn.index`: L2 indexer (Esplora REST + merkle proofs + SSE/WS)
 - `cairn.content`: self-certifying content (sha256 verified client-side)
 - `cairn.registry`: L3 peer/gateway/identity resolution
@@ -28,15 +27,14 @@ Known deviations (checked 2026-10-11, not exhaustive): `test/spv-checkpoint.test
 
 ## The stack around it
 
-Everything defaults to the hosted public bases at https://cairn-substrate.com: board /api, RPC proxy /api/rpc, indexer proxy /explorer/api, names /trade/api/cairnx/*. Those are reverse proxies in front of the node, the csd-indexer, and the cairnx names/market resolver; every base is overridable via CairnConfig for self-hosted setups. The chain is the only source of truth; every read carries an honest trust level (docs/SDK-GUIDE.md has the verifies-vs-trusts table).
+Everything defaults to the hosted public bases at https://cairn-substrate.com: RPC proxy /api/rpc, SPV headers /api/headers, content /content, indexer proxy /explorer/api, names /trade/api/cairnx/*. Those are reverse proxies in front of the node, the csd-indexer, and the cairnx names/market resolver; every base is overridable via CairnConfig for self-hosted setups. The chain is the only source of truth; every read carries an honest trust level (docs/SDK-GUIDE.md has the verifies-vs-trusts table).
 
 ## Architecture
 
-`src/` is built by tsup to esm+cjs+dts with 9 subpath exports (the `build` script lists them):
+`src/` is built by tsup to esm+cjs+dts with 8 entry points (the `build` script lists them):
 
 - `index.ts`: Cairn facade, CairnConfig, DEFAULT_SPV_CHECKPOINT (height and hash are in the source), and the lazy PoW-verified header wiring into the indexer via `seededSpvLight`: a forward sync from the checkpoint to the tip through a BATCH header provider over the cairn server's /api/headers, with a per-attempt timeout deliberately above the server's 10 s route deadline; a few batched requests, never a per-height flood; fail-soft to on-demand sync. Cross-origin reach of that provider depends on the cairn server's CORS mount on /api/headers. The checkpoint is picked in cairn (`bump-swapguard-cp.mjs`) and copied here in the same cycle; it is never a unilateral SDK edit, and `test/spv-checkpoint.test.ts` reds on drift. Verification only runs forward from the anchor, so `index.verifyInclusion` for a tx confirmed below the checkpoint returns `proof-consistent`, not `verified-inclusion` (fail-closed, never an over-claim). A dApp that refuses anything below `verified-inclusion` starts refusing those reads when the anchor moves; `config.spvCheckpoint` keeps an older anchor. Every checkpoint move names the affected band in the CHANGELOG.
 - `connect.ts`: CairnProvider typed contract, detectProvider/discoverProviders (csd:announceProvider discovery), WalletConnection (connect/getAddress/signInWithCsd/send/propose/attest/fillOffer/sealClaim/revealClaim/permissions/events).
-- `board.ts`: reads /api/*; writes propose() (wallet-signed + retrying POST /api/content registration) and support(). Never uses operator-token endpoints.
 - `indexer.ts`: REST + verifyInclusion(txid) with TrustLevel = verified-inclusion | proof-consistent | not-found (+ equivocation flag), SSE-over-fetch with reconnect + 1MiB buffer cap, WS subscribe.
 - `content.ts`: prepare/put/hash, verified get/getBytes (source order swarm -> indexer -> cairn origin), hash format gated against path-walk.
 - `names.ts`: NamesClient over /trade/api/cairnx/*; inputs pre-validated with cairnx-core NAME_RE + RESERVED_NAMES.
@@ -70,7 +68,7 @@ Package manager is pnpm (packageManager pnpm@10.32.1). `pnpm-lock.yaml` is the s
 ```bash
 pnpm install --frozen-lockfile
 pnpm exec tsc --noEmit
-pnpm build                      # tsup, 9 entrypoints
+pnpm build                      # tsup, 8 entrypoints
 pnpm test                       # offline unit suites (tsx)
 pnpm test:live                  # examples/read-only.mjs vs live mainnet
 pnpm build:example              # esbuild JS API (NOT the CLI shim; it ELF-errors under pnpm)
@@ -78,12 +76,11 @@ pnpm build:example              # esbuild JS API (NOT the CLI shim; it ELF-error
 
 ## Testing
 
-Four layers (test/e2e/README.md), all against built dist/:
+Three layers (test/e2e/README.md), all against built dist/:
 - Unit (pnpm test = `test/run.mjs`, offline): a GLOB runner that discovers every test/*.test.{ts,mjs}, runs ALL even after a failure, applies a per-file timeout, and classifies SKIP instead of miscounting it (it replaced a fail-fast hand-maintained `&&` chain that once hid 69 assertions behind one red suite). `ls test` is the suite list. `test/runner-guards.test.mjs` (the guard-of-the-guard) drives the REAL runner against throwaway sandboxes, including the 3-file middle-fails fixture proving a mid-suite failure still runs the rest AND forces a non-zero exit. `test/spv-checkpoint.test.ts` prints UNCHECKED, and does not fail, when no cairn checkout is found (the public CI has none); `CSD_SDK_REQUIRE_PARITY=1` turns that into a failure.
-- Live read (pnpm test:e2e:read): every read surface vs mainnet + adversarial cases.
+- Live read (pnpm test:e2e:read): every read surface vs mainnet + adversarial cases; `CAIRN_BASE` points it at another front door.
 - Wallet connector (pnpm test:e2e:wallet): real Chromium + the real built ../cairn-wallet/dist extension under Xvfb via playwright-core; proves silent repeat-connect and that send STILL prompts.
-- Live write (pnpm test:e2e:write, SPENDS ~0.3 CSD, opt-in): full propose+support via examples/node-signer.mjs; needs a funded key supplied via CAIRN_KEY (default path documented in test/e2e/README.md). Mine-waits up to 20 min.
-scripts/*.mjs live harnesses are maintainer-run only (some spend CSD). scripts/live-wallet-ui.mjs (added @76a0a10) is the read-only one: headed Chrome + real MV3 extension vs the production site; approves ONLY the non-spend Connect, reads then REJECTS every fund/fee-bearing clear-sign popup, captures screenshots. test/e2e/ also holds e2e-siwc.mjs and verify-pending-write.mjs helpers beyond the four canonical layers.
+scripts/*.mjs live harnesses are maintainer-run only (some spend CSD). scripts/live-wallet-ui.mjs (added @76a0a10) is the read-only one: headed Chrome + real MV3 extension vs the production site; approves ONLY the non-spend Connect, reads then REJECTS every fund/fee-bearing clear-sign popup, captures screenshots. test/e2e/ also holds the e2e-siwc.mjs helper beyond the three canonical layers.
 
 ## Release and publish
 
@@ -103,7 +100,7 @@ Maintainers publish to npm (public access) manually, with a transient npm token 
 
 ## Cross-repo map
 
-Depends on the published `@inversealtruism/csd-*` / `@inversealtruism/cairnx-core` packages from the csd-sdk monorepo (exact pins, installed from npm). Contract couplings: cairn-wallet's window.cairn provider (connect.ts is the dApp-side contract; WALLET-ERROR-CODES.md in the cairn-wallet repo), the cairn server endpoints (/api/*, /explorer/api, /trade/api/cairnx/*, POST /api/content), and the SPV checkpoint literal duplicated with cairn/public/trade/swapguard.js (test-enforced). The wallet-connector E2E builds against a sibling ../cairn-wallet checkout (override with WALLET_EXT).
+Depends on the published `@inversealtruism/csd-*` / `@inversealtruism/cairnx-core` packages from the csd-sdk monorepo (exact pins, installed from npm). Contract couplings: cairn-wallet's window.cairn provider (connect.ts is the dApp-side contract; WALLET-ERROR-CODES.md in the cairn-wallet repo), the cairn server endpoints (/api/rpc, /api/headers, /content, /explorer/api, /trade/api/cairnx/*), and the SPV checkpoint literal duplicated with cairn/public/trade/swapguard.js (test-enforced). The wallet-connector E2E builds against a sibling ../cairn-wallet checkout (override with WALLET_EXT).
 
 ## Docs
 

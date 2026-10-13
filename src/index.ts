@@ -1,23 +1,21 @@
 // @inversealtruism/cairn-sdk — the Compute Substrate dApp kit.
 //
 // One cohesive `Cairn` object that composes everything we built on CSD:
-//   cairn.wallet    — connect the Cairn Wallet, sign things (clear-signed approvals)
-//   cairn.chain     — node RPC + tx builders + verifying light client
-//   cairn.board     — the signal board + work graph (reads public; writes wallet-signed)
-//   cairn.index     — the L2 explorer/indexer: REST + merkle proofs + live SSE/WS
-//   cairn.content   — self-certifying content (publish via board, fetch verified)
-//   cairn.registry  — L3 peer/gateway/identity resolution
+//   cairn.wallet   : connect the Cairn Wallet, sign things (clear-signed approvals)
+//   cairn.chain    : node RPC + tx builders + verifying light client
+//   cairn.index    : the L2 explorer/indexer: REST + merkle proofs + live SSE/WS
+//   cairn.content  : self-certifying content (fetched and verified against its hash)
+//   cairn.registry : L3 peer/gateway/identity resolution
+//   cairn.names    : .csd names + CairnX market reads
 //
 // Quick start:
 //   import { Cairn } from "@inversealtruism/cairn-sdk";
 //   const cairn = new Cairn({ network: "mainnet" });
+//   const tip = await cairn.chain.tip();
 //   await cairn.connect();                       // prompts the wallet once
-//   const top = await cairn.board.top({ domain: "csd:apps" });
-//   await cairn.board.propose({ domain: "csd:apps", title: "My dApp", body: "…" });
 
 import { Http, readCapped, retryAfterMs, type FetchLike } from "./http.js";
 import { Chain, LightClient, type BlockHeader } from "./chain.js";
-import { BoardClient } from "./board.js";
 import { IndexerClient } from "./indexer.js";
 import { ContentClient } from "./content.js";
 import { RegistryClient } from "./registry.js";
@@ -26,7 +24,7 @@ import { WalletConnection, connect as connectWallet, type DetectOptions } from "
 import { preverifyOffer, type OfferFillCheck } from "./fillverify.js";
 
 export interface CairnBaseUrls {
-  /** Cairn board server (board + /api/rpc proxy + /content origin). Default https://cairn-substrate.com */
+  /** Cairn server (/api/rpc proxy, /api/headers, /content origin, /trade/api names reads). Default https://cairn-substrate.com */
   cairn?: string;
   /** Node RPC base. Default `${cairn}/api/rpc` (the public proxy — no local node needed). */
   rpc?: string;
@@ -129,7 +127,6 @@ export class Cairn {
   readonly registry: RegistryClient;
   /** .csd names + CairnX market READS (server-trusted display reads; see names.ts trust note). */
   readonly names: NamesClient;
-  board: BoardClient;
   wallet?: WalletConnection;
 
   private readonly cairnHttp: Http;
@@ -163,7 +160,6 @@ export class Cairn {
     this._spvCp = config.spvCheckpoint ?? DEFAULT_SPV_CHECKPOINT;
     this.chain = new Chain({ rpcUrl: rpc, fetch, timeoutMs });
     this.wallet = config.wallet;
-    this.board = new BoardClient(this.cairnHttp, this.wallet);
     // "verified-inclusion" requires a PoW-VERIFIED header to check the proof root against (audit M3).
     // A raw `blockByHeight(h).header.merkle` read is NOT that — a lying node serves a fake header
     // whose merkle matches a fake proof (and the same-origin case lets ONE server control both). So
@@ -379,8 +375,8 @@ export class Cairn {
   }
 
   /**
-   * Detect + connect the Cairn Wallet (browser only). Wires the wallet into
-   * `cairn.board` for signed writes. Resolves to the connected address.
+   * Detect + connect the Cairn Wallet (browser only) and attach it as `cairn.wallet`.
+   * Resolves to the connected address.
    */
   async connect(opts: DetectOptions = {}): Promise<string> {
     const { wallet, address } = await connectWallet(opts);
@@ -391,7 +387,6 @@ export class Cairn {
   /** Attach an already-connected wallet (e.g. one you constructed yourself). */
   attachWallet(wallet: WalletConnection): void {
     this.wallet = wallet;
-    this.board = new BoardClient(this.cairnHttp, wallet);
   }
 
   /** True if a wallet is attached. */
@@ -406,8 +401,6 @@ export type { FetchLike, HttpOptions } from "./http.js";
 export { Chain } from "./chain.js";
 export { NamesClient } from "./names.js";
 export type { NameResolution, NameDetail, TokenInfo, PrimaryName } from "./names.js";
-export { BoardClient } from "./board.js";
-export type { BoardWindow, RankedItem, BoardItemContent, ProposeInput, ProposeResult, SupportInput } from "./board.js";
 export { IndexerClient } from "./indexer.js";
 export type { MerkleProof, InclusionResult, IndexEvent, StreamHandlers, StreamHandle, TrustLevel } from "./indexer.js";
 export { ContentClient } from "./content.js";

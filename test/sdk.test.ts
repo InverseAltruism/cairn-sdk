@@ -1,16 +1,15 @@
-// SDK tests — HTTP clients + content self-certification + merkle inclusion +
-// the wallet-signed propose flow. Pure unit tests: a routing mock `fetch` and a
-// mock `window.cairn` provider, no network.
+// SDK tests: HTTP clients + content self-certification + merkle inclusion + the
+// retired board client staying gone. Pure unit tests: a routing mock `fetch`, no network.
+import { readFileSync } from "node:fs";
+import * as sdk from "../src/index.js";
 import {
+  Cairn,
   Http,
-  BoardClient,
   ContentClient,
   IndexerClient,
-  WalletConnection,
   ContentVerificationError,
 } from "../src/index.js";
 import { payloadHash, canonicalJson, merkleRoot, merkleBranch } from "../src/chain.js";
-import type { CairnProvider, ProviderReply } from "../src/connect.js";
 
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { c ? pass++ : fail++; console.log(`  ${c ? "✅" : "❌"} ${n}`); };
@@ -35,22 +34,6 @@ function routerFetch(routes: Route[], log?: { calls: { url: string; method: stri
 const json = (obj: unknown, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json" } });
 const bytes = (b: Uint8Array, status = 200) => new Response(b, { status });
 
-function mockWalletProvider(record?: { proposeParams?: any }): WalletConnection {
-  const reply = <T>(r: ProviderReply<T>) => Promise.resolve(r);
-  const provider: CairnProvider = {
-    isCairn: true, version: "test",
-    connect: () => reply({ ok: true, result: { addr: "0xme" } }),
-    getAddress: () => reply({ ok: true, result: { addr: "0xme" } }),
-    signIn: () => reply({ ok: true, result: {} }),
-    propose: (p) => { if (record) record.proposeParams = p; return reply({ ok: true, result: { ok: true, txid: "0xPROPOSETX" } }); },
-    attest: () => reply({ ok: true, result: { ok: true, txid: "0xATTESTTX" } }),
-    send: () => reply({ ok: true, result: { ok: true, txid: "0xSEND" } }),
-    sealClaim: () => reply({ ok: true, result: { ok: true, txid: "0xSEAL" } }),
-    revealClaim: () => reply({ ok: true, result: { ok: true, txid: "0xREVEAL" } }),
-  };
-  return new WalletConnection(provider);
-}
-
 console.log("=== Http: url building ===");
 {
   const h = new Http({ baseUrl: "https://example.com/", fetch: routerFetch([]) });
@@ -59,41 +42,13 @@ console.log("=== Http: url building ===");
   ok("omits undefined query params", h.url("/x", { a: 1, b: undefined }) === "https://example.com/x?a=1");
 }
 
-console.log("=== BoardClient: reads hit the right paths ===");
+console.log("=== the board client is retired (0.4.7) ===");
 {
-  const log = { calls: [] as { url: string; method: string; body?: string }[] };
-  const fetchImpl = routerFetch([
-    (u) => u.pathname === "/api/board" ? json({ window: "7d", domain: "csd:apps", count: 0, items: [] }) : undefined,
-    (u) => u.pathname.startsWith("/api/item/") ? json({ ok: true }) : undefined,
-  ], log);
-  const board = new BoardClient(new Http({ baseUrl: "https://c.com", fetch: fetchImpl }));
-  await board.top({ domain: "csd:apps", window: "7d" });
-  ok("board() GETs /api/board with domain+window", log.calls[0]!.url.includes("/api/board?domain=csd%3Aapps&window=7d"));
-  await board.item("0xITEM");
-  ok("item() GETs /api/item/<id>", log.calls[1]!.url.endsWith("/api/item/0xITEM"));
-}
-
-console.log("=== BoardClient: wallet-signed propose flow ===");
-{
-  const rec: { proposeParams?: any } = {};
-  const wallet = mockWalletProvider(rec);
-  const log = { calls: [] as { url: string; method: string; body?: string }[] };
-  const fetchImpl = routerFetch([
-    (u) => u.pathname === "/api/rpc/tip" ? json({ height: 3000 }) : undefined,
-    (u) => u.pathname === "/api/content" ? json({ ok: true, id: "0xPROPOSETX" }) : undefined,
-  ], log);
-  const board = new BoardClient(new Http({ baseUrl: "https://c.com", fetch: fetchImpl }), wallet);
-
-  const content = { v: 1, domain: "csd:apps", title: "Hi", body: "world", links: [] };
-  const expectedHash = payloadHash(content);
-  const out = await board.propose({ domain: "csd:apps", title: "Hi", body: "world" });
-
-  ok("propose returns the wallet txid", out.txid === "0xPROPOSETX");
-  ok("propose payloadHash == csd-codec.payloadHash(content)", out.payloadHash === expectedHash);
-  ok("wallet.propose got the matching payloadHash", rec.proposeParams?.payloadHash === expectedHash);
-  ok("uri is cairn:v1:<first-12-of-hash>", rec.proposeParams?.uri === `cairn:v1:${expectedHash.slice(2, 14)}`);
-  ok("expiresEpoch = floor(tip/30)+720", rec.proposeParams?.expiresEpoch === Math.floor(3000 / 30) + 720);
-  ok("content was registered (POST /api/content)", out.registered === true && log.calls.some((c) => c.url.endsWith("/api/content") && c.method === "POST"));
+  const cairn = new Cairn({ baseUrls: { cairn: "https://c.com" }, fetch: routerFetch([]) });
+  ok("Cairn has no `board` namespace", !("board" in cairn));
+  ok("BoardClient is no longer exported", !("BoardClient" in sdk));
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { exports: Record<string, unknown>; scripts: Record<string, string> };
+  ok("package.json has no ./board subpath export and does not build src/board.ts", !("./board" in pkg.exports) && !pkg.scripts.build!.includes("board"));
 }
 
 console.log("=== ContentClient: self-certification ===");

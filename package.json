@@ -1,7 +1,7 @@
 {
   "name": "@inversealtruism/cairn-sdk",
   "version": "0.4.6",
-  "description": "The Compute Substrate dApp kit \u2014 one cohesive toolkit to connect the Cairn Wallet, read the chain/board, publish self-certifying content, and resolve registries. Composes the published csd-* primitives.",
+  "description": "The Compute Substrate dApp kit: one cohesive toolkit to connect the Cairn Wallet, read the chain, the indexer and .csd names, verify self-certifying content, and resolve registries. Composes the published csd-* primitives.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -16,11 +16,6 @@
       "types": "./dist/connect.d.ts",
       "import": "./dist/connect.js",
       "require": "./dist/connect.cjs"
-    },
-    "./board": {
-      "types": "./dist/board.d.ts",
-      "import": "./dist/board.js",
-      "require": "./dist/board.cjs"
     },
     "./indexer": {
       "types": "./dist/indexer.d.ts",
@@ -59,14 +54,13 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/connect.ts src/board.ts src/indexer.ts src/content.ts src/registry.ts src/chain.ts src/controller.ts src/react.ts --format esm,cjs --dts --clean",
+    "build": "tsup src/index.ts src/connect.ts src/indexer.ts src/content.ts src/registry.ts src/chain.ts src/controller.ts src/react.ts --format esm,cjs --dts --clean",
     "test": "node test/run.mjs",
     "test:live": "node examples/read-only.mjs",
     "build:example": "node scripts/build-example.mjs",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "test:e2e:read": "node test/e2e/e2e-read.mjs",
     "test:e2e:wallet": "xvfb-run -a node test/e2e/e2e-wallet-connect.mjs",
-    "test:e2e:write": "node test/e2e/e2e-write.mjs",
     "test:e2e": "node test/e2e/e2e-read.mjs && xvfb-run -a node test/e2e/e2e-wallet-connect.mjs",
     "test:all": "pnpm test && pnpm test:e2e",
     "prepack": "pnpm build",

@@ -3,8 +3,8 @@
 //
 // This is the BACKEND counterpart to the browser wallet: a dApp in the browser uses
 // cairn.connect() (window.cairn, user-approved); a bot/server uses makeKeyWallet() to
-// sign with a key it holds. Both satisfy the same CairnProvider contract, so the exact
-// same cairn.board.propose() / cairn.board.support() code paths work either way.
+// sign with a key it holds. Both satisfy the same CairnProvider contract, so the same
+// WalletConnection calls (send, propose, attest) work either way.
 //
 // SECURITY: this holds a private key in process — only for keys you own (treasury bots,
 // CI, indexers), never for end users. End users always sign in their wallet.
@@ -16,7 +16,7 @@ import { buildPropose, buildAttest, buildSendVerified, verifyInputValues, addrFr
  * Usage:
  *   const cairn = new Cairn({ network: "mainnet" });
  *   cairn.attachWallet(new WalletConnection(makeKeyWallet(priv, cairn)));
- *   await cairn.board.propose({ domain: "csd:apps", title: "…", body: "…" });
+ *   await cairn.wallet.send({ to: "0x…", amount: 100_000_000 });   // 1 CSD
  */
 export function makeKeyWallet(priv, cairn) {
   const addr = addrFromPriv(priv);
