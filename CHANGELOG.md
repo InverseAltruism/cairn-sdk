@@ -66,6 +66,7 @@ Replacement: none; the board is retired.
 - **`Http`:** `retries: NaN` (or a non-number) now means 0; it used to make a failing GET retry forever.
   `maxBytes` that is NaN, infinite, zero or negative now falls back to the 16 MiB default; NaN used to turn
   the cap off.
+- `SDK_VERSION` is 0.4.7. Dependencies and `DEFAULT_SPV_CHECKPOINT` are unchanged.
 
 ## 0.4.6 (2026-10-11) - wallet 0.2.73 error codes
 
