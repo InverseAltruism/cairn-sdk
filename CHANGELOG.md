@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 (unreleased) - SPV trust honesty, dApp API guards, board client removed
+## 0.5.0 (2026-10-13) - SPV trust honesty, dApp API guards, board client removed
 
 ### Removed (breaking for importers of the board client)
 
