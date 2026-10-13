@@ -34,10 +34,13 @@ Replacement: none; the board is retired.
 - **Reorgs near the tip:** the SPV light client cached its verified header chain and answered heights at or
   below its cached tip from that cache, so a tx in a block orphaned by a reorg kept reading
   `verified-inclusion` until some read went past the cached tip. A cached header within 12 blocks of the
-  cached tip is now re-checked against the served chain (one single-header `/api/headers` request per such
-  read); a mismatch reseeds from the checkpoint and the read runs again on the live branch, so the orphaned
-  tx no longer reads as verified. Deeper heights still answer from the cache with no request.
-  `verifyOfferForFill` gets the same re-check.
+  cached tip is now compared with the header the base serves at that height (one single-header
+  `/api/headers` request per such read); a mismatch reseeds from the checkpoint and the read runs again on
+  the live branch, so the orphaned tx no longer reads as verified. Deeper heights still answer from the cache
+  with no request. `verifyOfferForFill` gets the same re-check. What it detects depends on the base: the
+  hosted cairn-substrate.com serves `/api/headers` rows at or below its tip minus 6 as immutable from the
+  edge cache, so there it catches reorgs of up to 6 blocks; a self-hosted base without that cache gets the
+  full 12.
 - **`DEFAULT_SPV_CHECKPOINT` moves from height 101,998 to 115,403**
   (`0x00000000000052e29166597d598827b137af1dea7542123b848637fee0b67347`), copied from cairn's
   `public/trade/swapguard.js` (cairn `d5c00a9`). The hash was checked against two local nodes, and both
@@ -46,15 +49,30 @@ Replacement: none; the board is retired.
   - `index.verifyInclusion(txid)` returns `trustLevel: "proof-consistent"`, `included: false`, where 0.4.6
     returned `"verified-inclusion"`, `included: true`. The `reason` reads `indexer proof only, header at <h>
     not verified (height <h> is below the SPV checkpoint 115403 (cannot PoW-verify backward))`.
-  - `verifyOfferForFill` for an offer mined at 101,998 to 115,357 returns `ok: false, trust: "unverified",
-    transient: true` with the reason `tx below the synced base (115358)` (csd-light's base is the start of
-    the 46-header seed window). Offers mined at 115,358 to 115,402 sit inside that seed window and still
+  - `verifyOfferForFill` for an offer mined at 101,998 to 115,357 returns `ok: false, trust: "unverified"`
+    (not transient) with a reason naming the checkpoint window base 115,358 and `config.spvCheckpoint`
+    (csd-light's base is the start of the 46-header seed window). Offers mined at 115,358 to 115,402 sit inside that seed window and still
     verify on this path, as the 45 heights below the old anchor did before.
   - Pass `config.spvCheckpoint: { height: 101998, hash: "0x0000000000085295c9e13bbf276a11affb5470059235d1ea85d6334c8b43c49c" }`
     to keep the old anchor.
-- **Retry-After:** the SPV header batch and `Http.getJson`'s opt-in GET retries now wait as long as the
-  server's `Retry-After` says, up to 60 s (the cairn server's rate-limit window). The SPV batch used to cut
-  the wait at 4 s and spend its retries inside the window; `Http` ignored the header.
+- **Retry-After, inside a per-call wait budget:** the SPV header batch and `Http.getJson`'s opt-in GET
+  retries now wait as long as the server's `Retry-After` says, as long as it fits a per-call budget for the
+  total time spent sleeping between retries. A hint larger than what is left fails the call at once
+  (transient for the SPV read, which degrades to `proof-consistent`; the server's `HttpError` for `Http`)
+  instead of sleeping. The SPV batch used to cut every wait at 4 s and spend its retries inside the window;
+  `Http` ignored the header. Per-call worst cases:
+  - one `/api/headers` request: at most 16 s of retry sleep, the same as 0.4.6 (four retries at its 4 s
+    cap), so with five attempts at the 15 s per-attempt timeout the worst case stays 91 s. A near-tip
+    `verifyInclusion` can make two such requests (the re-check, then a forward sync after a reorg).
+  - `Http.getJson`: at most 30 s of retry sleep (the jitter ladder at the 10-retry cap sums to about 27.75 s,
+    so no hint-free schedule changes), plus one `timeoutMs` per attempt. With the default `retries: 0` it
+    makes one attempt and never sleeps.
+- **`verifyOfferForFill` / `preverifyOffer`: an offer mined below the SPV checkpoint window is not
+  `transient`.** csd-light answers "tx below the synced base" for it, which holds for as long as the
+  checkpoint does, but it was reported as `transient: true` (retryable), so a dApp would retry forever. It now
+  returns `ok: false, trust: "unverified"` without `transient`, and the reason says the offer is below the
+  SDK's SPV checkpoint window and names `config.spvCheckpoint`. Other unverified answers (mempool, unreachable
+  chain) stay transient.
 - **`preverifyOffer` / `verifyOfferForFill`: no `outputPlan` without a served status.** The sizer used to
   assume an offer was open when the caller passed `pay` without the resolver's offer object (or one without
   `status`). It now sizes only for the status the resolver served; otherwise `outputPlan` is absent and

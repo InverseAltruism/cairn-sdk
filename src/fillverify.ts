@@ -70,6 +70,9 @@ export interface OfferFillCheck {
 }
 
 const ADDR = /^0x[0-9a-f]{40}$/;
+// csd-light's verifyTxInclusion reason for a tx below the light client's synced base (the start of the
+// checkpoint seed window). That holds for as long as the checkpoint does, so it is not a transient failure.
+const BELOW_BASE = /^tx below the synced base \((\d+)\)/;
 const HASH = /^0x[0-9a-f]{64}$/;
 const COINBASE = "0x" + "00".repeat(32);
 
@@ -165,8 +168,12 @@ export async function preverifyOffer(opts: {
   // The PoW light client yields "verified-inclusion" (merkle-proven against a PoW-verified header) or a fail
   // reason ("rpc-trusted"/not-included for a below-checkpoint, mempool, or unreachable tx). Only the former is
   // trustworthy for a payment corroboration; anything else is a soft "chain catching up" (never a hard decline).
-  if (!incl.included || incl.trustLevel !== "verified-inclusion" || !incl.tx || !incl.appPayloadHash)
+  if (!incl.included || incl.trustLevel !== "verified-inclusion" || !incl.tx || !incl.appPayloadHash) {
+    const below = BELOW_BASE.exec(incl.reason ?? "");
+    if (below)
+      return { ok: false, trust: "unverified", blockHeight: incl.blockHeight, reason: `the offer was mined below this SDK's SPV checkpoint window (base ${below[1]}), so it cannot be merkle-proven here and retrying will not change that; pass an older anchor in config.spvCheckpoint to verify it` };
     return { ok: false, trust: "unverified", transient: true, blockHeight: incl.blockHeight, reason: incl.reason ?? `offer not merkle-proven on-chain (${incl.trustLevel})` };
+  }
   const blockHeight = Number(incl.blockHeight);
 
   let provenTx: ReturnType<typeof rpcTxToTx>, provenId: string;

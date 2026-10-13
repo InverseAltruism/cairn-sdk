@@ -4,6 +4,7 @@
 // source tx so the prevout-owner author bind resolves. We assert: an honest offer verifies (payto/seller/terms
 // derived); each served-field lie (payto / seller / feeBps / spurious min) is REFUSED; and a below-checkpoint /
 // unprovable-author view fails SOFT (transient), never a hard decline. Pure unit test, no network.
+import { readFileSync } from "node:fs";
 import { addrFromPriv, signDigest, buildScriptSig } from "@inversealtruism/csd-crypto";
 import { provenOfferTerms, epochOf } from "@inversealtruism/cairnx-core";
 import { txid, sighash, canonicalJson, payloadHash, rpcTxToTx } from "../src/chain.js";
@@ -365,6 +366,55 @@ console.log("\nP75-5 fill-surface guards:");
     const r = await cairn.verifyOfferForFill(tx.id, servedFor({ id: tx.id }));
     return r.ok === true && r.outputPlan === undefined;
   });
+}
+
+// The real facade over the real SPV header fixture (checkpoint 115,403; rows 115358..115437), so the light
+// client, the near-tip re-check and csd-light's own below-base answer all run for real.
+{
+  type Row = { height: number; header: Record<string, unknown>; hash: string };
+  const ROWS = (JSON.parse(readFileSync(new URL("./fixtures/spv-headers-115358-80.json", import.meta.url), "utf8")) as { headers: Row[] }).headers;
+  const BASE = ROWS[0]!.height, TIP = ROWS[ROWS.length - 1]!.height;
+  const mkCairn = (seen: string[], txHeight?: number) => new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    seen.push(url);
+    const m = url.match(/\/api\/headers\/(\d+)\/(\d+)$/);
+    const j = (o: unknown) => new Response(JSON.stringify(o), { status: 200, headers: { "content-type": "application/json" } });
+    if (m) return j({ ok: true, headers: ROWS.slice(Number(m[1]) - BASE, Number(m[1]) - BASE + Number(m[2])) });
+    if (/\/api\/rpc\/tip$/.test(url)) return j({ height: TIP });
+    if (/\/api\/rpc\/tx\//.test(url) && txHeight !== undefined) return j({ ok: true, height: txHeight });
+    return new Response("not found", { status: 404 });
+  }) as unknown as typeof fetch });
+  const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
+
+  // F2 paired honest path: a near-tip offer whose cached header passes the re-check still verifies (ok, trust
+  // verified) through verifyOfferForFill. The inclusion is real-shaped (a real signed Propose with its tx body
+  // and committed payload hash); it stands in for csd-light's merkle fold, which no fixture header can satisfy.
+  {
+    const near = TIP - 2;
+    const tx = proposeTx(SELLER_KEY, rec, 13);
+    const seen: string[] = [];
+    const cairn = mkCairn(seen);
+    const lc = await (cairn as unknown as { seededSpvLight(): Promise<{ verifyTxInclusion: unknown }> }).seededSpvLight();
+    lc.verifyTxInclusion = async () => ({ trustLevel: "verified-inclusion", included: true, blockHeight: near, confirmations: 3, tx: tx.json, appPayloadHash: tx.phash });
+    (cairn as unknown as { chain: unknown }).chain = { client: mockClient };
+    await ok("[F2 honest] a near-tip offer that passes the re-check returns ok:true, trust verified, at its height", async () => {
+      const r = await cairn.verifyOfferForFill(tx.id);
+      return r.ok === true && r.trust === "verified" && r.blockHeight === near && r.seller === SELLER;
+    });
+    await ok("[F2] that verification ran the near-tip re-check (one single-header request) without a reseed", () =>
+      seen.filter((u) => u.endsWith(`/api/headers/${near}/1`)).length === 1 && seen.filter((u) => u.endsWith(`/api/headers/${BASE}/46`)).length === 1);
+  }
+
+  // F4: an offer mined below the synced base is permanent for this checkpoint, so it is not transient, and the
+  // reason names config.spvCheckpoint. csd-light's real verifyTxInclusion produces the below-base answer here.
+  {
+    const seen: string[] = [];
+    const r = await mkCairn(seen, 110_000).verifyOfferForFill("0x" + "cd".repeat(32));
+    await ok("[F4] an offer below the synced base is not transient", () => r.ok === false && r.transient !== true && r.trust === "unverified");
+    await ok("[F4] the reason says it is below the checkpoint window and names config.spvCheckpoint", () => /below this SDK's SPV checkpoint window \(base 115358\)/.test(r.reason ?? "") && /config\.spvCheckpoint/.test(r.reason ?? ""));
+    const r2 = await mkCairn([], undefined).verifyOfferForFill("0x" + "cd".repeat(32));
+    await ok("[F4 honest] a tx the node does not place in a block (mempool/unknown) stays transient", () => r2.ok === false && r2.transient === true);
+  }
 }
 
 console.log(`\nfillverify (F13): ${pass} passed, ${fail} failed`);

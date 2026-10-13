@@ -5,7 +5,7 @@
 // spv-fault-tolerance and spv-transport-bounds).
 import { readFileSync } from "node:fs";
 import { Cairn, Http, IndexerClient } from "../src/index.js";
-import { retryAfterMs, MAX_RETRY_AFTER_MS } from "../src/http.js";
+import { retryAfterMs, MAX_RETRY_AFTER_MS, RetryWaitBudget } from "../src/http.js";
 import { headerHash } from "../src/chain.js";
 
 let pass = 0, fail = 0;
@@ -188,6 +188,31 @@ console.log("SPV trust honesty:");
   const t2 = Date.now();
   await quick.getJson("/x");
   ok("W18 honest: without Retry-After the first retry keeps the short jitter (< 1 s)", Date.now() - t2 < 1000);
+}
+
+// F1: one call's total retry sleep is bounded. A server that answers Retry-After: 60 on every attempt used to
+// hold one SPV header request for 4 x 60 s and an Http GET for up to 10 x 60 s; a hint that does not fit what is
+// left of the budget now fails the call at once (transient), so the read degrades instead of waiting.
+{
+  const within = <T>(p: Promise<T>, ms: number) => Promise.race([p.then((v) => ({ v })), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+  const b = new RetryWaitBudget(16_000);
+  ok("F1: RetryWaitBudget refuses a 60 s hint against a 16 s budget", b.take(700, 60_000) === null);
+  ok("F1: it grants a hint that fits and charges it (5 s, then 11 s left)", b.take(700, 5_000) === 5_000 && b.take(0, 11_001) === null && b.take(0, 11_000) === 11_000);
+
+  const seen: string[] = [];
+  const always60 = (from: number, count: number) => (from === BASE && count === 46 ? jsonRes({ ok: false }, 429, { "retry-after": "60" }) : undefined);
+  const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: mkStub({ seen, proofHeight: TIP - 26, onHeaders: always60 }) });
+  const t0 = Date.now();
+  const got = await within(cairn.index.verifyInclusion(rowAt(TIP - 26).header.merkle), 20_000);
+  ok("F1: Retry-After 60 on every attempt: the SPV read returns within the budget instead of sleeping minutes", got !== null && Date.now() - t0 < 16_000);
+  ok("F1: and it degrades honestly to proof-consistent, included false", got !== null && got.v.trustLevel === "proof-consistent" && got.v.included === false);
+  ok("F1: one seed request, no sleep-and-retry inside the window", seen.filter((u) => u.endsWith(`/api/headers/${BASE}/46`)).length === 1);
+
+  let calls = 0;
+  const http = new Http({ baseUrl: "https://stub.test", retries: 3, fetch: (async () => { calls++; return jsonRes({}, 503, { "retry-after": "60" }); }) as unknown as typeof fetch });
+  const t1 = Date.now();
+  const res = await within(http.getJson("/x").then(() => "resolved", (e: unknown) => e), 20_000);
+  ok("F1: Http.getJson with Retry-After 60 on every 503 throws the 503 at once instead of waiting", res !== null && (res.v as { status?: number }).status === 503 && Date.now() - t1 < 5_000 && calls === 1);
 }
 
 console.log(`\nspv-trust-honesty: ${pass} passed, ${fail} failed`);

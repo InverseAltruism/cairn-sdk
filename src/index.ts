@@ -14,7 +14,7 @@
 //   const tip = await cairn.chain.tip();
 //   await cairn.connect();                       // prompts the wallet once
 
-import { Http, readCapped, retryAfterMs, type FetchLike } from "./http.js";
+import { Http, readCapped, retryAfterMs, RetryWaitBudget, type FetchLike } from "./http.js";
 import { Chain, LightClient, type BlockHeader } from "./chain.js";
 import { IndexerClient } from "./indexer.js";
 import { ContentClient } from "./content.js";
@@ -109,12 +109,17 @@ const spvIsTransient = (e: unknown): boolean => {
   return SPV_TRANSIENT_RE.test(msg) || SPV_TRANSIENT_JSON_RE.test(msg);
 };
 const spvSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-// Our own backoff ladder stays under 4 s; a server Retry-After (already clamped by retryAfterMs) wins when longer,
-// because retrying inside the server's window spends an attempt the server will refuse again.
-const spvRetryDelayMs = (attempt: number, serverWaitMs: number) => Math.max(Math.min(4000, 700 * (attempt + 1)), serverWaitMs);
+// Own backoff ladder (0.7, 1.4, 2.1, 2.8 s). A server Retry-After wins when longer, because retrying inside the
+// server's window spends an attempt it will refuse again, but only while it fits SPV_RETRY_WAIT_BUDGET_MS.
+const spvBackoffMs = (attempt: number) => Math.min(4000, 700 * (attempt + 1));
+// Total retry sleep for one /api/headers request: 16 s is the 0.4.6 worst case (four retries at its 4 s cap).
+// A longer hint fails the request at once as transient, so the read degrades instead of waiting out a window.
+const SPV_RETRY_WAIT_BUDGET_MS = 16_000;
 // A cached header at most this many blocks below the cached tip is re-checked against the served chain before it
 // backs a "verified-inclusion"; anything deeper is treated as final. 12 is the deepest finality used in the stack
-// (cairnx's scanner; the indexer finalizes at 6).
+// (cairnx's scanner; the indexer finalizes at 6). The hosted cairn server edge-caches /api/headers rows at or
+// below its tip - 6 as immutable, so against cairn-substrate.com the re-check only sees reorgs of up to 6
+// blocks; a self-hosted base without that cache gets the full 12.
 const SPV_RECHECK_DEPTH = 12;
 const spvTipOf = (lc: LightClient): number => lc.baseHeight + lc.chain.length - 1;
 
@@ -223,13 +228,8 @@ export class Cairn {
     }
   }
 
-  // MF-03: a cached header within SPV_RECHECK_DEPTH of the cached tip may have been orphaned since it was
-  // verified. Compare its hash with the one the server serves at that height now; a mismatch throws a
-  // STRUCTURAL error, so withSpvReseed rebuilds from the checkpoint and reruns the read on the live branch.
-  // The served row carries no trust: a match only means the server has not reported a reorg, and a
-  // mismatch costs a reseed, after which every header is re-verified. Transport faults surface as transient
-  // (the read degrades to proof-consistent and the cache is kept). The message must not match
-  // SPV_TRANSIENT_RE, or the reorg would be retried on the stale cache instead of reseeded.
+  // A near-tip cached header the served chain no longer carries is a reorg: throw a structural error so
+  // withSpvReseed rebuilds. The message must not match SPV_TRANSIENT_RE, or it would be retried on the stale cache.
   private async recheckCachedHeader(lc: LightClient, height: number, haveTo: number): Promise<void> {
     if (height <= haveTo - SPV_RECHECK_DEPTH) return;
     const cached = lc.chain[height - lc.baseHeight];
@@ -302,6 +302,7 @@ export class Cairn {
     if (!g) throw new Error("No fetch available for SPV header sync - pass `fetch` in the SDK options.");
     const doFetch: FetchLike = this.config.fetch ? this.config.fetch : (g.bind(globalThis) as FetchLike);
     const url = `${this._cairnBase}/api/headers/${from}/${count}`;
+    const budget = new RetryWaitBudget(SPV_RETRY_WAIT_BUDGET_MS);
     for (let attempt = 0; ; attempt++) {
       let res: Response | undefined;
       let parsed: unknown;
@@ -317,8 +318,9 @@ export class Cairn {
           parsed = JSON.parse(new TextDecoder().decode(await readCapped(res, SPV_MAX_BATCH_BYTES)));
         }
       } catch (e) {
-        if (attempt >= SPV_HTTP_MAX_RETRIES) throw e;   // transport / timeout / oversize / bad body: bounded retry, then fail closed
-        await spvSleep(spvRetryDelayMs(attempt, 0));
+        const waitMs = attempt < SPV_HTTP_MAX_RETRIES ? budget.take(spvBackoffMs(attempt), 0) : null;
+        if (waitMs === null) throw e;   // transport / timeout / oversize / bad body: bounded retry, then fail closed
+        await spvSleep(waitMs);
         continue;
       } finally { clearTimeout(timer); }
       if (res!.ok) {
@@ -330,7 +332,9 @@ export class Cairn {
       }
       if ((res!.status === 429 || res!.status === 502 || res!.status === 503) && attempt < SPV_HTTP_MAX_RETRIES) {
         res!.body?.cancel?.().catch(() => {});   // drain the discarded body (undici holds the socket otherwise)
-        await spvSleep(spvRetryDelayMs(attempt, retryAfterMs(res!)));
+        const waitMs = budget.take(spvBackoffMs(attempt), retryAfterMs(res!));
+        if (waitMs === null) throw new Error(`/api/headers ${res!.status}: Retry-After exceeds the remaining retry budget`);
+        await spvSleep(waitMs);
         continue;
       }
       throw new Error(`/api/headers ${res!.status}`);

@@ -26,7 +26,7 @@ export interface CairnControllerOptions extends DetectOptions {
 export class CairnController {
   private state: CairnState = DISCONNECTED;
   private conn: WalletConnection | null = null;
-  // MF-15: connect/disconnect generation token. disconnect(), the wallet's `disconnect` event and an empty
+  // Connect/disconnect generation token. disconnect(), the wallet's `disconnect` event and an empty
   // accountsChanged (lock, account switch, revoke) bump it; a connect() whose await straddled the bump must
   // never commit "connected" over the torn-down session.
   private epoch = 0;

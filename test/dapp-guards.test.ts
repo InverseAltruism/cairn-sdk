@@ -73,6 +73,8 @@ console.log("Http clamps (M-67):");
   ok("M-67 honest: a finite retries budget still retries", body.ok === true && n === 3);
   const small = (async () => new Response('{"ok":true}', { status: 200 })) as unknown as typeof fetch;
   ok("M-67 honest: a finite maxBytes still accepts a small body", (await new Http({ baseUrl: "https://x.test", fetch: small, maxBytes: 1024 }).getJson<{ ok: boolean }>("/x")).ok === true);
+  const half = await caught(() => new Http({ baseUrl: "https://x.test", fetch: small, maxBytes: 0.5 }).getJson<{ ok: boolean }>("/x"));
+  ok("maxBytes 0.5 (below 1 byte) falls back to the default cap instead of refusing every body", half === undefined);
   const tiny = await caught(() => new Http({ baseUrl: "https://x.test", fetch: small, maxBytes: 4 }).getJson("/x"));
   ok("M-67 honest: a finite maxBytes is still enforced", tiny instanceof HttpError);
 }
