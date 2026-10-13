@@ -400,7 +400,7 @@ export { Http } from "./http.js";
 export type { FetchLike, HttpOptions } from "./http.js";
 export { Chain } from "./chain.js";
 export { NamesClient } from "./names.js";
-export type { NameResolution, NameDetail, TokenInfo, PrimaryName } from "./names.js";
+export type { NameResolution, NameDetail, TokenInfo, PrimaryName, NameHistory, NameHistoryEntry } from "./names.js";
 export { IndexerClient } from "./indexer.js";
 export type { MerkleProof, InclusionResult, IndexEvent, StreamHandlers, StreamHandle, TrustLevel } from "./indexer.js";
 export { ContentClient } from "./content.js";

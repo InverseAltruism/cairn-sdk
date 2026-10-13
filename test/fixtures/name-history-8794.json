@@ -1,0 +1,119 @@
+{
+ "6": {
+  "ok": true,
+  "name": "6",
+  "tipHeight": 118643,
+  "resolve": {
+   "name": "6",
+   "addr": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "via": "nset",
+   "lapsed": false,
+   "owner": "0xc25117a104e2cba2a69ad3981a3c67299f550504"
+  },
+  "record": {
+   "name": "6",
+   "owner": "0xc25117a104e2cba2a69ad3981a3c67299f550504",
+   "claimId": "0xa7f9cbb898345e51d5f2d3f7157009c111ed9b30fa86d8d6f6a929f2123204c1",
+   "height": 43972,
+   "effectiveHeight": 43972,
+   "locked": false,
+   "addr": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "viaFill": true,
+   "paidThroughEpoch": 9826
+  },
+  "events": [
+   {
+    "txid": "0x88641a3743c792dbe61c83b77b3d196e47b8dde372c6706a3822f2f9d5afbe9d",
+    "height": 30245,
+    "pos": 3,
+    "kind": "name"
+   },
+   {
+    "txid": "0x310b0fdec23d79156219be539e475fc13f4b9686f823a2c926f99db5b263255b",
+    "height": 41381,
+    "pos": 1,
+    "kind": "offer"
+   },
+   {
+    "txid": "0x521903d0ecc1e916e7b7f64fecbe204a06911103277693a622134fb4a3305949",
+    "height": 43968,
+    "pos": 1,
+    "kind": "claim"
+   },
+   {
+    "txid": "0xa979ab13ff53ff6cd69b01c87cc0acabda42b18c99447215b6f3142448e0dc6f",
+    "height": 43969,
+    "pos": 2,
+    "kind": "claim"
+   },
+   {
+    "txid": "0xa7f9cbb898345e51d5f2d3f7157009c111ed9b30fa86d8d6f6a929f2123204c1",
+    "height": 43972,
+    "pos": 1,
+    "kind": "fill"
+   },
+   {
+    "txid": "0x43021e52216319eb9b539531620984a3aa50b8fdc2c6839a1ef1965dbf9a8f36",
+    "height": 46224,
+    "pos": 1,
+    "kind": "nset"
+   },
+   {
+    "txid": "0x70ce2693d70e59f01a9cdb5c3896b4d1b1d5f1a8f754ef1b523847e3a1bce8d7",
+    "height": 49615,
+    "pos": 1,
+    "kind": "nset"
+   },
+   {
+    "txid": "0xbb41fa4fefaa7558fbbb1cd9f725ab9c777763b215562cad0a84edf60311bffd",
+    "height": 49623,
+    "pos": 1,
+    "kind": "nset"
+   },
+   {
+    "txid": "0xd040b9ff735ee8bca050638a92f59581db8d1aad5a6fadb2036cebbd76b9c0e9",
+    "height": 49625,
+    "pos": 2,
+    "kind": "nxfer"
+   },
+   {
+    "txid": "0x2f5cd9e87f27131d662a5384e972e98070563a3b990cfd09c621d4edb1a04316",
+    "height": 49626,
+    "pos": 1,
+    "kind": "offer"
+   }
+  ],
+  "scopedReplaySufficient": false,
+  "caveat": "ownership was decided by a fill whose validity depends on out-of-name-scope state (a V17 open-lane claim's global claim-cap, or a name-for-token fill's buyer balance) — a name-scoped replay cannot prove it; the wallet MUST fail closed (do not show verified) for this name"
+ },
+ "cairn": {
+  "ok": true,
+  "name": "cairn",
+  "tipHeight": 118643,
+  "resolve": {
+   "name": "cairn",
+   "addr": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "via": "owner",
+   "lapsed": false,
+   "owner": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec"
+  },
+  "record": {
+   "name": "cairn",
+   "owner": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "claimId": "0xd9dd9f4b7aa91c104f43cb5ec712365abe2f5092c7f14036f4ff856ca08a1f93",
+   "height": 30224,
+   "effectiveHeight": 30224,
+   "locked": false,
+   "paidThroughEpoch": 9826
+  },
+  "events": [
+   {
+    "txid": "0xd9dd9f4b7aa91c104f43cb5ec712365abe2f5092c7f14036f4ff856ca08a1f93",
+    "height": 30224,
+    "pos": 1,
+    "kind": "name"
+   }
+  ],
+  "scopedReplaySufficient": true
+ }
+}

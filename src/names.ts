@@ -17,7 +17,7 @@
 // malformed input fails fast client-side instead of round-tripping to a 404. Responses that a dApp does
 // arithmetic or iteration on (token amounts and decimals, the list reads) are shape-checked before they are
 // returned; a body that does not match throws a typed HttpError instead of reaching the caller as a typed lie.
-import { NAME_RE, RESERVED_NAMES, TICKER_RE, AMOUNT_RE } from "@inversealtruism/cairnx-core";
+import { NAME_RE, RESERVED_NAMES, TICKER_RE, AMOUNT_RE, HASH_RE, type NameState } from "@inversealtruism/cairnx-core";
 import type { Http } from "./http.js";
 import { HttpError } from "./errors.js";
 
@@ -76,12 +76,52 @@ export interface TokenInfo {
 
 export interface PrimaryName { ok: boolean; address: string; name?: string | null }
 
+/** One `/cairnx/name-history` event: the txid a wallet fetches and merkle-verifies. `kind` is diagnostic only. */
+export interface NameHistoryEntry {
+  txid: string;
+  height: number;
+  pos: number;
+  kind: string;
+}
+
+/** `/cairnx/name-history/:name`: the server's current claim plus the UNTRUSTED txid hints a verifier replays. */
+export interface NameHistory {
+  ok: boolean;
+  name: string;
+  tipHeight: number;
+  /** the server's forward resolution (what a verifier recomputes and must match) */
+  resolve: Omit<NameResolution, "ok">;
+  /** the server's full name record */
+  record?: NameState;
+  events: NameHistoryEntry[];
+  /** `false`: replaying only `events` cannot prove this name's owner (see `caveat`); never treat a match as verified. */
+  scopedReplaySufficient: boolean;
+  caveat?: string;
+}
+
 const nameOk = (n: unknown): n is string =>
   typeof n === "string" && NAME_RE.test(n) && !RESERVED_NAMES.has(n);
 
 const amountOk = (v: unknown): v is string => typeof v === "string" && AMOUNT_RE.test(v);
 // The upper bound on decimals is enforced by cairnx-core's deploy parser and not exported, so it is not
 // re-declared here; the guard keeps decimals a usable non-negative integer.
+const heightOk = (v: unknown): boolean => Number.isSafeInteger(v) && (v as number) >= 0;
+function nameHistoryProblem(h: unknown, name: string): string | null {
+  if (!h || typeof h !== "object" || Array.isArray(h)) return "not an object";
+  const r = h as Record<string, unknown>;
+  if (r.name !== name) return `name is ${JSON.stringify(r.name)}, expected ${JSON.stringify(name)}`;
+  if (!heightOk(r.tipHeight)) return "bad tipHeight";
+  if (!r.resolve || typeof r.resolve !== "object") return "resolve is not an object";
+  if (typeof r.scopedReplaySufficient !== "boolean") return "scopedReplaySufficient is not a boolean";
+  if (!Array.isArray(r.events)) return "events is not an array";
+  for (const [i, e] of r.events.entries()) {
+    const ev = e as Record<string, unknown> | null;
+    if (!ev || typeof ev.txid !== "string" || !HASH_RE.test(ev.txid) || !heightOk(ev.height) || !heightOk(ev.pos) || typeof ev.kind !== "string")
+      return `event ${i} is malformed`;
+  }
+  return null;
+}
+
 function tokenProblem(t: unknown): string | null {
   if (!t || typeof t !== "object") return "not an object";
   const r = t as Record<string, unknown>;
@@ -124,11 +164,17 @@ export class NamesClient {
     catch (e: any) { if (e?.status === 404) return null; throw e; }
   }
 
-  /** The event history of one name (registrations, transfers, sets, renewals). null = invalid name. */
-  async nameHistory(name: string): Promise<unknown[] | null> {
+  /** The event history of one name (registrations, transfers, sets, renewals) with the server's current
+   *  claim. null = invalid or unregistered name. Throws a typed HttpError on a malformed body. */
+  async nameHistory(name: string): Promise<NameHistory | null> {
     if (!nameOk(name)) return null;
-    try { return await this.http.getJson<unknown[]>(`/trade/api/cairnx/name-history/${encodeURIComponent(name)}`); }
+    const path = `/trade/api/cairnx/name-history/${encodeURIComponent(name)}`;
+    let h: unknown;
+    try { h = await this.http.getJson<unknown>(path); }
     catch (e: any) { if (e?.status === 404) return null; throw e; }
+    const p = nameHistoryProblem(h, name);
+    if (p) throw this.malformed(path, p);
+    return h as NameHistory;
   }
 
   /** Reverse lookup: an address's chosen primary .csd name (null name = none set). */

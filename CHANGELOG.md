@@ -73,6 +73,11 @@ Replacement: none; the board is retired.
   (base-unit integer strings) is malformed; `names()`, `tokens()`, `offers()` and `bids()` throw the same
   error when the body is not an array (an error object served with status 200 used to be returned as the
   list). `token()` validates the ticker with cairnx-core's `TICKER_RE` instead of a local copy.
+- **`names.nameHistory(name)`** is typed as what cairnx serves, `NameHistory` (`{ ok, name, tipHeight, resolve,
+  record, events, scopedReplaySufficient, caveat? }`, exported with `NameHistoryEntry`), instead of
+  `unknown[]`; the body was always this object, never an array. It throws a typed `HttpError` ("malformed
+  response") when the body is not that object, names another name, or carries a malformed `events` entry,
+  `resolve` or `scopedReplaySufficient`. Code that treated the result as an array was already wrong at runtime.
 - **`content.getBytes()`** skips a source whose bytes do not match the hash and tries the next one; it throws
   `ContentVerificationError` only when no source served verified bytes and at least one served mismatching
   bytes. **`content.get()`** throws a `CairnError` with the new code `CONTENT_NOT_JSON` (cause: the parse
