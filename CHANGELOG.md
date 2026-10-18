@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.6.0 (unreleased) - cairnx-core 0.2.0 and csd-codec 0.1.18 (csd-sdk publish window 2)
+
+A minor bump: the re-exported `bindOfferTerms` changes its default and a call that compiled under 0.5.0 no
+longer does, so a `^0.5.x` range does not pick this up.
+
+### Behaviour changes
+
+- **`bindOfferTerms`** (re-exported from cairnx-core) checks the give and want-type legs by default. A
+  two-argument call over minted terms (from `provenOfferTerms`, or an `OfferFillCheck`'s `terms`) now also
+  reports a mismatch when the served offer's `give` (ticker, amount or name) or want type differs from the
+  proven offer. Hand-built terms (a plain `ProvenOfferTerms`) compile only with `{ give: false, wantType: false }`,
+  which returns the 0.5.0 two-argument verdict on every input; a JavaScript caller that passes them without
+  it gets a mismatch for every offer, honest ones included. A call that already passes
+  `{ give: true, wantType: true }` gets the same verdicts as before.
+- **`OfferFillCheck.terms`** is typed `MintedProvenOfferTerms` (it was `ProvenOfferTerms`), so it can be passed
+  back to the default `bindOfferTerms` call. The value is unchanged, and code that reads it as
+  `ProvenOfferTerms` still compiles. `MintedProvenOfferTerms` is exported as a type.
+- `preverifyOffer` and `verifyOfferForFill` return the same verdicts: they already passed both legs.
+- csd-codec 0.1.18, csd-tx 0.1.21 and csd-client 0.1.18 refuse more input (csd-sdk `CONSENSUS_CHANGES.md`, the
+  window 2 entry). Through this SDK:
+  `content.prepare()`, `content.put()` and `content.hash()` throw on a Map, Set, Date, typed array, class
+  instance, function, symbol or array hole, where they used to hash a rewritten value (plain and
+  null-prototype objects hash as before); the re-exported `serialize`, `txid` and `sighash` throw on a Propose
+  domain or uri with an unpaired surrogate, and `buildPropose` returns `ok: false` for one; the re-exported
+  `verifyMerkleProof` requires a 32-byte txid, siblings and root; `selectInputs` no longer selects one outpoint
+  twice when it is served with and without `0x`; `CsdClient` falls back to the default for a non-finite
+  `maxResponseBytes` or `retries`. The re-exported `verifyContentBytes` now accepts an expected hash written
+  without `0x` (the `content` methods already normalized it). csd-sdk records no honest byte, txid or sighash
+  change (its golden vectors are unchanged).
+
+### Dependencies
+
+- `@inversealtruism/cairnx-core` 0.1.42 to 0.2.0, `csd-codec` 0.1.16 to 0.1.18, `csd-crypto` 0.1.16 to 0.1.18,
+  `csd-client` 0.1.16 to 0.1.18, `csd-tx` 0.1.19 to 0.1.21, `csd-light` 0.1.21 to 0.1.23, `csd-registry`
+  0.1.18 to 0.1.20, and the dev dependency `csd-siwc` 0.1.17 to 0.1.19. The lockfile resolves one csd-codec
+  (0.1.18) and one csd-crypto (0.1.18).
+- `SDK_VERSION` is 0.6.0.
+
 ## 0.5.0 (2026-10-13) - SPV trust honesty, dApp API guards, board client removed
 
 ### Removed (breaking for importers of the board client)

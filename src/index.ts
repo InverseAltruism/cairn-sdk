@@ -464,4 +464,4 @@ export {
   preverifyOffer, bindOfferTerms, feeBpsAt,
   fillEndorsement, fillOutputPlan, fillIsSafe, requiredFillOutputs, previewFill,
 } from "./fillverify.js";
-export type { OfferFillCheck, ProvenOfferTerms, FillEndorsement, FillOutputPlan, FillSafety, FillPreview } from "./fillverify.js";
+export type { OfferFillCheck, ProvenOfferTerms, MintedProvenOfferTerms, FillEndorsement, FillOutputPlan, FillSafety, FillPreview } from "./fillverify.js";

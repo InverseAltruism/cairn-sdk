@@ -82,7 +82,10 @@ Wallet's own on-device fill-SPV in 0.2.60+ is what fails-closed before signing),
 value should clear it first. The standalone `preverifyOffer({ light, client, offerId, servedOffer, pay,
 plannedOutputs })` takes an injected light client + tx reader for custom wiring; `bindOfferTerms` / `feeBpsAt`
 are the pure term-bind primitives, re-exported from the pinned cairnx-core (single-sourced; the former local
-copies were retired when the pin began exporting them).
+copies were retired when the pin began exporting them). `bindOfferTerms(servedOffer, terms)` also checks the
+offer's give and want type by default, so `terms` must come from `provenOfferTerms` or from the result's
+`terms` (typed `MintedProvenOfferTerms`); hand-built terms compile only with `{ give: false, wantType: false }`,
+the older verdict that misses a lied-about give.
 
 **Sign-in:** the SIWC signature proves key control ONCE. Verify it **server-side** (`verifySiwc`) and
 then issue **your own** session (rotating, expiring, HttpOnly+Secure+SameSite cookie). The signature is
@@ -137,8 +140,8 @@ a 2xx body whose shape is wrong, such as a names list read that is not an array)
 
 - The SDK is **0.x**: minor versions may change the API until 1.0 (semver: 0.y.z makes no
   compatibility promise). Read the changelog before upgrading.
-- **In apps: pin exactly** (`"@inversealtruism/cairn-sdk": "0.5.0"`) and commit your lockfile.
-  **In libraries that depend on the SDK: use a range** (`^0.5.0`; on 0.x a caret stays inside one minor) to avoid duplicate installs.
+- **In apps: pin exactly** (`"@inversealtruism/cairn-sdk": "0.6.0"`) and commit your lockfile.
+  **In libraries that depend on the SDK: use a range** (`^0.6.0`; on 0.x a caret stays inside one minor) to avoid duplicate installs.
 - The low-level **`@inversealtruism/csd-*` packages are versioned independently**, so their numbers differ.
   If you depend on more than one, pin each exactly and make sure your lockfile resolves a single
   `@inversealtruism/csd-codec` and a single `@inversealtruism/csd-crypto` (a codec that *signs* must be the

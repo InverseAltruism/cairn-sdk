@@ -29,7 +29,7 @@ import { txid, payloadHash } from "@inversealtruism/csd-codec";
 import {
   DOMAIN, parseRecord, feeBpsAt, bindOfferTerms, provenOfferTerms, fillOutputPlan, isTokenWant,
   fillEndorsement, fillIsSafe, requiredFillOutputs, previewFill, TREASURY_ADDR, epochOf,
-  type ProvenOfferTerms, type OfferState,
+  type MintedProvenOfferTerms, type OfferState,
 } from "@inversealtruism/cairnx-core";
 import type { InclusionResult } from "@inversealtruism/csd-light";
 
@@ -38,7 +38,7 @@ import type { InclusionResult } from "@inversealtruism/csd-light";
 // four hand-built producers the audit flagged. Corpus-equivalence over every real on-chain offer
 // (55) + synthetic envelope variants proved the old copy byte-identical to canonical before the
 // swap (test/proven-terms-corpus.test.ts pins it). Re-exported as a POINTER for existing importers.
-export type { ProvenOfferTerms } from "@inversealtruism/cairnx-core";
+export type { ProvenOfferTerms, MintedProvenOfferTerms } from "@inversealtruism/cairnx-core";
 
 /** The trust-labeled verdict. `ok:false` + `transient:true` = a retryable chain-catching-up soft-fail (NOT a
  *  proven mismatch). `payto`/`seller`/`terms` are populated whenever they could be merkle-derived. */
@@ -51,7 +51,8 @@ export interface OfferFillCheck {
   transient?: boolean;
   payto?: string;
   seller?: string;
-  terms?: ProvenOfferTerms;
+  /** Minted by cairnx-core's `provenOfferTerms`, so it can be passed back to `bindOfferTerms` without the opt-out. */
+  terms?: MintedProvenOfferTerms;
   blockHeight?: number;
   /** B7b (REBIND W3/M1): the PROVEN CSD outputs to build for `pay` (a WHOLE fill of a non-partial offer),
    *  sized from the merkle-proven offer by the single-sourced `fillOutputPlan`. Present only when `pay` was
@@ -202,8 +203,8 @@ export async function preverifyOffer(opts: {
   const w = rec.want ?? {};
   const payto = (w.payto && ADDR.test(String(w.payto).toLowerCase())) ? String(w.payto).toLowerCase() : seller;
   // B4b: the ONE pinned producer; blockHeight is the merkle-proven inclusion height, never served.
-  // B7b keeps the BRANDED MintedProvenOfferTerms (no widening annotation) so the 3-arg bindOfferTerms
-  // opt-in below type-checks - a hand-built terms object opting into the new legs is a compile error.
+  // Keeps the BRANDED MintedProvenOfferTerms (no widening annotation): bindOfferTerms with the give and
+  // wantType legs on accepts only minted terms, so a hand-built terms object there is a compile error.
   const terms = provenOfferTerms(offerRec, blockHeight);
 
   // S-B4: refuse records the chain's own resolver REJECTS at creation (cairnx-core resolve.ts) -
@@ -290,10 +291,11 @@ export async function preverifyOffer(opts: {
       return { ok: false, trust: "verified", reason: "the served offer is missing seller (the rebate recipient) - pass the resolver's full offer object, or omit servedOffer", ...base };
     if (String(so.seller).toLowerCase() !== seller)
       return { ok: false, trust: "verified", reason: "the served seller doesn't match the offer's on-chain author (a lying resolver may be redirecting your payment)", ...base };
-    // B7b: the 3-arg OPT-IN turns on the give legs (W7 shortchange: give.amount inflated a millionfold
-    // passes every legacy leg) + the symmetric want-type refusal (proven-token served as CSD, which only
-    // the wallet caught one-sidedly before). Give is compared as VERBATIM strings, never a deep object
-    // compare (resolve.ts copies the record's give verbatim and tracks delivered separately).
+    // B7b: both legs on, stated explicitly (cairnx-core 0.2.0 also defaults them on): the give legs (W7
+    // shortchange: give.amount inflated a millionfold passes every legacy leg) + the symmetric want-type
+    // refusal (proven-token served as CSD, which only the wallet caught one-sidedly before). Give is
+    // compared as VERBATIM strings, never a deep object compare (resolve.ts copies the record's give
+    // verbatim and tracks delivered separately).
     if (bindOfferTerms(opts.servedOffer, terms, { give: true, wantType: true }))
       return { ok: false, trust: "verified", reason: "the served terms don't match the offer's on-chain record (fee, rebate, partial sizing, the give, or the want type - a lying resolver could mis-size or re-route the fill, redirecting or burning your payment)", ...base };
     // P75-5 MF-06: the token PRICE legs. bindOfferTerms's wantType leg compares only the PRESENCE of a
