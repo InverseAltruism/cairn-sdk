@@ -61,6 +61,12 @@ console.log("=== ContentClient: self-certification ===");
     (u) => u.pathname === `/content/${h}` ? bytes(canonicalBytes) : undefined,
   ]) }) });
   ok("prepare().payloadHash matches csd-codec", cc.prepare(obj).payloadHash === h);
+  // csd-codec 0.1.18 canonicalJson refuses a value JSON would silently rewrite; plain objects hash as at 0.5.0.
+  const refuses = (v: unknown) => { try { cc.prepare(v); return false; } catch { return true; } };
+  ok("prepare() refuses a Map, a Date and an array hole", refuses({ m: new Map() }) && refuses({ d: new Date(0) }) && refuses({ a: [1, , 3] }));
+  ok("prepare() hashes a plain and a null-prototype object as 0.5.0 did",
+    h === "0x2a50cd2ce29f09ad0407b92b175df43a2f25897f3f2eb68f472448e71c3a23da"
+    && cc.prepare(Object.assign(Object.create(null), { v: 1, title: "t" })).payloadHash === "0x7f56d6ae32c7f457f4580f306e4143212c93e9dfcf3925ba6f06149abe415a1a");
   const got = await cc.get<typeof obj>(h);
   ok("get() returns the verified object", !!got && got.title === "t");
 

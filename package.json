@@ -67,16 +67,16 @@
     "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
-    "@inversealtruism/cairnx-core": "0.1.42",
-    "@inversealtruism/csd-client": "0.1.16",
-    "@inversealtruism/csd-codec": "0.1.16",
-    "@inversealtruism/csd-crypto": "0.1.16",
-    "@inversealtruism/csd-light": "0.1.21",
-    "@inversealtruism/csd-registry": "0.1.18",
-    "@inversealtruism/csd-tx": "0.1.19"
+    "@inversealtruism/cairnx-core": "0.2.0",
+    "@inversealtruism/csd-client": "0.1.18",
+    "@inversealtruism/csd-codec": "0.1.18",
+    "@inversealtruism/csd-crypto": "0.1.18",
+    "@inversealtruism/csd-light": "0.1.23",
+    "@inversealtruism/csd-registry": "0.1.20",
+    "@inversealtruism/csd-tx": "0.1.21"
   },
   "devDependencies": {
-    "@inversealtruism/csd-siwc": "0.1.17",
+    "@inversealtruism/csd-siwc": "0.1.19",
     "esbuild": "^0.27.0",
     "playwright-core": "^1.49.0",
     "tsup": "^8.5.1",

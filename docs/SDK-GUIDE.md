@@ -82,7 +82,10 @@ Wallet's own on-device fill-SPV in 0.2.60+ is what fails-closed before signing),
 value should clear it first. The standalone `preverifyOffer({ light, client, offerId, servedOffer, pay,
 plannedOutputs })` takes an injected light client + tx reader for custom wiring; `bindOfferTerms` / `feeBpsAt`
 are the pure term-bind primitives, re-exported from the pinned cairnx-core (single-sourced; the former local
-copies were retired when the pin began exporting them).
+copies were retired when the pin began exporting them). `bindOfferTerms(servedOffer, terms)` also checks the
+offer's give and want type by default, so `terms` must come from `provenOfferTerms` or from the result's
+`terms` (typed `MintedProvenOfferTerms`); hand-built terms compile only with `{ give: false, wantType: false }`,
+the older verdict that misses a lied-about give.
 
 **Sign-in:** the SIWC signature proves key control ONCE. Verify it **server-side** (`verifySiwc`) and
 then issue **your own** session (rotating, expiring, HttpOnly+Secure+SameSite cookie). The signature is

@@ -62,28 +62,35 @@ const servedFor = (extra: object = {}) => ({ id: "", seller: SELLER, feeBps: 150
 
 console.log("F13 offer pre-verify (preverifyOffer):");
 
-// unit: the local bindOfferTerms/feeBpsAt copies match cairnx-core's behaviour
+// unit: the re-exported bindOfferTerms/feeBpsAt behave as cairnx-core's
 await ok("feeBpsAt: <V11 -> 0, [V11,V16) -> 100, >=V16 -> 150", () => feeBpsAt(1) === 0 && feeBpsAt(29960) === 100 && feeBpsAt(40000) === 150);
-await ok("bindOfferTerms: honest == no mismatch; a lie -> mismatch", () => {
+const LEGACY = { give: false, wantType: false } as const;
+await ok("bindOfferTerms opted out on hand-built terms: honest == no mismatch; a lie -> mismatch", () => {
   const t = { height: H, feeBps: 150, value: "500000000" as string | undefined, taker: undefined, bid: undefined, min: undefined };
-  return bindOfferTerms(servedFor(), t) === false && bindOfferTerms(servedFor({ feeBps: 0 }), t) === true;
+  return bindOfferTerms(servedFor(), t, LEGACY) === false && bindOfferTerms(servedFor({ feeBps: 0 }), t, LEGACY) === true;
+});
+await ok("bindOfferTerms default on hand-built terms (a JS caller; TypeScript refuses the call): REFUSED, even an honest offer", () => {
+  const t = { height: H, feeBps: 150, value: "500000000" as string | undefined, taker: undefined, bid: undefined, min: undefined };
+  return bindOfferTerms(servedFor(), t as never) === true;
 });
 
-// B7b: the 3-arg OPT-IN give legs (W7) + symmetric want-type refusal, over BRANDED proven terms.
-await ok("bindOfferTerms 3-arg: an honest give+type match -> no mismatch", () => {
+// The give legs (W7) + symmetric want-type refusal over BRANDED proven terms: on by default since cairnx-core 0.2.0.
+await ok("bindOfferTerms: an honest give+type match -> no mismatch (default, explicit legs and opted out)", () => {
   const t = provenOfferTerms({ t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } } as never, H);
-  return bindOfferTerms(servedFor(), t, { give: true, wantType: true }) === false;
+  return bindOfferTerms(servedFor(), t) === false && bindOfferTerms(servedFor(), t, { give: true, wantType: true }) === false
+      && bindOfferTerms(servedFor(), t, LEGACY) === false;
 });
-await ok("[W7 give shortchange] a served give.amount inflated a millionfold is REFUSED (only the opt-in give leg catches it)", () => {
+await ok("[W7 give shortchange] a served give.amount inflated a millionfold is REFUSED by default (only the opt-out misses it)", () => {
   const t = provenOfferTerms({ t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } } as never, H);
-  return bindOfferTerms(servedFor({ give: { ticker: "AAA", amount: "10000000000" } }), t, { give: true, wantType: true }) === true
-      && bindOfferTerms(servedFor({ give: { ticker: "AAA", amount: "10000000000" } }), t) === false; // 2-arg is byte-identical to pre-B6: does NOT catch the give
+  const lie = servedFor({ give: { ticker: "AAA", amount: "10000000000" } });
+  return bindOfferTerms(lie, t) === true && bindOfferTerms(lie, t, { give: true, wantType: true }) === true
+      && bindOfferTerms(lie, t, LEGACY) === false; // the opt-out is the pre-B6 verdict: it does NOT catch the give
 });
-await ok("[want-type flip] a proven TOKEN offer served as CSD is REFUSED by the wantType leg (the reverse the legacy value leg misses)", () => {
+await ok("[want-type flip] a proven TOKEN offer served as CSD is REFUSED by default by the wantType leg (the reverse the legacy value leg misses)", () => {
   const t = provenOfferTerms({ t: "offer", give: { ticker: "AAA", amount: "10" }, want: { ticker: "BBB", amount: "5", payto: SELLER } } as never, H);
   // served as CSD (want.value, no ticker): the legacy value leg does NOT fire (a proven token has no value)
-  return bindOfferTerms(servedFor(), t, { give: true, wantType: true }) === true
-      && bindOfferTerms(servedFor(), t) === false;
+  return bindOfferTerms(servedFor(), t) === true && bindOfferTerms(servedFor(), t, { give: true, wantType: true }) === true
+      && bindOfferTerms(servedFor(), t, LEGACY) === false;
 });
 
 // B7b: the discriminated successors are surfaced; the deprecated funcs stay exported + behavior-frozen.
