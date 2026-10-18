@@ -140,8 +140,8 @@ a 2xx body whose shape is wrong, such as a names list read that is not an array)
 
 - The SDK is **0.x**: minor versions may change the API until 1.0 (semver: 0.y.z makes no
   compatibility promise). Read the changelog before upgrading.
-- **In apps: pin exactly** (`"@inversealtruism/cairn-sdk": "0.5.0"`) and commit your lockfile.
-  **In libraries that depend on the SDK: use a range** (`^0.5.0`; on 0.x a caret stays inside one minor) to avoid duplicate installs.
+- **In apps: pin exactly** (`"@inversealtruism/cairn-sdk": "0.6.0"`) and commit your lockfile.
+  **In libraries that depend on the SDK: use a range** (`^0.6.0`; on 0.x a caret stays inside one minor) to avoid duplicate installs.
 - The low-level **`@inversealtruism/csd-*` packages are versioned independently**, so their numbers differ.
   If you depend on more than one, pin each exactly and make sure your lockfile resolves a single
   `@inversealtruism/csd-codec` and a single `@inversealtruism/csd-crypto` (a codec that *signs* must be the
