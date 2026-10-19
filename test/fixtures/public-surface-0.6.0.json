@@ -1,5 +1,5 @@
 {
- "_note": "Names exported (value or type) by each dist entry of 0.6.0, without the registry surface removed in 0.7.0. Taken from the TypeScript export list of the built .d.ts files.",
+ "_note": "Names exported (value or type) by each dist entry of 0.6.0, without the registry surface removed in 0.7.0, and the IndexerClient methods of 0.6.0. Taken from the TypeScript export list of the built .d.ts files and the built class.",
  "entries": {
   "chain": [
    "ADDR_RE",
@@ -204,5 +204,41 @@
    "UseCairnResult",
    "createCairnHooks"
   ]
- }
+ },
+ "indexerClientMethods": {
+  "kept": [
+   "address",
+   "addressTxs",
+   "addressUtxo",
+   "attestations",
+   "block",
+   "blockHashAtHeight",
+   "blockTxids",
+   "domainProposals",
+   "domains",
+   "health",
+   "proposal",
+   "reputation",
+   "sse",
+   "streamAll",
+   "streamBlocks",
+   "streamDomain",
+   "subscribe",
+   "tipHash",
+   "tipHeight",
+   "tx",
+   "txMerkleProof",
+   "txStatus",
+   "verifyInclusion"
+  ],
+  "removed": [
+   "registryPeers",
+   "registryGateways",
+   "identity",
+   "reverseIdentity"
+  ]
+ },
+ "removedFacadeMembers": [
+  "registry"
+ ]
 }

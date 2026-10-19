@@ -1,5 +1,5 @@
-// 0.7.0 removed the registry API (cairn.registry, the ./registry subpath, registryPeers/registryGateways and the
-// csd-registry dependency). This builds the package the way `pnpm build` does, into a scratch directory, and checks
+// 0.7.0 removed the registry API (cairn.registry, the ./registry subpath, the IndexerClient registryPeers,
+// registryGateways, identity and reverseIdentity methods, and the csd-registry dependency). This builds the package the way `pnpm build` does, into a scratch directory, and checks
 // the shipped surface: no registry name in any entry's runtime or type exports, no registry entry or exports-map
 // key, no csd-registry import in the output; and every other name that 0.6.0 exported is still exported.
 // Offline. Run: pnpm exec tsx test/no-registry-surface.test.mjs
@@ -15,7 +15,9 @@ const ok = (name, fn) => { try { fn(); pass++; console.log("  ✓", name); } cat
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-const pinned = JSON.parse(readFileSync(join(root, "test/fixtures/public-surface-0.6.0.json"), "utf8")).entries;
+const fixture = JSON.parse(readFileSync(join(root, "test/fixtures/public-surface-0.6.0.json"), "utf8"));
+const pinned = fixture.entries;
+const methods = fixture.indexerClientMethods;
 
 /** Every name the 0.6.0 build exported from the registry entry, plus RegistryClient from the root entry. */
 const REMOVED = [
@@ -83,13 +85,14 @@ try {
       assert.deepEqual(Object.keys(runtime[e]).filter((n) => REMOVED.includes(n)), [], `${e} values`);
     }
   });
-  ok("the Cairn facade has no registry member and IndexerClient has no registry routes", () => {
+  ok("the Cairn facade has no registry member and IndexerClient has none of the registry and identity methods", () => {
     const cairn = new runtime.index.Cairn({ network: "mainnet" });
-    assert.equal("registry" in cairn, false);
-    assert.equal(typeof runtime.indexer.IndexerClient.prototype.registryPeers, "undefined");
-    assert.equal(typeof runtime.indexer.IndexerClient.prototype.registryGateways, "undefined");
+    for (const m of fixture.removedFacadeMembers) assert.equal(m in cairn, false, m);
     const dts = readFileSync(join(out, "indexer.d.ts"), "utf8");
-    assert.ok(!/registryPeers|registryGateways/.test(dts));
+    for (const m of methods.removed) {
+      assert.equal(typeof runtime.indexer.IndexerClient.prototype[m], "undefined", m);
+      assert.ok(!new RegExp(`\\b${m}\\b`).test(dts), `${m} in indexer.d.ts`);
+    }
   });
 
   console.log("honest path (the rest of the 0.6.0 surface):");
@@ -100,10 +103,14 @@ try {
       assert.deepEqual(pinned[e].filter((n) => !have.has(n)), [], `${e}: missing`);
     }
   });
-  ok("the production call shape still works: Cairn builds and the indexer keeps its identity reads", () => {
+  ok("every other IndexerClient method of 0.6.0 is still a method, and nothing was added", () => {
+    const have = Object.getOwnPropertyNames(runtime.indexer.IndexerClient.prototype).filter((n) => n !== "constructor").sort();
+    assert.deepEqual(have, [...methods.kept].sort());
+  });
+  ok("the production call shape still works: Cairn builds with chain, index, content and names", () => {
     const cairn = new runtime.index.Cairn({ network: "mainnet" });
-    for (const m of ["tipHeight", "verifyInclusion", "identity", "reverseIdentity"]) assert.equal(typeof cairn.index[m], "function", m);
     for (const ns of ["chain", "index", "content", "names"]) assert.ok(cairn[ns], ns);
+    for (const m of ["tipHeight", "verifyInclusion", "reputation", "address"]) assert.equal(typeof cairn.index[m], "function", m);
   });
 } finally {
   cleanup();

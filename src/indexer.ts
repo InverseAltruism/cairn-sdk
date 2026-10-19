@@ -151,14 +151,6 @@ export class IndexerClient {
     return this.http.getJson<unknown[]>(`/proposal/${encodeURIComponent(id)}/attestations`);
   }
 
-  identity(handle: string): Promise<unknown> {
-    return this.http.getJson(`/identity/${encodeURIComponent(handle)}`);
-  }
-
-  reverseIdentity(addr: string): Promise<unknown> {
-    return this.http.getJson(`/address/${encodeURIComponent(addr)}/identity`);
-  }
-
   // ---- trust-minimized inclusion ----------------------------------------
 
   /**

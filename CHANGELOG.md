@@ -10,7 +10,8 @@ Decision P-5 (2026-10-13): one naming system. The registry served the swarm's pe
 swarm is dead; the indexer's `/registry/peers` and `/registry/gateways` answer `[]` today and
 return 404 once the indexer release of this wave is deployed. The `@inversealtruism/csd-registry` package is
 removed from the csd-sdk monorepo and deprecated on npm after this release, so nothing here depends on it.
-Replacement: none for peers, gateways and the record builders; for identity reads see below.
+Replacement: none for peers, gateways, identity reads and the record builders; for .csd names use `cairn.names`
+(server-trusted display reads; the wallet verifies a payment target on-device).
 
 - `RegistryClient` (export) and its option type `RegistryClientOptions`, the `cairn.registry` namespace, and the
   `@inversealtruism/cairn-sdk/registry` subpath export. That removes `registry.gateways()`, `peers()`,
@@ -19,7 +20,9 @@ Replacement: none for peers, gateways and the record builders; for identity read
   `verifyIdentitySig`, `DOMAINS`, `buildPeerRecord`, `buildGatewayRecord`, `buildIdentityCommit`,
   `buildIdentityReveal`, `epochOf`, and the types `RankedPeer`, `RankedGateway`, `ResolvedIdentity`,
   `ChainRecord`, `ResolveOpts`, `BuiltRecord`.
-- `IndexerClient.registryPeers()` and `registryGateways()` (`cairn.index.*`).
+- `IndexerClient.registryPeers()`, `registryGateways()`, `identity(handle)` and `reverseIdentity(addr)`
+  (`cairn.index.*`). The last two read the indexer's `/identity/:handle` and `/address/:a/identity`, the
+  registry's identity layer, which the indexer removes in the same wave (they answer 404 when no binding exists).
 - The dependency `@inversealtruism/csd-registry` (0.1.20). The lockfile diff only removes it and its entry.
 - `examples/register-swarm-peer.mjs`, which built and proposed swarm peer and gateway records, and the registry
   lines of `examples/read-only.mjs` and `test/e2e/e2e-read.mjs`.
@@ -27,20 +30,19 @@ Replacement: none for peers, gateways and the record builders; for identity read
 ### What a 0.6.0 user sees after the indexer deploy
 
 `cairn.registry.peers()` and `cairn.registry.gateways()` (and `cairn.index.registryPeers()` and
-`registryGateways()`) reject with `HttpError` status 404 instead of resolving `[]`. Code that guarded those calls
-with a `.catch(() => [])` keeps working; code that did not now throws. On 0.7.0, `cairn.registry` is undefined
-and the names above are not exported (a TypeScript build fails at the import or the property access).
-
-For identity reads, `cairn.index.identity(handle)` and `cairn.index.reverseIdentity(addr)` stay. They return
-`unknown` and throw `HttpError` 404 for an unresolved handle, where `registry.resolveName()` and `reverseName()`
-returned `null`. Both are indexer-trusted display reads (the `verified` flag is the indexer's claim); for a
-payment target use the wallet's on-device name verification.
+`registryGateways()`) reject with `HttpError` status 404 instead of resolving `[]`. `cairn.index.identity()` and
+`reverseIdentity()` reject with `HttpError` 404 once the route is gone. `registry.resolveName()` and
+`reverseName()` turned a 404 into `null`, so they resolve `null` after the deploy. Code that guarded these calls with a `.catch(() => [])` keeps working; code that did not now throws.
+On 0.7.0, `cairn.registry` is undefined and the names above are not exported or not methods (a TypeScript build
+fails at the import or the property access).
 
 ### Surface
 
 The public export list (values and types, every entry) is otherwise unchanged: 208 names at 0.6.0, 189 after
-removing the 18 names of the registry entry and `RegistryClient` from the root entry. `test/no-registry-surface.test.mjs`
-builds the package and pins both halves against `test/fixtures/public-surface-0.6.0.json`.
+removing the 18 names of the registry entry and `RegistryClient` from the root entry. The four removed
+`IndexerClient` methods and `Cairn.registry` are members, not export names, so they do not change that count.
+`test/no-registry-surface.test.mjs` builds the package and pins the export list and the `IndexerClient` method
+list against `test/fixtures/public-surface-0.6.0.json`.
 
 ### Dependencies
 
