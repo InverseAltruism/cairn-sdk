@@ -1,6 +1,6 @@
-// biome.json enables exactly four rules (STANDARDS section 8): unused imports, focused tests and ts-ignore directives
-// are errors, so `pnpm lint` fails on them; empty blocks are a warning until the 91 existing ones are fixed. Every
-// other rule and the formatter are off. Runs the real Biome binary on a throwaway git sandbox holding one
+// biome.json enables exactly four rules: unused imports, focused tests and ts-ignore directives are errors, so
+// `pnpm lint` fails on them; empty blocks are a warning until the existing ones are fixed (`pnpm lint` lists them).
+// Every other rule and the formatter are off. Runs the real Biome binary on a throwaway git sandbox holding one
 // violation of each rule plus code that the recommended preset would flag.
 // Run: pnpm exec tsx test/lint-config.test.mjs   (offline)
 import assert from "node:assert/strict";

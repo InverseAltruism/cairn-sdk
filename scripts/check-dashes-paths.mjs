@@ -2,6 +2,8 @@
 // Fails when a tracked .md outside docs/archive/ contains an em dash (U+2014), or when tracked code reads a
 // sibling checkout (a parent-relative cairn* or csd-* directory, or the host's absolute checkout root). Docs may
 // name those paths; only code is checked for them. Run: node scripts/check-dashes-paths.mjs [repo root]
+// KEEP-IN-SYNC with cairn-wallet's scripts/check-dashes-paths.mjs: the same checks with each repo's own exceptions
+// (the wallet takes no shared npm package, so the script has no common home).
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
