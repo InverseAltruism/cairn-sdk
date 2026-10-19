@@ -23,7 +23,7 @@ This repo follows the maintainers' cross-repo engineering standard (a private do
 - Comments state constraints and non-obvious invariants, not history or audit IDs. Removing code needs the same evidence as adding it.
 - Docs: this file holds what stays true (no version tables, no status snapshots; versions live in `package.json` and tags, live state comes from a live query). Dates are absolute, no em dashes.
 
-Known deviations (checked 2026-10-11, not exhaustive): the opt-in wallet-connector e2e (`test:live:wallet`) loads a built `../cairn-wallet/dist` (or `WALLET_EXT`), and several maintainer-run `scripts/*.mjs` harnesses load the wallet from a fixed host path; `pnpm lint` (Biome, `biome.json`) reports 91 empty blocks as warnings (81 of them in the six `scripts/*.mjs` live harnesses; counted 2026-10-19), so that rule does not fail CI yet; the heavy comment blocks and audit IDs in `src/` are trimmed per module, not as drive-by edits.
+Known deviations (checked 2026-10-11, not exhaustive): the opt-in wallet-connector e2e (`test:live:wallet`) loads a built `../cairn-wallet/dist` (or `WALLET_EXT`), `test/e2e/e2e-siwc.mjs` and several maintainer-run `scripts/*.mjs` harnesses load the wallet (and e2e-siwc also csd-siwc and the cairn console) from fixed host paths (all listed as exceptions in `scripts/check-dashes-paths.mjs`); `pnpm lint` (Biome, `biome.json`) reports 91 empty blocks as warnings (81 of them in the six `scripts/*.mjs` live harnesses; counted 2026-10-19), so that rule does not fail CI yet; the heavy comment blocks and audit IDs in `src/` are trimmed per module, not as drive-by edits.
 
 ## The stack around it
 
@@ -58,7 +58,7 @@ Deps: exact-pinned in `package.json`, which is the single source for every versi
 - Legacy signIn() is first-party-only and @deprecated; third parties use SIWC.
 - Consensus values (NAME_RE, RESERVED_NAMES, fee constants, codec shapes) always come from the published csd-*/cairnx-core packages; never re-declare them locally.
 - Security fixes must not regress UX: never add complexity, latency, or spurious declines to a legitimate hot path in the name of hardening.
-- House style: no em dashes in any doc (`grep -cP '\x{2014}' <file>` prints 0); keep prose concrete, no filler.
+- House style: no em dashes in any doc (`grep -cP '\x{2014}' <file>` prints 0; `pnpm check:dashes-paths` checks every tracked .md outside docs/archive/); keep prose concrete, no filler.
 - Releasing is a maintainer action: contributors do not bump versions, tag, or publish; maintainers publish to npm (see Release and publish).
 
 ## Dev workflow
@@ -69,6 +69,7 @@ Package manager is pnpm (packageManager pnpm@10.32.1). `pnpm-lock.yaml` is the s
 pnpm install --frozen-lockfile
 pnpm typecheck                  # tsc over src and test/ (strict, noUncheckedIndexedAccess)
 pnpm lint                       # Biome, four rules only (biome.json; test/lint-config.test.mjs)
+pnpm check:dashes-paths         # em dashes in docs, sibling-checkout reads in code (CI runs both)
 pnpm build                      # tsup, 8 entrypoints
 pnpm test                       # offline unit suites (tsx)
 pnpm test:live                  # examples/read-only.mjs + test/e2e/e2e-read.mjs vs live mainnet

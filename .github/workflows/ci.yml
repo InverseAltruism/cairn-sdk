@@ -31,6 +31,8 @@ jobs:
       # biome.json: unused imports, focused tests and ts-ignore directives fail the step; empty blocks are warnings for now.
       - name: lint (Biome, four rules)
         run: pnpm lint
+      - name: no em dash in tracked docs, no sibling-checkout reads outside the listed exceptions
+        run: pnpm check:dashes-paths
       - name: build (all 9 subpaths emit ESM+CJS+dts)
         run: pnpm build
       - name: test (sdk/connect/errors/controller/react/hardening)
