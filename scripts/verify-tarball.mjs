@@ -57,6 +57,9 @@ try {
     cwd: repo, env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" }, stdio: ["ignore", "ignore", "inherit"],
   });
   if (built.status !== 0) die(`the build (${buildArgs.join(" ")}) exited ${built.status ?? built.signal}`);
+  // Taken before pnpm runs: a pnpm hook (a global pnpmfile's beforePacking, which runs even with scripts off) could
+  // rewrite dist/ between the build and the pack.
+  const builtDist = tree(join(repo, "dist"));
   execFileSync("pnpm", ["pack", "--pack-destination", freshDir], {
     cwd: repo, env: { ...process.env, npm_config_ignore_scripts: "true" }, stdio: ["ignore", "ignore", "inherit"],
   });
@@ -71,7 +74,7 @@ try {
     mkdirSync(dst, { recursive: true });
     execFileSync("tar", ["xf", src, "-C", dst], { stdio: ["ignore", "ignore", "inherit"] });
   }
-  const builtDist = tree(join(repo, "dist")), packedDist = tree(join(freshX, "package", "dist"));
+  const packedDist = tree(join(freshX, "package", "dist"));
   ok("the fresh pack's dist/ equals the files just built",
     builtDist.size === packedDist.size && [...builtDist].every(([p, h]) => packedDist.get(p) === h));
   if (given !== fresh) {

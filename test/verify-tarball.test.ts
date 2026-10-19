@@ -71,6 +71,20 @@ try {
     ok(`${label}: the verifier rebuilt dist/`, !readFileSync(distJs, "utf8").includes("// stale dist"));
   }
 
+  // A global pnpmfile whose beforePacking hook (it runs with scripts off) writes a stale dist/ after the build.
+  {
+    appendFileSync(distJs, "\n// stale dist\n");
+    const stale = readFileSync(distJs);
+    const staleTgz = packIn({ ...process.env, npm_config_ignore_scripts: "true" });
+    const hookDir = join(work, "hook");
+    mkdirSync(hookDir);
+    writeFileSync(join(hookDir, "stale.bin"), stale);
+    const pnpmfile = join(hookDir, "pnpmfile.cjs");
+    writeFileSync(pnpmfile, `const fs = require("fs");\nmodule.exports = { hooks: { beforePacking(pkg) { fs.copyFileSync(${JSON.stringify(join(hookDir, "stale.bin"))}, ${JSON.stringify(distJs)}); return pkg; } } };\n`);
+    r = verify(staleTgz, { ...process.env, npm_config_global_pnpmfile: pnpmfile });
+    ok("a beforePacking hook that restores a stale dist/ after the build is rejected", r.code === 1 && /FAIL the fresh pack's dist\/ equals the files just built/.test(r.out));
+  }
+
   // A build that fails stops the verifier.
   writeFileSync(join(pkg, "src/index.ts"), readFileSync(join(pkg, "src/index.ts"), "utf8") + "\nexport const broken: number = ;\n");
   r = verify(packed);
