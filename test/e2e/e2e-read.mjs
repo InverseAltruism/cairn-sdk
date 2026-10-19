@@ -2,7 +2,7 @@
 // (cairn-substrate.com) plus adversarial verification. No wallet, no key, no cost.
 //   node test/e2e/e2e-read.mjs
 import { Cairn, ContentVerificationError } from "../../dist/index.js";
-import { makeHarness, until } from "./harness.mjs";
+import { makeHarness } from "./harness.mjs";
 
 const h = makeHarness("read");
 // CAIRN_BASE points every read at another cairn front door (e.g. http://127.0.0.1:7777); default is mainnet.
