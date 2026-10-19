@@ -3,9 +3,10 @@
 // `prepack` but not `prepublishOnly`, and publishing a pre-made tarball (the sanctioned path here) fires no
 // hook, so this script is the check that runs on the tarball itself.
 //
-//   1. Rebuild and repack this tree (`pnpm pack`, whose prepack runs the build) and require the tarball's
-//      sha256 to equal the fresh pack's. The pack is deterministic, so any edited, stale or foreign byte
-//      in the tarball fails here. On a mismatch the differing paths are listed.
+//   1. Rebuild (`pnpm run build`, explicitly: `pnpm pack` skips prepack under ignore-scripts and would pack
+//      whatever dist/ is on disk) and repack this tree, then require the tarball's sha256 to equal the fresh
+//      pack's. The pack is deterministic, so any edited, stale or foreign byte in the tarball fails here. On a
+//      mismatch the differing paths are listed.
 //   2. Both package entries (dist/index.js for ESM, dist/index.cjs for require()) exist, carry the ASDK-1
 //      transient arm ("fetch failed") and a parseable DEFAULT_SPV_CHECKPOINT, which is printed.
 // The checkpoint's agreement with the chain is test/spv-checkpoint.test.ts (a pinned header fixture); no
@@ -46,6 +47,7 @@ const work = mkdtempSync(join(tmpdir(), "cairn-sdk-tarball-"));
 try {
   // 1. Rebuild and repack, then compare whole-tarball bytes.
   const freshDir = join(work, "fresh");
+  execFileSync("pnpm", ["run", "build"], { cwd: repo, stdio: ["ignore", "ignore", "inherit"] });
   execFileSync("pnpm", ["pack", "--pack-destination", freshDir], { cwd: repo, stdio: ["ignore", "ignore", "inherit"] });
   const freshTgz = readdirSync(freshDir).filter((f) => f.endsWith(".tgz")).map((f) => join(freshDir, f))[0];
   if (!freshTgz) die("`pnpm pack` produced no tarball");
