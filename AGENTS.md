@@ -8,7 +8,6 @@
 - `cairn.chain`: node RPC, tx builders, verifying LightClient (re-exports csd-client/tx/codec/crypto/light)
 - `cairn.index`: L2 indexer (Esplora REST + merkle proofs + SSE/WS)
 - `cairn.content`: self-certifying content (sha256 verified client-side)
-- `cairn.registry`: L3 peer/gateway/identity resolution
 - `cairn.names`: .csd names + CairnX market READS
 
 It also owns the dApp-facing wallet API contract (src/connect.ts CairnProvider) and the client half of SIWC (Sign in with CSD; server verification is `@inversealtruism/csd-siwc`). Position: csd-sdk = chain primitives (the "ethers" layer); cairn-sdk = the "wagmi + service clients" layer. The repo doubles as the ecosystem's live browser E2E rig (scripts/ harnesses driving the production site + wallet).
@@ -31,7 +30,7 @@ Everything defaults to the hosted public bases at https://cairn-substrate.com: R
 
 ## Architecture
 
-`src/` is built by tsup to esm+cjs+dts with 8 entry points (the `build` script lists them):
+`src/` is built by tsup to esm+cjs+dts with 7 entry points (the `build` script lists them):
 
 - `index.ts`: Cairn facade, CairnConfig, DEFAULT_SPV_CHECKPOINT (height and hash are in the source), and the lazy PoW-verified header wiring into the indexer via `seededSpvLight`: a forward sync from the checkpoint to the tip through a BATCH header provider over the cairn server's /api/headers, with a per-attempt timeout deliberately above the server's 10 s route deadline; a few batched requests, never a per-height flood; fail-soft to on-demand sync. Cross-origin reach of that provider depends on the cairn server's CORS mount on /api/headers. The checkpoint is picked in cairn (`bump-swapguard-cp.mjs`) and copied here in the same cycle; it is never a unilateral SDK edit. `test/spv-checkpoint.test.ts` recomputes the anchor's hash from a committed header capture (`test/fixtures/spv-headers-*.json`, PoW and prev-links checked) and reds when the constant is not that block; a moved checkpoint needs a new capture. Verification only runs forward from the anchor, so `index.verifyInclusion` for a tx confirmed below the checkpoint returns `proof-consistent`, not `verified-inclusion` (fail-closed, never an over-claim). A dApp that refuses anything below `verified-inclusion` starts refusing those reads when the anchor moves; `config.spvCheckpoint` keeps an older anchor. Every checkpoint move names the affected band in the CHANGELOG.
 - `connect.ts`: CairnProvider typed contract, detectProvider/discoverProviders (csd:announceProvider discovery), WalletConnection (connect/getAddress/signInWithCsd/send/propose/attest/fillOffer/sealClaim/revealClaim/permissions/events).
@@ -39,9 +38,9 @@ Everything defaults to the hosted public bases at https://cairn-substrate.com: R
 - `content.ts`: prepare/put/hash, verified get/getBytes (source order swarm -> indexer -> cairn origin), hash format gated against path-walk.
 - `names.ts`: NamesClient over /trade/api/cairnx/*; inputs pre-validated with cairnx-core NAME_RE + RESERVED_NAMES.
 - `chain.ts`: tip/utxos/submit/light(); Chain.send() = key-backed send via buildSendVerified + verifyInputValues (fail-closed).
-- `registry.ts`, `controller.ts` (framework-agnostic reactive store; spoofed-accountsChanged adoption guard), `react.ts` (createCairnHooks(React), zero react dependency), `errors.ts` (CairnError hierarchy with stable codes; SDK_VERSION manually kept == package.json, test-enforced), `http.ts` (15s timeout, 16MiB streamed byte cap, idempotent-GET-only retries).
+- `controller.ts` (framework-agnostic reactive store; spoofed-accountsChanged adoption guard), `react.ts` (createCairnHooks(React), zero react dependency), `errors.ts` (CairnError hierarchy with stable codes; SDK_VERSION manually kept == package.json, test-enforced), `http.ts` (15s timeout, 16MiB streamed byte cap, idempotent-GET-only retries).
 
-docs/SDK-GUIDE.md (third-party guide incl. the verifies-vs-trusts table), examples/ (read-only, wallet-connect, siwc-login, node-signer, hello-csd, register-swarm-peer [historical; swarm L1 is dead]), scripts/ (esbuild example build + 6 maintainer-run live E2E harnesses: scripts/live-wallet-ui.mjs, scripts/names-e2e.mjs, scripts/names-buy-e2e.mjs, scripts/ux-live-readonly.mjs, scripts/ux-openlane-buy.mjs, scripts/wallet-send-spv-e2e.mjs).
+docs/SDK-GUIDE.md (third-party guide incl. the verifies-vs-trusts table), examples/ (read-only, wallet-connect, siwc-login, node-signer, hello-csd), scripts/ (esbuild example build + 6 maintainer-run live E2E harnesses: scripts/live-wallet-ui.mjs, scripts/names-e2e.mjs, scripts/names-buy-e2e.mjs, scripts/ux-live-readonly.mjs, scripts/ux-openlane-buy.mjs, scripts/wallet-send-spv-e2e.mjs).
 
 Deps: exact-pinned in `package.json`, which is the single source for every version and pin (csd-siwc is a devDependency; dev dependencies are exact too, and `test/dep-pins.test.mjs` checks every pin against `pnpm-lock.yaml`). `src/fillverify.ts` imports `feeBpsAt`, `bindOfferTerms` and `provenOfferTerms` from cairnx-core (no local copies; the ProvenOfferTerms interface and producer are single-sourced and corpus-equivalence-pinned by test/proven-terms-corpus.test.ts). It exports the `preverifyOffer` helper and the throw-on-nested-refusal write wrapper. The give and want-type binds are ON: `bindOfferTerms` over the branded `MintedProvenOfferTerms` (cairnx-core's default since 0.2.0; fillverify also passes `{ give: true, wantType: true }`) binds the give legs with a symmetric want-type refusal, `OfferFillCheck.terms` keeps that brand (`test/fillverify-types.test.mjs` type-checks it), the opt-in sums seam runs over the discriminated `fillOutputPlan`, and `fillEndorsement`/`fillOutputPlan` are the successors (deprecated `fillIsSafe`/`requiredFillOutputs`/`previewFill` stay exported, behavior-frozen; `fillEndorsement`'s not-endorsable verdict means PROCEED-unendorsed, never a refusal of an honest token fill).
 
@@ -50,7 +49,7 @@ Deps: exact-pinned in `package.json`, which is the single source for every versi
 - Connection never pre-approves signatures: connect/getAddress are the only silent-after-consent calls; every signing method opens the wallet's clear-sign window (extension-enforced). Never imply otherwise in docs.
 - DEFAULT_SPV_CHECKPOINT is copied from cairn/public/trade/swapguard.js's baked anchor in the same cycle. This repo checks that the constant is a real block (test/spv-checkpoint.test.ts against the header capture); it does not read the cairn tree, so the copy in cairn (swapguard.js and its ops files) is checked in the cairn repo when the anchor moves.
 - Never over-claim trust levels: verified-inclusion requires a PoW-verified header; same-origin proxy setups honestly degrade to proof-consistent.
-- cairn.names.* and registry.resolveName() are SERVER-TRUSTED display reads. Never wire them straight into a payment target; payment-grade resolution is the wallet's on-device SPV path. (Trust-model note, evident from public source: the `fillOffer` provider call remains resolver-trusted AT THE SDK LAYER; `preverifyOffer`/fillverify (F13 + the B7b binds) is the diligent dApp's merkle-proven corroboration, fail-closed on a positive mismatch and fail-soft on an unreachable chain view, and the wallet's own on-device fill-SPV is the payment-grade boundary.)
+- cairn.names.* and cairn.index.identity()/reverseIdentity() are SERVER-TRUSTED display reads. Never wire them straight into a payment target; payment-grade resolution is the wallet's on-device SPV path. (Trust-model note, evident from public source: the `fillOffer` provider call remains resolver-trusted AT THE SDK LAYER; `preverifyOffer`/fillverify (F13 + the B7b binds) is the diligent dApp's merkle-proven corroboration, fail-closed on a positive mismatch and fail-soft on an unreachable chain view, and the wallet's own on-device fill-SPV is the payment-grade boundary.)
 - SDK_VERSION in src/errors.ts bumps together with package.json.
 - csd-* deps exact-pinned, no carets.
 - Content bytes hashed raw; the 16MiB cap and merkle-proof shape validation (fail-closed to not-found) must not be removed.
@@ -70,7 +69,7 @@ pnpm install --frozen-lockfile
 pnpm typecheck                  # tsc over src and test/ (strict, noUncheckedIndexedAccess)
 pnpm lint                       # Biome, four rules only (biome.json; test/lint-config.test.mjs)
 pnpm check:dashes-paths         # em dashes in docs, sibling-checkout reads in code (CI runs both)
-pnpm build                      # tsup, 8 entrypoints
+pnpm build                      # tsup, 7 entrypoints
 pnpm test                       # offline unit suites (tsx)
 pnpm test:live                  # examples/read-only.mjs + test/e2e/e2e-read.mjs vs live mainnet
 pnpm test:live:wallet           # wallet connector e2e (opt-in: Xvfb, Chromium, a built ../cairn-wallet/dist or WALLET_EXT)

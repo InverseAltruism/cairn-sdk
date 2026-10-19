@@ -5,7 +5,7 @@ Three layers, fastest → most involved. All exercise the **built `dist/`** (run
 | Suite | Command | Cost | What it proves |
 |---|---|---|---|
 | **Unit** | `pnpm test` | free, offline | Connector error mapping, client paths, content + merkle verification reject tampered inputs (mock fetch + mock provider, real merkle fixtures). 34 checks. |
-| **Live read** | `pnpm test:live` | free | Every read surface vs mainnet (chain/index/content/registry), trust-minimized `verifyInclusion` (a recent proposal and a near-tip tx, which runs the reorg re-check), self-certifying content, live SSE, **+ adversarial**: bogus inclusion → not-found, unknown content → null, tamper → rejected. `CAIRN_BASE=http://127.0.0.1:7777` points it at another front door. |
+| **Live read** | `pnpm test:live` | free | Every read surface vs mainnet (chain/index/content), trust-minimized `verifyInclusion` (a recent proposal and a near-tip tx, which runs the reorg re-check), self-certifying content, live SSE, **+ adversarial**: bogus inclusion → not-found, unknown content → null, tamper → rejected. `CAIRN_BASE=http://127.0.0.1:7777` points it at another front door. |
 | **Wallet connector** | `pnpm test:live:wallet` | free | Real Chromium + the real Cairn Wallet extension + the real SDK connector under Xvfb: connect → approval window → address; **repeat is silent (consented)**; **send still prompts (signing never auto-approves)**; list + revoke connected sites. 16 checks. |
 
 `pnpm test:all` runs unit, live read and wallet (all free).

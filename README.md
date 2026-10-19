@@ -8,7 +8,6 @@ The **Compute Substrate dApp kit:** one cohesive toolkit for building apps on CS
 | `cairn.chain` | Node RPC + transaction builders + a verifying **light client** (re-exports the `csd-*` primitives). |
 | `cairn.index` | The L2 **explorer/indexer**: REST + merkle proofs + live SSE/WS feeds. |
 | `cairn.content` | **Self-certifying content:** hash for an on-chain Propose, fetch with client-side verification. |
-| `cairn.registry` | L3 **peer / gateway / identity** resolution. |
 | `cairn.names` | **.csd names + CairnX reads:** name resolution, reverse/primary lookup, tokens, offers, bids, canonical state. |
 
 ```bash
@@ -57,7 +56,7 @@ try {
 
 ## API by namespace
 
-**`cairn.index`:** `tipHeight()`, `block()/blockTxids()`, `tx()/txStatus()/txMerkleProof()`, `address()/addressTxs()/addressUtxo()`, `domains()/domainProposals(domain)`, `proposal()/attestations()`, `reputation()`, `registryPeers()/registryGateways()/identity()`, **`verifyInclusion(txid)`** (trust-minimized), `streamAll()/streamBlocks()/streamDomain()` (SSE), `subscribe()` (WS).
+**`cairn.index`:** `tipHeight()`, `block()/blockTxids()`, `tx()/txStatus()/txMerkleProof()`, `address()/addressTxs()/addressUtxo()`, `domains()/domainProposals(domain)`, `proposal()/attestations()`, `reputation()`, `identity()`, **`verifyInclusion(txid)`** (trust-minimized), `streamAll()/streamBlocks()/streamDomain()` (SSE), `subscribe()` (WS).
 
 **`cairn.names`:** `resolve(name)` (display-path name to address), `name(name)`/`nameHistory(name)`, `primary(addr)` (reverse lookup)/`namesOf(addr)`, `names()`, `tokens()/token(ticker)`, `offers()`, `bids()`, `state()` (the canonical CairnX state). Reads go through the public `/trade/api/cairnx/*` proxy; for payment-grade name resolution verify through the wallet or a replaying resolver, not a bare read (see `src/names.ts` header).
 
@@ -65,13 +64,11 @@ try {
 
 **`cairn.chain`:** `tip()`, `utxos(addr)`, `submit(nodeJsonTx)`, `.client` (full `CsdClient`), `.light()` (verifying light client). The package also re-exports the primitives under the `/chain` subpath: `buildSend/buildPropose/buildAttest`, `signTx`, `keygen`, `payloadHash`, `verifyMerkleProof`, `LightClient`, etc.
 
-**`cairn.registry`:** `gateways()`, `peers()`, `resolveName(handle)`, `reverseName(addr)`, `.fromRecords` (deterministic local resolvers).
-
-Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{connect,indexer,content,registry,chain,controller,react}`.
+Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{connect,indexer,content,chain,controller,react}`.
 
 ## Examples
 
-- **`examples/read-only.mjs`:** runs today against live mainnet, no wallet, no build: `npm run test:live`. Demonstrates chain/indexer/registry reads + verified merkle inclusion + verified content fetch.
+- **`examples/read-only.mjs`:** runs today against live mainnet, no wallet, no build: `npm run test:live`. Demonstrates chain/indexer reads + verified merkle inclusion + verified content fetch.
 - **`examples/hello-csd/`:** a no-framework browser dApp (connect → read recent proposals → live feed). Build the bundle with `npm run build:example`, then serve the folder from **localhost** (the wallet injects there) with the Cairn Wallet installed.
 
 ## Trust model & honest limits

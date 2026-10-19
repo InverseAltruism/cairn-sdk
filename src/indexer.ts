@@ -151,14 +151,6 @@ export class IndexerClient {
     return this.http.getJson<unknown[]>(`/proposal/${encodeURIComponent(id)}/attestations`);
   }
 
-  registryPeers(): Promise<unknown[]> {
-    return this.http.getJson<unknown[]>("/registry/peers");
-  }
-
-  registryGateways(): Promise<unknown[]> {
-    return this.http.getJson<unknown[]>("/registry/gateways");
-  }
-
   identity(handle: string): Promise<unknown> {
     return this.http.getJson(`/identity/${encodeURIComponent(handle)}`);
   }

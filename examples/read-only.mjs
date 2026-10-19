@@ -1,7 +1,7 @@
 // Runnable read-only example: works against live mainnet, no wallet, no build step beyond `pnpm build`.
 //   node examples/read-only.mjs
 // Demonstrates the read surfaces: chain tip, indexer health and proposals, trust-minimized
-// merkle inclusion, registry, and verified content fetch.
+// merkle inclusion, and verified content fetch.
 import { Cairn } from "../dist/index.js";
 
 const cairn = new Cairn({ network: "mainnet" });
@@ -15,9 +15,6 @@ console.log(`indexer:          height ${health.indexed_height}  ${health.proposa
 const domains = await cairn.index.domains();
 const busiest = domains[0]?.domain;
 console.log(`domains:          ${domains.length} (busiest: ${busiest ?? "none"})`);
-
-const gateways = await cairn.registry.gateways();
-console.log(`registry:         ${gateways.length} gateway(s)`);
 
 const proposals = busiest ? await cairn.index.domainProposals(busiest) : [];
 const newest = proposals.reduce((a, p) => (!a || p.height > a.height ? p : a), null);

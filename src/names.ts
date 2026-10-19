@@ -4,7 +4,7 @@
 // Cairn is a signal board plus explorer and miss the names/trading product entirely. This is
 // the read side: resolution, name detail/history, primary names, tokens, offers, bids, state.
 //
-// TRUST MODEL (read this before building on it — same honesty bar as registry.ts):
+// TRUST MODEL (read this before building on it: same honesty bar as the indexer reads):
 // these are SERVER-TRUSTED reads over the public front door (`/trade/api/cairnx/*`, the same
 // GET-allowlisted proxy the Cairn UI renders from). They are the right tool for DISPLAY and
 // discovery. They are NOT proof: nothing here merkle-verifies a name→address binding, and a

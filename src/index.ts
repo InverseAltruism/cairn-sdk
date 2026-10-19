@@ -5,7 +5,6 @@
 //   cairn.chain    : node RPC + tx builders + verifying light client
 //   cairn.index    : the L2 explorer/indexer: REST + merkle proofs + live SSE/WS
 //   cairn.content  : self-certifying content (fetched and verified against its hash)
-//   cairn.registry : L3 peer/gateway/identity resolution
 //   cairn.names    : .csd names + CairnX market reads
 //
 // Quick start:
@@ -18,7 +17,6 @@ import { Http, readCapped, retryAfterMs, RetryWaitBudget, type FetchLike } from 
 import { Chain, LightClient, type BlockHeader } from "./chain.js";
 import { IndexerClient } from "./indexer.js";
 import { ContentClient } from "./content.js";
-import { RegistryClient } from "./registry.js";
 import { NamesClient } from "./names.js";
 import { WalletConnection, connect as connectWallet, type DetectOptions } from "./connect.js";
 import { preverifyOffer, type OfferFillCheck } from "./fillverify.js";
@@ -121,7 +119,6 @@ export class Cairn {
   readonly chain: Chain;
   readonly index: IndexerClient;
   readonly content: ContentClient;
-  readonly registry: RegistryClient;
   /** .csd names + CairnX market READS (server-trusted display reads; see names.ts trust note). */
   readonly names: NamesClient;
   wallet?: WalletConnection;
@@ -171,7 +168,6 @@ export class Cairn {
     });
     // Content sources tried in order: direct swarm (if set) → indexer (fronts swarm) → cairn origin.
     this.content = new ContentClient({ swarm: swarmHttp, indexer: indexerHttp, cairn: this.cairnHttp });
-    this.registry = new RegistryClient(indexerHttp);
     this.names = new NamesClient(this.cairnHttp);
   }
 
@@ -401,7 +397,6 @@ export { IndexerClient } from "./indexer.js";
 export type { MerkleProof, InclusionResult, IndexEvent, StreamHandlers, StreamHandle, TrustLevel } from "./indexer.js";
 export { ContentClient } from "./content.js";
 export type { PreparedContent, ContentClientOptions } from "./content.js";
-export { RegistryClient } from "./registry.js";
 export {
   WalletConnection,
   connect,

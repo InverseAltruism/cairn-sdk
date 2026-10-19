@@ -36,7 +36,7 @@ Sign-in (passwordless): see `examples/siwc-login.mjs` for the full client + serv
 | `…/controller` | `CairnController`: framework-agnostic reactive connection store |
 | `…/react` | `createCairnHooks(React)`: React hooks (zero react dependency; you pass React) |
 | `…/chain` | `CsdClient`, tx builders, the verifying `LightClient` |
-| `…/indexer`, `…/content`, `…/registry` | service clients |
+| `…/indexer`, `…/content` | service clients |
 | `@inversealtruism/csd-siwc` | **server-side** SIWC verify (`verifySiwc`, `generateNonce`) |
 
 ## What the SDK verifies vs trusts (read this)
