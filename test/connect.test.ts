@@ -1,4 +1,4 @@
-// Connector tests — provider detection + typed error mapping. Runs under tsx in Node;
+// Connector tests: provider detection + typed error mapping. Runs under tsx in Node;
 // we stub a minimal `window` backed by a real EventTarget.
 import { readFileSync } from "node:fs";
 import {
@@ -85,7 +85,7 @@ console.log("=== connector: detection ===");
 
 console.log("=== connector: EIP-6963-style discovery ===");
 {
-  // No window.cairn global — the wallet announces only when asked (csd:requestProvider).
+  // No window.cairn global: the wallet announces only when asked (csd:requestProvider).
   const et = installWindow(undefined);
   const prov = mockProvider();
   const announce = () => et.dispatchEvent(new CustomEvent("csd:announceProvider", { detail: { info: { uuid: "u1", name: "Cairn Wallet", icon: "data:,", rdns: "com.cairn-substrate.wallet" }, provider: prov } }));
@@ -93,7 +93,7 @@ console.log("=== connector: EIP-6963-style discovery ===");
   const p = await detectProvider({ timeoutMs: 300 });
   ok("detectProvider resolves via csd:announceProvider (no global)", p === prov);
   const list = await discoverProviders({ timeoutMs: 80 });
-  ok("discoverProviders enumerates announced wallets", list.length === 1 && list[0].info.rdns === "com.cairn-substrate.wallet" && list[0].provider === prov);
+  ok("discoverProviders enumerates announced wallets", list.length === 1 && list[0]!.info.rdns === "com.cairn-substrate.wallet" && list[0]!.provider === prov);
 
   // a non-Cairn announce (isCairn=false) is ignored
   const et2 = installWindow(undefined);

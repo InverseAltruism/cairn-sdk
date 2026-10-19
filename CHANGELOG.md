@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.0 (unreleased) - cairnx-core 0.2.0 and csd-codec 0.1.18 (csd-sdk publish window 2)
+## 0.6.0 (2026-10-18) - cairnx-core 0.2.0 and csd-codec 0.1.18 (csd-sdk publish window 2)
 
 A minor bump: the re-exported `bindOfferTerms` changes its default and a call that compiled under 0.5.0 no
 longer does, so a `^0.5.x` range does not pick this up.

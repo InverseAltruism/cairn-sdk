@@ -9,7 +9,7 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# cairn-sdk had NO CI (audit CAIRN-SDK-CI-NONE-1) — every drift (SDK_VERSION, the stale csd-* pin, the
+# cairn-sdk had NO CI (audit CAIRN-SDK-CI-NONE-1): every drift (SDK_VERSION, the stale csd-* pin, the
 # tautological version test) shipped unnoticed. This is a push/PR test + dep-freshness gate (there is no
 # publish job): it builds + typechecks + tests on every push/PR and checks that every exact-pinned csd-*
 # (in both dependencies AND devDependencies) is the ecosystem lockstep version. The csd-* are PUBLIC npm
@@ -19,20 +19,24 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: typecheck
-        run: pnpm exec tsc --noEmit
+      - name: typecheck (src and tests)
+        run: pnpm run typecheck
       - name: build (all 9 subpaths emit ESM+CJS+dts)
         run: pnpm build
       - name: test (sdk/connect/errors/controller/react/hardening)
         run: pnpm test
-      - name: dep-pin hygiene — exact-pin every @inversealtruism/* AND enforce a single codec/crypto copy
+      - name: verify-tarball (a fresh pack equals a second rebuild and repack)
+        run: |
+          pnpm pack --pack-destination "$RUNNER_TEMP/pack"
+          node scripts/verify-tarball.mjs "$RUNNER_TEMP"/pack/*.tgz
+      - name: dep-pin hygiene (exact-pin every @inversealtruism/* AND enforce a single codec/crypto copy)
         run: |
           node -e '
             // The csd-* / cairnx-core packages are versioned INDEPENDENTLY (cairnx-core tracks
@@ -40,7 +44,7 @@ jobs:
             // version is structurally impossible and the old uniform-version gate could never pass.
             // Two things actually matter for a consumer: (1) every ecosystem dep is EXACT-pinned (no
             // caret/tilde/range/tag), and (2) the RESOLVED tree contains exactly ONE copy of the
-            // consensus-critical primitives (csd-codec, csd-crypto) — two copies would let a tx be
+            // consensus-critical primitives (csd-codec, csd-crypto); two copies would let a tx be
             // signed with one byte-encoding and verified with another. Exact-pinning DIRECT deps does
             // not by itself dedupe TRANSITIVE copies, so we assert the resolved lockfile directly.
             // Cross-repo freshness (is this pin the latest published?) is checked out-of-band by the
@@ -57,7 +61,22 @@ jobs:
             for (const pkg of ["csd-codec", "csd-crypto"]) {
               const copies = [...lock.matchAll(new RegExp("@inversealtruism/" + pkg + "@([0-9]+\\.[0-9]+\\.[0-9]+)", "g"))];
               const vers = [...new Set(copies.map((m) => m[1]))];
-              if (vers.length > 1) { console.error("::error::multiple @inversealtruism/" + pkg + " copies resolved (" + vers.join(", ") + ") — a sign-with-one/verify-with-another fork surface"); process.exit(1); }
+              if (vers.length > 1) { console.error("::error::multiple @inversealtruism/" + pkg + " copies resolved (" + vers.join(", ") + "), a sign-with-one/verify-with-another fork surface"); process.exit(1); }
             }
             console.log(pins.length + " @inversealtruism/* deps exact-pinned, single codec+crypto copy:", JSON.stringify(Object.fromEntries(pins)));
           '
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0  # gitleaks scans the full history
+      # Release binary checked against gitleaks_8.18.4_checksums.txt from the gitleaks GitHub release.
+      # --diff-merges=first-parent: the default log shows no diff for a merge, so a secret added in a conflict resolution is missed.
+      - name: gitleaks (full history, blocking)
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tgz" https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz
+          echo "ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d  $RUNNER_TEMP/gitleaks.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tgz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" detect --no-banner --redact -c .gitleaks.toml --log-opts="--full-history --all --diff-merges=first-parent"

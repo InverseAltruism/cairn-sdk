@@ -33,7 +33,7 @@ ok("corpus loaded with the full population (68 = 55 real + 13 synthetic)",
 
 let mismatches = 0;
 for (const e of corpus) {
-  const got = provenOfferTerms(e.rec, e.height);
+  const got = provenOfferTerms(e.rec as Parameters<typeof provenOfferTerms>[0], e.height);
   if (JSON.stringify(got) !== JSON.stringify(e.terms)) { mismatches++; console.log(`    MISMATCH ${e.id}`); }
 }
 ok("canonical provenOfferTerms matches the frozen historical semantics for EVERY corpus entry", mismatches === 0);

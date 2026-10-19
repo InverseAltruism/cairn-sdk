@@ -18,7 +18,7 @@ const src = (serve: Uint8Array | null | "down", log?: string[], name = "") => ne
   fetch: (async () => {
     log?.push(name);
     if (serve === "down") throw new TypeError("fetch failed");
-    return serve ? new Response(serve, { status: 200 }) : new Response("nope", { status: 404 });
+    return serve ? new Response(serve as Uint8Array<ArrayBuffer>, { status: 200 }) : new Response("nope", { status: 404 });
   }) as unknown as typeof fetch,
 });
 

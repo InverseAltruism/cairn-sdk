@@ -12,7 +12,7 @@ const FIX = JSON.parse(readFileSync(new URL("./fixtures/spv-headers-115358-80.js
   headers: { height: number; header: Record<string, unknown>; hash: string }[];
 };
 const ROWS = FIX.headers;
-const BASE = ROWS[0].height;
+const BASE = ROWS[0]!.height;
 const M = ROWS.find((r) => r.height === 115411)!.header.merkle as string;
 type Row = (typeof ROWS)[number];
 const sliceRows = (from: number, count: number): Row[] => ROWS.slice(from - BASE, from - BASE + count);
@@ -77,7 +77,7 @@ console.log("P75-5 MF-13 bounded batch transport:");
 {
   const seen: string[] = [];
   let stallHit = 0;
-  let abortFired = false;
+  let abortFired = false as boolean;
   const stub = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(typeof input === "string" ? input : (input as Request).url ?? input);
     seen.push(url);

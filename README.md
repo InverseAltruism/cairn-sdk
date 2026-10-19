@@ -103,8 +103,8 @@ new Cairn({
 
 ```bash
 pnpm build && pnpm test         # unit (offline): error mapping, client paths, content+merkle verify
-pnpm test:e2e:read              # live reads vs mainnet + adversarial (free)
-pnpm test:e2e:wallet            # real extension + real connector under Xvfb: connect/consent/sign (free)
+pnpm test:live                  # examples/read-only.mjs + live reads vs mainnet + adversarial (free)
+pnpm test:live:wallet           # real extension + real connector under Xvfb: connect/consent/sign (free)
 ```
 
 See [`test/e2e/README.md`](test/e2e/README.md) for coverage, requirements, and cost of each layer. All three suites are free; none spends CSD.

@@ -1,4 +1,4 @@
-// @inversealtruism/cairn-sdk — the Compute Substrate dApp kit.
+// @inversealtruism/cairn-sdk: the Compute Substrate dApp kit.
 //
 // One cohesive `Cairn` object that composes everything we built on CSD:
 //   cairn.wallet   : connect the Cairn Wallet, sign things (clear-signed approvals)
@@ -66,19 +66,11 @@ export interface CairnConfig {
   spvCheckpoint?: { height: number; hash: string };
 }
 
-// The ecosystem SPV checkpoint (CAIRN-SDK-SPV-CKPT-DUP-1: MUST stay identical to cairn /trade swapguard's
-// baked anchor — `cairn/public/trade/swapguard.js` CP; test/spv-checkpoint.test.ts asserts equality so the
-// two literals can't silently drift). A consensus block hash, not a trusted server's word — the light client
-// re-verifies every header forward from here. Pin a newer one via config.spvCheckpoint as the chain grows.
-// Plan 75-B C3 / H6 (2026-08-02): the coordinated forward-bump 38,142 -> 66,589 happened. The anchor is
-// NOT picked here: cairn's `scripts/bump-swapguard-cp.mjs` picked it (a finalized header at least 1,000
-// deep, hash cross-checked against BOTH independent local RPCs, kept below the oldest open offer, span
-// asserted under 24,000) and wrote it into swapguard.js; this literal is copied from that file and pinned
-// to it by test/spv-checkpoint.test.ts. Do NOT bump it unilaterally here: the two literals must move in the
-// SAME cycle or the pin reds, which is the drift guard working. Cost this buys: the checkpoint..tip seed a
-// consumer pays on a cold start drops from about 29,400 headers to about 1,000, one or two batched
-// /api/headers requests instead of about 58. cairn's `deploy/spv-checkpoint` carries the same number for the
-// ops watchdog; it is NOT covered by the parity test, so bump it in the cairn repo alongside swapguard.js.
+// The ecosystem SPV checkpoint: a consensus block hash, not a trusted server's word; the light client re-verifies
+// every header forward from here. It is picked in cairn (`scripts/bump-swapguard-cp.mjs`) and copied from
+// cairn/public/trade/swapguard.js's CP in the same cycle, never bumped here alone. test/spv-checkpoint.test.ts
+// checks it is a real block against a committed header capture; the cairn copies (swapguard.js and
+// `deploy/spv-checkpoint`) are checked in the cairn repo. Pin a newer one via config.spvCheckpoint.
 export const DEFAULT_SPV_CHECKPOINT = { height: 115403, hash: "0x00000000000052e29166597d598827b137af1dea7542123b848637fee0b67347" };
 
 const DEFAULT_CAIRN = "https://cairn-substrate.com";
@@ -157,7 +149,7 @@ export class Cairn {
     this.cairnHttp = new Http({ baseUrl: cairn, fetch, timeoutMs });
     this._cairnBase = cairn;
     const indexerHttp = new Http({ baseUrl: indexer, fetch, timeoutMs });
-    // Optional direct swarm gateway (not public by default — the indexer fronts it).
+    // Optional direct swarm gateway (not public by default; the indexer fronts it).
     const swarmHttp = config.baseUrls?.swarm
       ? new Http({ baseUrl: config.baseUrls.swarm.replace(/\/+$/, ""), fetch, timeoutMs })
       : undefined;
@@ -166,11 +158,11 @@ export class Cairn {
     this.chain = new Chain({ rpcUrl: rpc, fetch, timeoutMs });
     this.wallet = config.wallet;
     // "verified-inclusion" requires a PoW-VERIFIED header to check the proof root against (audit M3).
-    // A raw `blockByHeight(h).header.merkle` read is NOT that — a lying node serves a fake header
+    // A raw `blockByHeight(h).header.merkle` read is NOT that; a lying node serves a fake header
     // whose merkle matches a fake proof (and the same-origin case lets ONE server control both). So
     // we wire a headerMerkleAt backed by the verifying light client: it returns a header merkle only
     // after re-verifying the chain (PoW + LWMA + chainwork) forward from a pinned checkpoint, and
-    // THROWS otherwise — the IndexerClient then degrades to the honest "proof-consistent" (never an
+    // THROWS otherwise; the IndexerClient then degrades to the honest "proof-consistent" (never an
     // over-claimed "verified-inclusion"). Heights ≥ the checkpoint are genuinely trust-minimized.
     this.index = new IndexerClient(indexerHttp, {
       fetch,
