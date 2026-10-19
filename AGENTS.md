@@ -23,7 +23,7 @@ This repo follows the maintainers' cross-repo engineering standard (a private do
 - Comments state constraints and non-obvious invariants, not history or audit IDs. Removing code needs the same evidence as adding it.
 - Docs: this file holds what stays true (no version tables, no status snapshots; versions live in `package.json` and tags, live state comes from a live query). Dates are absolute, no em dashes.
 
-Known deviations (checked 2026-10-11, not exhaustive): the opt-in wallet-connector e2e (`test:live:wallet`) loads a built `../cairn-wallet/dist` (or `WALLET_EXT`), and several maintainer-run `scripts/*.mjs` harnesses load the wallet from a fixed host path; there is no `lint` script; the heavy comment blocks and audit IDs in `src/` are trimmed per module, not as drive-by edits.
+Known deviations (checked 2026-10-11, not exhaustive): the opt-in wallet-connector e2e (`test:live:wallet`) loads a built `../cairn-wallet/dist` (or `WALLET_EXT`), `test/e2e/e2e-siwc.mjs` and several maintainer-run `scripts/*.mjs` harnesses load the wallet (and e2e-siwc also csd-siwc and the cairn console) from fixed host paths (all listed as exceptions in `scripts/check-dashes-paths.mjs`); `pnpm lint` (Biome, `biome.json`) reports 91 empty blocks as warnings (81 of them in the six `scripts/*.mjs` live harnesses; counted 2026-10-19), so that rule does not fail CI yet; the heavy comment blocks and audit IDs in `src/` are trimmed per module, not as drive-by edits.
 
 ## The stack around it
 
@@ -43,7 +43,7 @@ Everything defaults to the hosted public bases at https://cairn-substrate.com: R
 
 docs/SDK-GUIDE.md (third-party guide incl. the verifies-vs-trusts table), examples/ (read-only, wallet-connect, siwc-login, node-signer, hello-csd, register-swarm-peer [historical; swarm L1 is dead]), scripts/ (esbuild example build + 6 maintainer-run live E2E harnesses: scripts/live-wallet-ui.mjs, scripts/names-e2e.mjs, scripts/names-buy-e2e.mjs, scripts/ux-live-readonly.mjs, scripts/ux-openlane-buy.mjs, scripts/wallet-send-spv-e2e.mjs).
 
-Deps: exact-pinned in `package.json`, which is the single source for every version and pin (csd-siwc is a devDependency). `src/fillverify.ts` imports `feeBpsAt`, `bindOfferTerms` and `provenOfferTerms` from cairnx-core (no local copies; the ProvenOfferTerms interface and producer are single-sourced and corpus-equivalence-pinned by test/proven-terms-corpus.test.ts). It exports the `preverifyOffer` helper and the throw-on-nested-refusal write wrapper. The give and want-type binds are ON: `bindOfferTerms` over the branded `MintedProvenOfferTerms` (cairnx-core's default since 0.2.0; fillverify also passes `{ give: true, wantType: true }`) binds the give legs with a symmetric want-type refusal, `OfferFillCheck.terms` keeps that brand (`test/fillverify-types.test.mjs` type-checks it), the opt-in sums seam runs over the discriminated `fillOutputPlan`, and `fillEndorsement`/`fillOutputPlan` are the successors (deprecated `fillIsSafe`/`requiredFillOutputs`/`previewFill` stay exported, behavior-frozen; `fillEndorsement`'s not-endorsable verdict means PROCEED-unendorsed, never a refusal of an honest token fill).
+Deps: exact-pinned in `package.json`, which is the single source for every version and pin (csd-siwc is a devDependency; dev dependencies are exact too, and `test/dep-pins.test.mjs` checks every pin against `pnpm-lock.yaml`). `src/fillverify.ts` imports `feeBpsAt`, `bindOfferTerms` and `provenOfferTerms` from cairnx-core (no local copies; the ProvenOfferTerms interface and producer are single-sourced and corpus-equivalence-pinned by test/proven-terms-corpus.test.ts). It exports the `preverifyOffer` helper and the throw-on-nested-refusal write wrapper. The give and want-type binds are ON: `bindOfferTerms` over the branded `MintedProvenOfferTerms` (cairnx-core's default since 0.2.0; fillverify also passes `{ give: true, wantType: true }`) binds the give legs with a symmetric want-type refusal, `OfferFillCheck.terms` keeps that brand (`test/fillverify-types.test.mjs` type-checks it), the opt-in sums seam runs over the discriminated `fillOutputPlan`, and `fillEndorsement`/`fillOutputPlan` are the successors (deprecated `fillIsSafe`/`requiredFillOutputs`/`previewFill` stay exported, behavior-frozen; `fillEndorsement`'s not-endorsable verdict means PROCEED-unendorsed, never a refusal of an honest token fill).
 
 ## Invariants and red lines
 
@@ -58,7 +58,7 @@ Deps: exact-pinned in `package.json`, which is the single source for every versi
 - Legacy signIn() is first-party-only and @deprecated; third parties use SIWC.
 - Consensus values (NAME_RE, RESERVED_NAMES, fee constants, codec shapes) always come from the published csd-*/cairnx-core packages; never re-declare them locally.
 - Security fixes must not regress UX: never add complexity, latency, or spurious declines to a legitimate hot path in the name of hardening.
-- House style: no em dashes in any doc (`grep -cP '\x{2014}' <file>` prints 0); keep prose concrete, no filler.
+- House style: no em dashes in any doc (`grep -cP '\x{2014}' <file>` prints 0; `pnpm check:dashes-paths` checks every tracked .md outside docs/archive/); keep prose concrete, no filler.
 - Releasing is a maintainer action: contributors do not bump versions, tag, or publish; maintainers publish to npm (see Release and publish).
 
 ## Dev workflow
@@ -68,6 +68,8 @@ Package manager is pnpm (packageManager pnpm@10.32.1). `pnpm-lock.yaml` is the s
 ```bash
 pnpm install --frozen-lockfile
 pnpm typecheck                  # tsc over src and test/ (strict, noUncheckedIndexedAccess)
+pnpm lint                       # Biome, four rules only (biome.json; test/lint-config.test.mjs)
+pnpm check:dashes-paths         # em dashes in docs, sibling-checkout reads in code (CI runs both)
 pnpm build                      # tsup, 8 entrypoints
 pnpm test                       # offline unit suites (tsx)
 pnpm test:live                  # examples/read-only.mjs + test/e2e/e2e-read.mjs vs live mainnet

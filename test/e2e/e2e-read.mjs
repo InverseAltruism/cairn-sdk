@@ -1,8 +1,8 @@
-// Live READ e2e — exercises every cairn-sdk read surface against mainnet
+// Live READ e2e: exercises every cairn-sdk read surface against mainnet
 // (cairn-substrate.com) plus adversarial verification. No wallet, no key, no cost.
 //   node test/e2e/e2e-read.mjs
 import { Cairn, ContentVerificationError } from "../../dist/index.js";
-import { makeHarness, until } from "./harness.mjs";
+import { makeHarness } from "./harness.mjs";
 
 const h = makeHarness("read");
 // CAIRN_BASE points every read at another cairn front door (e.g. http://127.0.0.1:7777); default is mainnet.
@@ -72,7 +72,7 @@ h.ok("registry.gateways resolves", Array.isArray(gws), `${gws.length} gateway(s)
 const peers = await cairn.registry.peers();
 h.ok("registry.peers resolves (may be empty by design)", Array.isArray(peers));
 
-h.section("adversarial — verification actually rejects bad inputs");
+h.section("adversarial: verification actually rejects bad inputs");
 const bogus = await cairn.index.verifyInclusion("0x" + "00".repeat(32));
 h.ok("verifyInclusion of a bogus txid → not included", bogus.included === false && bogus.trustLevel === "not-found");
 const missing = await cairn.content.getBytes("0x" + "ab".repeat(32));
@@ -85,7 +85,7 @@ if (contentHash) {
 // a ContentClient pointed at a source that serves mismatched bytes must THROW
 {
   const liar = new Cairn({ network: "mainnet", baseUrls: { cairn: "https://cairn-substrate.com" } });
-  // monkey-free check: getBytes on a hash whose bytes won't match — simulate by asking for a hash
+  // monkey-free check: getBytes on a hash whose bytes won't match; simulate by asking for a hash
   // that the origin doesn't have (404→null) is covered above; the throwing path is unit-tested.
   h.ok("ContentVerificationError is exported for callers to catch", typeof ContentVerificationError === "function");
   void liar;

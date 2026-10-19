@@ -9,6 +9,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# No job needs to write: every job reads the repo and the public npm registry only.
+permissions:
+  contents: read
+
 # cairn-sdk had NO CI (audit CAIRN-SDK-CI-NONE-1): every drift (SDK_VERSION, the stale csd-* pin, the
 # tautological version test) shipped unnoticed. This is a push/PR test + dep-freshness gate (there is no
 # publish job): it builds + typechecks + tests on every push/PR and checks that every exact-pinned csd-*
@@ -20,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -28,6 +34,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: typecheck (src and tests)
         run: pnpm run typecheck
+      # biome.json: unused imports, focused tests and ts-ignore directives fail the step; empty blocks are warnings for now.
+      - name: lint (Biome, four rules)
+        run: pnpm lint
+      - name: no em dash in tracked docs, no sibling-checkout reads outside the listed exceptions
+        run: pnpm check:dashes-paths
       - name: build (all 9 subpaths emit ESM+CJS+dts)
         run: pnpm build
       - name: test (sdk/connect/errors/controller/react/hardening)
@@ -71,6 +82,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           fetch-depth: 0  # gitleaks scans the full history
       # Release binary checked against gitleaks_8.18.4_checksums.txt from the gitleaks GitHub release.
       # --diff-merges=first-parent: the default log shows no diff for a merge, so a secret added in a conflict resolution is missed.
