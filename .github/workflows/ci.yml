@@ -41,7 +41,7 @@ jobs:
         run: pnpm check:dashes-paths
       - name: build (every subpath emits ESM+CJS+dts)
         run: pnpm build
-      - name: test (sdk/connect/errors/controller/react/hardening)
+      - name: test (every suite under test/run.mjs)
         run: pnpm test
       - name: verify-tarball (a fresh pack equals a second rebuild and repack)
         run: |

@@ -23,9 +23,9 @@ if (newest) {
   const incl = await cairn.index.verifyInclusion(newest.txid);
   console.log(`inclusion:        ${incl.trustLevel} (block ${incl.blockHeight})${incl.included ? "" : `  reason: ${incl.reason}`}`);
 
-  // self-certifying content fetch (sha256(bytes) === payload_hash, enforced client-side); null if no source stores it
+  // self-certifying content fetch (sha256(bytes) === payload_hash, enforced client-side); null if the origin does not hold it
   const content = await cairn.content.get(newest.payload_hash);
-  console.log(`content (verified): ${content === null ? "not stored by any source" : JSON.stringify(content).slice(0, 120)}`);
+  console.log(`content (verified): ${content === null ? "not held by the origin" : JSON.stringify(content).slice(0, 120)}`);
 }
 
 console.log("\nOK: all reads served from cairn-substrate.com; content and inclusion verified client-side.");

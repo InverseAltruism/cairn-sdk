@@ -40,6 +40,20 @@ console.log("ContentClient (one origin, typed get error):");
   ok("get() honest: getBytes() still returns those verified raw bytes", (await notJson.getBytes(rawHash))?.length === raw.length);
 }
 
+console.log("ContentClient construction and hash normalization:");
+{
+  for (const [label, opts] of [["only swarm", { swarm: src(good) }], ["only indexer", { indexer: src(good) }], ["no options", {}]] as const) {
+    const e = (() => { try { new ContentClient(opts as never); return undefined; } catch (err) { return err; } })();
+    ok(`a client without \`cairn\` (${label}) throws a TypeError at construction instead of reading null`, e instanceof TypeError);
+  }
+  const asked: string[] = [];
+  const rec = new Http({ baseUrl: "https://s.test", fetch: (async (u: unknown) => { asked.push(new URL(String(u)).pathname); return new Response(good as Uint8Array<ArrayBuffer>, { status: 200 }); }) as unknown as typeof fetch });
+  const bare = h.slice(2).toUpperCase();
+  const read = await new ContentClient({ cairn: rec }).get<typeof obj>(bare).catch((e: unknown) => e);
+  ok("honest: a client with `cairn` reads a bare upper-case hash", (read as typeof obj | null)?.title === "t");
+  ok("the hash is normalized to 0x and lower case before it is put in the path", asked.length === 1 && asked[0] === `/content/${h}`);
+}
+
 console.log("Cairn facade content reads:");
 {
   const seen: string[] = [];

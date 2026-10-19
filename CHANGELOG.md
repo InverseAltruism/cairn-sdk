@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 (prepared 2026-10-19, not yet published) - registry API removed
+## 0.7.0 (prepared 2026-10-19, not yet published): registry API removed, content from the cairn origin only
 
 A minor bump on 0.x: a call that compiled under 0.6.0 no longer does, so a `^0.6.x` range does not pick this up.
 
@@ -50,6 +50,11 @@ an unreachable origin resolves `null`, as 0.6.0 did when every source failed.
 - `ContentClientOptions` is `{ cairn: Http }` (`cairn` required); its `swarm` and `indexer` options are removed,
   and with them the multi-source order (a mismatching source no longer falls through to the next one, since there
   is one source).
+
+What a 0.6.0 user sees: content reads through the facade keep working after the indexer deploy, with one extra 404
+round trip to the indexer before the origin answers; on 0.7.0 that round trip is gone. In plain JavaScript a
+`baseUrls.swarm` value is ignored, and `new ContentClient({ swarm })` or `({ indexer })` without `cairn` throws a
+`TypeError` at construction (a TypeScript build fails at the option).
 
 ### Surface
 

@@ -28,6 +28,11 @@ export class ContentClient {
   private readonly cairn: Http;
 
   constructor(opts: ContentClientOptions) {
+    // A plain-JS 0.6.0 caller passing only `swarm` or `indexer` would otherwise read null for every hash, with no
+    // tamper check: refuse at construction instead.
+    if (!opts?.cairn || typeof opts.cairn.getBytes !== "function") {
+      throw new TypeError("ContentClient needs a `cairn` Http client (the swarm and indexer sources were removed in 0.7.0)");
+    }
     this.cairn = opts.cairn;
   }
 
@@ -66,7 +71,7 @@ export class ContentClient {
     try {
       got = await this.cairn.getBytes(`/content/${h}`);
     } catch {
-      return null;
+      return null; // origin unreachable: not found, as 0.6.0 reported it when every source failed
     }
     if (!got) return null; // 404
     if (!verifyContentBytes(got.bytes, h)) throw new ContentVerificationError(h);
