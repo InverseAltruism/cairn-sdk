@@ -3,10 +3,12 @@
 // `prepack` but not `prepublishOnly`, and publishing a pre-made tarball (the sanctioned path here) fires no
 // hook, so this script is the check that runs on the tarball itself.
 //
-//   1. Rebuild (`pnpm run build`, explicitly: `pnpm pack` skips prepack under ignore-scripts and would pack
-//      whatever dist/ is on disk) and repack this tree, then require the tarball's sha256 to equal the fresh
-//      pack's. The pack is deterministic, so any edited, stale or foreign byte in the tarball fails here. On a
-//      mismatch the differing paths are listed.
+//   1. Rebuild this tree by running package.json's `build` (a plain `tsup ...` command) through node from
+//      node_modules with only PATH and HOME in the environment, so no npm/pnpm config (ignore-scripts,
+//      script-shell, ...) can skip or fake it; a non-zero exit stops here. Pack with scripts off, require the
+//      packed dist/ to equal the files just built, then require the tarball's sha256 to equal the fresh pack's.
+//      The pack is deterministic, so any edited, stale or foreign byte in the tarball fails. On a mismatch
+//      the differing paths are listed.
 //   2. Both package entries (dist/index.js for ESM, dist/index.cjs for require()) exist, carry the ASDK-1
 //      transient arm ("fetch failed") and a parseable DEFAULT_SPV_CHECKPOINT, which is printed.
 // The checkpoint's agreement with the chain is test/spv-checkpoint.test.ts (a pinned header fixture); no
@@ -14,7 +16,7 @@
 //
 // Usage: node scripts/verify-tarball.mjs [path/to/pkg.tgz]     (default: ./inversealtruism-cairn-sdk-<version>.tgz)
 // Exit 0 = publish may proceed. Exit 1 = stop, do not publish.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -47,8 +49,17 @@ const work = mkdtempSync(join(tmpdir(), "cairn-sdk-tarball-"));
 try {
   // 1. Rebuild and repack, then compare whole-tarball bytes.
   const freshDir = join(work, "fresh");
-  execFileSync("pnpm", ["run", "build"], { cwd: repo, stdio: ["ignore", "ignore", "inherit"] });
-  execFileSync("pnpm", ["pack", "--pack-destination", freshDir], { cwd: repo, stdio: ["ignore", "ignore", "inherit"] });
+  const buildArgs = String(pkg.scripts?.build ?? "").trim().split(/\s+/);
+  if (buildArgs[0] !== "tsup" || buildArgs.some((a) => !/^[\w./,=-]+$/.test(a))) die(`package.json "build" is not a plain tsup command: ${pkg.scripts?.build}`);
+  const tsupDir = join(repo, "node_modules", "tsup");
+  const tsupBin = join(tsupDir, JSON.parse(readFileSync(join(tsupDir, "package.json"), "utf8")).bin.tsup);
+  const built = spawnSync(process.execPath, [tsupBin, ...buildArgs.slice(1)], {
+    cwd: repo, env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" }, stdio: ["ignore", "ignore", "inherit"],
+  });
+  if (built.status !== 0) die(`the build (${buildArgs.join(" ")}) exited ${built.status ?? built.signal}`);
+  execFileSync("pnpm", ["pack", "--pack-destination", freshDir], {
+    cwd: repo, env: { ...process.env, npm_config_ignore_scripts: "true" }, stdio: ["ignore", "ignore", "inherit"],
+  });
   const freshTgz = readdirSync(freshDir).filter((f) => f.endsWith(".tgz")).map((f) => join(freshDir, f))[0];
   if (!freshTgz) die("`pnpm pack` produced no tarball");
   const fresh = sha256(freshTgz);
@@ -60,6 +71,9 @@ try {
     mkdirSync(dst, { recursive: true });
     execFileSync("tar", ["xf", src, "-C", dst], { stdio: ["ignore", "ignore", "inherit"] });
   }
+  const builtDist = tree(join(repo, "dist")), packedDist = tree(join(freshX, "package", "dist"));
+  ok("the fresh pack's dist/ equals the files just built",
+    builtDist.size === packedDist.size && [...builtDist].every(([p, h]) => packedDist.get(p) === h));
   if (given !== fresh) {
     const a = tree(givenX), b = tree(freshX);
     for (const p of new Set([...a.keys(), ...b.keys()])) {
