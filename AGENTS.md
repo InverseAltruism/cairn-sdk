@@ -23,7 +23,7 @@ This repo follows the maintainers' cross-repo engineering standard (a private do
 - Comments state constraints and non-obvious invariants, not history or audit IDs. Removing code needs the same evidence as adding it.
 - Docs: this file holds what stays true (no version tables, no status snapshots; versions live in `package.json` and tags, live state comes from a live query). Dates are absolute, no em dashes.
 
-Known deviations (checked 2026-10-11, not exhaustive): `test/spv-checkpoint.test.ts` and `scripts/verify-tarball.mjs` read the sibling cairn checkout (`../cairn`, `CAIRN_REPO` or `CAIRN_SWAPGUARD`); the wallet-connector e2e builds against `../cairn-wallet`; there are no `typecheck` or `lint` scripts (CI runs `pnpm exec tsc --noEmit` directly); the heavy comment blocks and audit IDs in `src/` are trimmed per module, not as drive-by edits.
+Known deviations (checked 2026-10-11, not exhaustive): `test/spv-checkpoint.test.ts` and `scripts/verify-tarball.mjs` read the sibling cairn checkout (`../cairn`, `CAIRN_REPO` or `CAIRN_SWAPGUARD`); the wallet-connector e2e builds against `../cairn-wallet`; there is no `lint` script; the heavy comment blocks and audit IDs in `src/` are trimmed per module, not as drive-by edits.
 
 ## The stack around it
 
@@ -67,7 +67,7 @@ Package manager is pnpm (packageManager pnpm@10.32.1). `pnpm-lock.yaml` is the s
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm exec tsc --noEmit
+pnpm typecheck                  # tsc over src and test/ (strict, noUncheckedIndexedAccess)
 pnpm build                      # tsup, 8 entrypoints
 pnpm test                       # offline unit suites (tsx)
 pnpm test:live                  # examples/read-only.mjs vs live mainnet

@@ -1,4 +1,4 @@
-// F13 offer pre-verify tests — the diligent-dApp on-chain corroboration `preverifyOffer` (and the
+// F13 offer pre-verify tests: the diligent-dApp on-chain corroboration `preverifyOffer` (and the
 // `Cairn.verifyOfferForFill` method that wraps it). A mock PoW light client returns a canned verified-inclusion
 // for a REAL signed offer Propose (real txid, real record commitment); a mock tx reader returns the funding
 // source tx so the prevout-owner author bind resolves. We assert: an honest offer verifies (payto/seller/terms
@@ -34,16 +34,16 @@ function proposeTx(priv: string, rec: object, nonce = 1, domain = DOMAIN, expire
   const uri = canonicalJson(rec);
   const phash = payloadHash(rec);
   const prev = "0x" + nonce.toString(16).padStart(2, "0").repeat(32).slice(0, 64);
-  const stripped = { version: 1, inputs: [{ prevTxid: prev, vout: 0, scriptSig: "0x" }], outputs: [{ value: 1000, scriptPubkey: a }], locktime: 0, app: { type: "Propose", domain, payloadHash: phash, uri, expiresEpoch } };
+  const stripped = { version: 1, inputs: [{ prevTxid: prev, vout: 0, scriptSig: "0x" }], outputs: [{ value: 1000, scriptPubkey: a }], locktime: 0, app: { type: "Propose" as const, domain, payloadHash: phash, uri, expiresEpoch } };
   const { sig64, pub33 } = signDigest(sighash(stripped), priv);
   const scriptSig = buildScriptSig(sig64, pub33);
   const id = txid(stripped);
-  const json = { txid: id, version: 1, locktime: 0, inputs: [{ prev_txid: prev, vout: 0, script_sig: scriptSig }], outputs: [{ value: 1000, script_pubkey: a }], app: { type: "Propose", domain, payload_hash: phash, uri, expires_epoch: expiresEpoch } };
+  const json = { txid: id, version: 1, locktime: 0, inputs: [{ prev_txid: prev, vout: 0, script_sig: scriptSig }], outputs: [{ value: 1000, script_pubkey: a }], app: { type: "Propose" as const, domain, payload_hash: phash, uri, expires_epoch: expiresEpoch } };
   // the funding source tx (a coinbase-like body whose output[0] the offer input spends), owner = the signer
-  const srcStripped = { version: 1, inputs: [{ prevTxid: "0x" + "00".repeat(32), vout: 0xffffffff, scriptSig: "0x" + nonce.toString(16).padStart(8, "0") }], outputs: [{ value: 5_000_000_000, scriptPubkey: a }], locktime: 0, app: { type: "None" } };
+  const srcStripped = { version: 1, inputs: [{ prevTxid: "0x" + "00".repeat(32), vout: 0xffffffff, scriptSig: "0x" + nonce.toString(16).padStart(8, "0") }], outputs: [{ value: 5_000_000_000, scriptPubkey: a }], locktime: 0, app: { type: "None" as const } };
   const srcId = txid(srcStripped);
   // rewire the offer input to spend the real source tx's output[0]
-  json.inputs[0].prev_txid = srcId;
+  json.inputs[0]!.prev_txid = srcId;
   const srcJson = { txid: srcId, version: 1, locktime: 0, inputs: [{ prev_txid: "0x" + "00".repeat(32), vout: 0xffffffff, script_sig: "0x" + nonce.toString(16).padStart(8, "0") }], outputs: [{ value: 5_000_000_000, script_pubkey: a }], app: { type: "None" } };
   // recompute the offer txid AFTER rewiring the input (txid blanks scriptSig, so re-sign is not needed for id)
   const rewired = rpcTxToTx(json);

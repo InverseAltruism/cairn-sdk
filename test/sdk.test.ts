@@ -32,7 +32,7 @@ function routerFetch(routes: Route[], log?: { calls: { url: string; method: stri
   }) as unknown as typeof fetch;
 }
 const json = (obj: unknown, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json" } });
-const bytes = (b: Uint8Array, status = 200) => new Response(b, { status });
+const bytes = (b: Uint8Array, status = 200) => new Response(b as Uint8Array<ArrayBuffer>, { status });
 
 console.log("=== Http: url building ===");
 {
@@ -122,7 +122,7 @@ console.log("=== IndexerClient: merkle inclusion (real fixture) ===");
   const r4 = await idx4.verifyInclusion(target);
   ok("branch not folding to claimed root → rejected", r4.included === false);
 
-  // (e) M3: a headerMerkleAt that THROWS (e.g. the PoW light client can't verify this height —
+  // (e) M3: a headerMerkleAt that THROWS (e.g. the PoW light client can't verify this height;
   //     below the SPV checkpoint, or unreachable) must DEGRADE to the honest "proof-consistent",
   //     never crash and never silently claim "verified-inclusion". This is the guarantee the M3
   //     fix relies on: the facade wires a PoW-verifying headerMerkleAt that throws when it cannot

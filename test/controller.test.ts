@@ -60,7 +60,7 @@ async function main() {
   const r = await c2.signInWithCsd({ nonce: "abc123def456" });
   ok("signInWithCsd after connect returns the artifact", (r as any).account === "0xabc" && typeof (r as any).message === "string");
 
-  let revoked = false;
+  let revoked = false as boolean;
   const p3 = mockProvider(); p3.revokePermissions = () => { revoked = true; return Promise.resolve({ ok: true, result: { revoked: true } }); };
   const c3 = over(p3); await c3.connect(); await c3.disconnect();
   ok("disconnect() revokes the wallet permission AND clears local state", revoked === true && c3.getSnapshot().status === "disconnected");
@@ -89,7 +89,7 @@ async function main() {
     let resolveConnect!: (r: any) => void;
     prov.connect = () => new Promise((res) => { resolveConnect = res; });
     const c = overT(prov, 0);
-    let rejected = false;
+    let rejected = false as boolean;
     const p = c.connect();
     p.then(() => {}, () => { rejected = true; });          // attach early so the rejection is never "unhandled"
     await tick();                                          // let connect() reach the approval await (this.conn set)
@@ -162,7 +162,7 @@ async function main() {
     await c.connect();
     let resolveConnect!: (r: any) => void;
     prov.connect = () => new Promise((res) => { resolveConnect = res; });
-    let rejected = false;
+    let rejected = false as boolean;
     const p = c.connect();
     p.then(() => {}, () => { rejected = true; });
     await tick();

@@ -20,7 +20,7 @@ const FIX = JSON.parse(readFileSync(new URL("./fixtures/spv-headers-115358-80.js
   headers: { height: number; header: { version: number; prev: string; merkle: string; time: number; bits: number; nonce: number }; hash: string }[];
 };
 const ROWS = FIX.headers;              // 115358..115413
-const BASE = ROWS[0].height;           // 115358
+const BASE = ROWS[0]!.height;           // 115358
 const M = ROWS.find((r) => r.height === 115411)!.header.merkle;   // target txid == that block's merkle root
 
 type Row = (typeof ROWS)[number];
@@ -74,8 +74,8 @@ console.log("P75-5 SPV fault tolerance (MF-14 seed + MF-03 reseed):");
       if (seedReq === 1) {
         const bad = cloneRows(sliceRows(from, count));
         const i = 115388 - BASE;                                  // row 30
-        bad[i].header.nonce = (bad[i].header.nonce ^ 0x5f5f5f) >>> 0;
-        bad[i].hash = headerHash(bad[i].header);                 // self-consistent hash -> fails on PoW, not hash-mismatch
+        bad[i]!.header.nonce = (bad[i]!.header.nonce ^ 0x5f5f5f) >>> 0;
+        bad[i]!.hash = headerHash(bad[i]!.header);                 // self-consistent hash -> fails on PoW, not hash-mismatch
         return jsonRes({ ok: true, headers: bad });
       }
     }
@@ -129,8 +129,8 @@ console.log("P75-5 SPV fault tolerance (MF-14 seed + MF-03 reseed):");
       hdr143++;
       if (hdr143 === 1) {
         const bad = cloneRows(sliceRows(from, count));
-        bad[0].header.prev = "0x" + "00".repeat(32);            // orphan the cached tip -> broken prev link at 115404
-        bad[0].hash = headerHash(bad[0].header);
+        bad[0]!.header.prev = "0x" + "00".repeat(32);            // orphan the cached tip -> broken prev link at 115404
+        bad[0]!.hash = headerHash(bad[0]!.header);
         return jsonRes({ ok: true, headers: bad });
       }
     }
@@ -155,8 +155,8 @@ console.log("P75-5 SPV fault tolerance (MF-14 seed + MF-03 reseed):");
       hdr143++;
       if (hdr143 === 1) {
         const bad = cloneRows(sliceRows(from, count));
-        bad[0].header.prev = "0x" + "00".repeat(32);
-        bad[0].hash = headerHash(bad[0].header);
+        bad[0]!.header.prev = "0x" + "00".repeat(32);
+        bad[0]!.hash = headerHash(bad[0]!.header);
         return jsonRes({ ok: true, headers: bad });
       }
     }
