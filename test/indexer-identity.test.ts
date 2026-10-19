@@ -41,7 +41,7 @@ console.log("indexer identity reads:");
   ok("a 500 rejects with a typed HttpError carrying status 500", e instanceof HttpError && (e as HttpError).status === 500);
 }
 
-// A 17 MiB body with no content-length is refused by the 16 MiB streamed cap, never parsed.
+// A 17 MiB body with no content-length is refused by the 16 MiB streamed cap.
 {
   const big = JSON.stringify({ data: "x".repeat(17 * 1024 * 1024) });
   const stub = (async () => new Response(big, { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch;
@@ -50,7 +50,7 @@ console.log("indexer identity reads:");
   ok("a 17 MiB streamed body is refused by the byte cap with a typed HttpError", e instanceof HttpError && /response (too large|exceeded)/.test(String((e as Error).message)));
 }
 
-// The address segment is encoded, so a traversal payload cannot walk above the base.
+// The address segment is encoded, so a traversal payload stays inside one path segment.
 {
   const calls: string[] = [];
   const stub = (async (input: RequestInfo | URL) => {
