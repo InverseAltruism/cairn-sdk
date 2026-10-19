@@ -23,7 +23,7 @@ This repo follows the maintainers' cross-repo engineering standard (a private do
 - Comments state constraints and non-obvious invariants, not history or audit IDs. Removing code needs the same evidence as adding it.
 - Docs: this file holds what stays true (no version tables, no status snapshots; versions live in `package.json` and tags, live state comes from a live query). Dates are absolute, no em dashes.
 
-Known deviations (checked 2026-10-11, not exhaustive): the opt-in wallet-connector e2e (`test:live:wallet`) loads a built `../cairn-wallet/dist` (or `WALLET_EXT`), and several maintainer-run `scripts/*.mjs` harnesses load the wallet from a fixed host path; there is no `lint` script; the heavy comment blocks and audit IDs in `src/` are trimmed per module, not as drive-by edits.
+Known deviations (checked 2026-10-11, not exhaustive): the opt-in wallet-connector e2e (`test:live:wallet`) loads a built `../cairn-wallet/dist` (or `WALLET_EXT`), and several maintainer-run `scripts/*.mjs` harnesses load the wallet from a fixed host path; `pnpm lint` (Biome, `biome.json`) reports 91 empty blocks as warnings (81 of them in the six `scripts/*.mjs` live harnesses; counted 2026-10-19), so that rule does not fail CI yet; the heavy comment blocks and audit IDs in `src/` are trimmed per module, not as drive-by edits.
 
 ## The stack around it
 
@@ -68,6 +68,7 @@ Package manager is pnpm (packageManager pnpm@10.32.1). `pnpm-lock.yaml` is the s
 ```bash
 pnpm install --frozen-lockfile
 pnpm typecheck                  # tsc over src and test/ (strict, noUncheckedIndexedAccess)
+pnpm lint                       # Biome, four rules only (biome.json; test/lint-config.test.mjs)
 pnpm build                      # tsup, 8 entrypoints
 pnpm test                       # offline unit suites (tsx)
 pnpm test:live                  # examples/read-only.mjs + test/e2e/e2e-read.mjs vs live mainnet

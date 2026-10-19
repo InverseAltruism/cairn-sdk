@@ -28,6 +28,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: typecheck (src and tests)
         run: pnpm run typecheck
+      # biome.json: unused imports, focused tests and ts-ignore directives fail the step; empty blocks are warnings for now.
+      - name: lint (Biome, four rules)
+        run: pnpm lint
       - name: build (all 9 subpaths emit ESM+CJS+dts)
         run: pnpm build
       - name: test (sdk/connect/errors/controller/react/hardening)
