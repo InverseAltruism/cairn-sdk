@@ -1,64 +1,42 @@
-// CAIRN-SDK-SPV-CKPT-DUP-1 regression: the SDK's DEFAULT_SPV_CHECKPOINT and cairn /trade swapguard's baked
-// `CP` are two independent literals in two repos with no shared module. A drift would make one reject all
-// post-checkpoint proofs (fail-closed DoS). This asserts they agree (height + lowercased hash).
-//
-// I2 (2026-07-17): this guard USED to SKIP (green, zero assertions) when the sibling cairn repo was not
-// checked out. The SDK's own CI never checks cairn out, so the parity guard silently provided NO coverage
-// and a real drift could hide behind a green skip. Now:
-//  - sibling PRESENT (local dev, cairn CI, `pnpm test` on the operator box): ASSERTS -> a real
-//    DEFAULT_SPV_CHECKPOINT drift FAILS the build.
-//    HONESTY CORRECTION (Plan 75-B C3, 2026-08-02): this suite was described here as gating `npm publish`
-//    through prepublishOnly. It does not. `pnpm pack` does not fire prepublishOnly, and publishing a
-//    PRE-MADE TARBALL (the sanctioned path here, because the npm 2FA-bypass token cannot publish) fires no
-//    hook at all, so nothing in this file runs at publish time. The drift check that IS in the publish
-//    path is `scripts/verify-tarball.mjs`: it reads the CP out of the same swapguard.js and compares it to
-//    the checkpoint literal inside the PACKED tarball's dist. This suite stays the fast dev/CI drift gate.
-//  - sibling ABSENT + CSD_SDK_REQUIRE_PARITY=1: hard FAIL (opt-in strict, for a wired CI).
-//  - sibling ABSENT + no flag: LOUD "UNCHECKED" marker to stderr, exit 0. A hard fail here would go
-//    PERMANENTLY red on the SDK's own public CI and every fork PR (cairn is private; fork PRs never get
-//    the ECOSYSTEM_RO_TOKEN), and a permanently-red CI is its own dead-green rot. Loud-not-silent is the
-//    middle ground; the real gate lives where the sibling exists, and at publish time that gate is
-//    scripts/verify-tarball.mjs, which FAILS (never skips) when no sibling swapguard.js is found.
-// OPERATOR DECISION (still open, plan Batch A): the cleaner long-term home is cairn's CI (public checkout
-// of cairn-sdk, both literals present), then drop/demote this test. Until then this is the safe default.
-import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { join } from "node:path";
+// DEFAULT_SPV_CHECKPOINT is a block on the chain: its hash is recomputed from a committed header fixture (a verbatim
+// /api/headers capture), the header meets its own PoW target, and the fixture's prev-links reach it from the capture's
+// first header. A wrong anchor makes the light client reject every proof above it, so this fails on any edit to the
+// constant that is not a real block. The fixture is re-captured whenever the checkpoint moves (see CHANGELOG).
+// The cairn site carries its own copy of the anchor; that copy is checked in the cairn repository, not read from here.
+import { readFileSync, readdirSync } from "node:fs";
+import { headerHash, headerHashBytes, powOk, type BlockHeader } from "@inversealtruism/csd-codec";
 import { DEFAULT_SPV_CHECKPOINT } from "../src/index.js";
 
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n)); };
 
-// Locate cairn's swapguard.js: explicit overrides first, then the default sibling checkout.
-const candidates = [
-  process.env.CAIRN_SWAPGUARD,
-  process.env.CAIRN_REPO && join(process.env.CAIRN_REPO, "public/trade/swapguard.js"),
-  fileURLToPath(new URL("../../cairn/public/trade/swapguard.js", import.meta.url)),
-].filter((p): p is string => !!p);
+type Row = { height: number; header: BlockHeader; hash: string };
+const FIXTURES = new URL("./fixtures/", import.meta.url);
+const CP = DEFAULT_SPV_CHECKPOINT;
 
-const swapguard = candidates.find((p) => existsSync(p));
-if (!swapguard) {
-  const required = process.env.CSD_SDK_REQUIRE_PARITY === "1";
-  console.error("  " + (required ? "❌" : "⚠") + " swapguard.js not found - the SPV-checkpoint parity guard could not run.");
-  console.error("     Checked: " + candidates.join(", "));
-  console.error("     Check out the sibling cairn repo at ../cairn, or set CAIRN_SWAPGUARD / CAIRN_REPO.");
-  if (required) {
-    console.error("     CSD_SDK_REQUIRE_PARITY=1: FAILING (a DEFAULT_SPV_CHECKPOINT drift must not hide behind an absent sibling).");
-    process.exit(1);
+const rows = readdirSync(FIXTURES)
+  .filter((f) => /^spv-headers-\d+-\d+\.json$/.test(f))
+  .map((f) => (JSON.parse(readFileSync(new URL(f, FIXTURES), "utf8")) as { headers: Row[] }).headers)
+  .find((hs) => hs.some((r) => r.height === CP.height));
+
+/** True when `hash` is the recomputed hash of a PoW-valid header at `height` that the fixture links to from its start. */
+function anchoredInFixture(fixture: Row[], height: number, hash: string): boolean {
+  const i = fixture.findIndex((r) => r.height === height);
+  if (i < 0) return false;
+  for (let k = 1; k <= i; k++) {
+    if (fixture[k]!.height !== fixture[k - 1]!.height + 1 || fixture[k]!.header.prev !== headerHash(fixture[k - 1]!.header)) return false;
   }
-  console.error("     UNCHECKED (I2): not failing here - a hard fail would go permanently red on the SDK's public/fork CI");
-  console.error("     (cairn is private; forks never get the token). The real gate is this suite wherever the sibling");
-  console.error("     exists (cairn CI, the operator box) plus scripts/verify-tarball.mjs at publish time, which FAILS");
-  console.error("     on an absent sibling. Set CSD_SDK_REQUIRE_PARITY=1 to enforce here.");
-  process.exit(0);   // loud-unchecked, NEVER a silent green; never a permanent-red on fork CI
+  const h = fixture[i]!.header;
+  return headerHash(h) === hash.toLowerCase() && powOk(headerHashBytes(h), h.bits);
 }
 
-const src = readFileSync(swapguard, "utf8");
-const m = src.match(/const\s+CP\s*=\s*\{\s*height:\s*(\d+)\s*,\s*hash:\s*["']([0-9a-fA-Fx]+)["']/);
-ok("found swapguard CP literal", !!m);
-if (m) {
-  ok("checkpoint height matches swapguard", Number(m[1]) === DEFAULT_SPV_CHECKPOINT.height);
-  ok("checkpoint hash matches swapguard (lowercased)", m[2]!.toLowerCase() === DEFAULT_SPV_CHECKPOINT.hash.toLowerCase());
+if (!rows) {
+  ok(`a test/fixtures/spv-headers-*.json capture covers the checkpoint height ${CP.height}`, false);
+} else {
+  ok(`DEFAULT_SPV_CHECKPOINT (${CP.height}) is a PoW-valid, prev-linked block in the header fixture`, anchoredInFixture(rows, CP.height, CP.hash));
+  const flipped = CP.hash.slice(0, -1) + (CP.hash.endsWith("0") ? "1" : "0");
+  ok("a checkpoint hash one nibble off is not anchored", !anchoredInFixture(rows, CP.height, flipped));
+  ok("the right hash at the wrong height is not anchored", !anchoredInFixture(rows, CP.height + 1, CP.hash));
 }
 console.log(`spv-checkpoint: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

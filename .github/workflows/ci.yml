@@ -32,6 +32,10 @@ jobs:
         run: pnpm build
       - name: test (sdk/connect/errors/controller/react/hardening)
         run: pnpm test
+      - name: verify-tarball (a fresh pack equals a second rebuild and repack)
+        run: |
+          pnpm pack --pack-destination "$RUNNER_TEMP/pack"
+          node scripts/verify-tarball.mjs "$RUNNER_TEMP"/pack/*.tgz
       - name: dep-pin hygiene (exact-pin every @inversealtruism/* AND enforce a single codec/crypto copy)
         run: |
           node -e '

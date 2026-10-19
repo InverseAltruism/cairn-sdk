@@ -1,14 +1,14 @@
-// Live WALLET CONNECTOR e2e — drives the REAL Cairn Wallet extension in real Chromium
+// Live WALLET CONNECTOR e2e: drives the REAL Cairn Wallet extension in real Chromium
 // (under Xvfb) through the cairn-sdk connector, proving the per-origin consent model
 // end-to-end in a browser:
 //   1. SDK detectProvider() sees window.cairn (broad injection / connect-anywhere)
 //   2. first connect() opens the clear-signing approval window → approve → address
-//   3. repeat getAddress() is SILENT (no new window) — consented origin
+//   3. repeat getAddress() is SILENT (no new window); consented origin
 //   4. send() STILL opens the approval window (signing never auto-approves) → reject
 //   5. revoke the site in the wallet → connect() prompts again
 //
-// Requires: a built cairn-wallet/dist + cached chromium + Xvfb. Run via:
-//   xvfb-run -a node test/e2e/e2e-wallet-connect.mjs
+// Requires: a built cairn-wallet/dist (WALLET_EXT, default ../cairn-wallet/dist beside this repo) + cached
+// chromium + Xvfb. Opt-in, never part of `pnpm test`. Run via `pnpm test:live:wallet`.
 import { chromium } from "playwright-core";
 import { build } from "esbuild";
 import { createServer } from "node:http";
@@ -20,7 +20,7 @@ import { makeHarness } from "./harness.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const EXE = process.env.CHROME || `${process.env.HOME}/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome`;
-const DIST = "/opt/cairn_substrate/cairn-wallet/dist";
+const DIST = process.env.WALLET_EXT || join(__dir, "../../../cairn-wallet/dist");
 const PW = "correct horse battery staple";
 const h = makeHarness("wallet-connect");
 
@@ -39,7 +39,7 @@ const bundle = await build({
 });
 const sdkJs = bundle.outputFiles[0].text;
 
-// Serve our OWN permissive page (no CSP) on 127.0.0.1 — the wallet injects on
+// Serve our OWN permissive page (no CSP) on 127.0.0.1; the wallet injects on
 // http://127.0.0.1/* at any port. (The cairn board page has script-src 'self', which
 // blocks injecting the SDK bundle, so we host a clean page instead.)
 const server = createServer((_req, res) => {
@@ -63,7 +63,7 @@ async function waitForApprove(timeoutMs = 9000) {
   while (Date.now() - start < timeoutMs) { const w = approveWindows()[0]; if (w) { return w; } await wait(250); }
   return null;
 }
-// Click a button (Approve/Reject) — the approval window disables both buttons for ~700ms
+// Click a button (Approve/Reject): the approval window disables both buttons for ~700ms
 // (anti-clickjacking), so wait that out and retry until the button is enabled + clicked.
 async function clickIn(win, re) {
   for (let i = 0; i < 8; i++) {
