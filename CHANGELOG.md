@@ -33,8 +33,23 @@ Replacement: none for peers, gateways, identity reads and the record builders; f
 `registryGateways()`) reject with `HttpError` status 404 instead of resolving `[]`. `cairn.index.identity()` and
 `reverseIdentity()` reject with `HttpError` 404 once the route is gone. `registry.resolveName()` and
 `reverseName()` turned a 404 into `null`, so they resolve `null` after the deploy. Code that guarded these calls with a `.catch(() => [])` keeps working; code that did not now throws.
-On 0.7.0, `cairn.registry` is undefined and the names above are not exported or not methods (a TypeScript build
-fails at the import or the property access).
+On 0.7.0, `cairn.registry` is undefined and the names above are not exported or not methods. A TypeScript build
+fails at the import or the property access. In plain JavaScript, an ESM `import { RegistryClient }` fails when the
+module loads (`SyntaxError`), `import("@inversealtruism/cairn-sdk/registry")` fails with
+`ERR_PACKAGE_PATH_NOT_EXPORTED`, under CommonJS `RegistryClient` is `undefined`, and calling `cairn.registry.*` or
+`cairn.index.identity()` throws a `TypeError`.
+
+### Content reads from the cairn origin only
+
+The swarm is dead and the indexer removes its `/content` route in the same wave (it fetched from the swarm and
+answers 502 today), so `cairn.content` now reads only the cairn origin's `/content/<hash>`, which holds the bytes.
+Verification is unchanged: bytes that do not hash to the requested hash throw `ContentVerificationError`; a 404 or
+an unreachable origin resolves `null`, as 0.6.0 did when every source failed.
+
+- `baseUrls.swarm` is removed from `CairnBaseUrls`.
+- `ContentClientOptions` is `{ cairn: Http }` (`cairn` required); its `swarm` and `indexer` options are removed,
+  and with them the multi-source order (a mismatching source no longer falls through to the next one, since there
+  is one source).
 
 ### Surface
 

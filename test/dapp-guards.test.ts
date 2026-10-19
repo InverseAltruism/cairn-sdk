@@ -1,6 +1,8 @@
-// dApp API guards (cairn-sdk 0.5.0): ContentClient tries the next source after a mismatching one (W21) and
-// gives a typed error for verified non-JSON content; Http's maxBytes and retries reject NaN (M-67). Offline.
+// dApp API guards: ContentClient reads the cairn origin only and reports tampering with a typed error, also for
+// verified non-JSON content; the Cairn facade asks no other content source; Http's maxBytes and retries reject NaN
+// (M-67). Offline.
 import { ContentClient } from "../src/content.js";
+import { Cairn } from "../src/index.js";
 import { Http } from "../src/http.js";
 import { CairnError, ContentVerificationError, HttpError, errorCode } from "../src/errors.js";
 import { payloadHash, canonicalJson } from "../src/chain.js";
@@ -13,31 +15,21 @@ const obj = { v: 1, domain: "d", title: "t", body: "b", links: [] };
 const h = payloadHash(obj);
 const good = new TextEncoder().encode(canonicalJson(obj));
 const bad = new TextEncoder().encode('{"v":1,"evil":true}');
-const src = (serve: Uint8Array | null | "down", log?: string[], name = "") => new Http({
-  baseUrl: `https://${name || "s"}.test`,
+const src = (serve: Uint8Array | null | "down") => new Http({
+  baseUrl: "https://s.test",
   fetch: (async () => {
-    log?.push(name);
     if (serve === "down") throw new TypeError("fetch failed");
     return serve ? new Response(serve as Uint8Array<ArrayBuffer>, { status: 200 }) : new Response("nope", { status: 404 });
   }) as unknown as typeof fetch,
 });
 
-console.log("ContentClient (W21, typed get error):");
+console.log("ContentClient (one origin, typed get error):");
 {
-  const log: string[] = [];
-  const cc = new ContentClient({ swarm: src(bad, log, "swarm"), indexer: src(good, log, "indexer"), cairn: src(good, log, "cairn") });
-  const got = await cc.getBytes(h).catch((e: unknown) => e);
-  ok("W21: a mismatching first source no longer hides good content at the next one", got instanceof Uint8Array && new TextDecoder().decode(got) === canonicalJson(obj));
-  ok("W21: it stopped at the first verified source (swarm, indexer; cairn not asked)", log.join(",") === "swarm,indexer");
-
-  const allBad = new ContentClient({ swarm: src(bad), cairn: src(bad) });
-  ok("W21: every source mismatching still throws ContentVerificationError", (await caught(() => allBad.getBytes(h))) instanceof ContentVerificationError);
-  const badThenMissing = new ContentClient({ swarm: src(bad), indexer: src("down"), cairn: src(null) });
-  ok("W21: a mismatch followed only by unreachable or 404 sources throws (tamper is reported, not hidden as null)", (await caught(() => badThenMissing.getBytes(h))) instanceof ContentVerificationError);
-  const missing = new ContentClient({ swarm: src("down"), cairn: src(null) });
-  ok("W21 honest: no source holds it -> null", (await missing.getBytes(h)) === null);
+  ok("an origin serving mismatching bytes throws ContentVerificationError", (await caught(() => new ContentClient({ cairn: src(bad) }).getBytes(h))) instanceof ContentVerificationError);
+  ok("a 404 reads as null", (await new ContentClient({ cairn: src(null) }).getBytes(h)) === null);
+  ok("an unreachable origin reads as null, as 0.6.0 did when every source failed", (await new ContentClient({ cairn: src("down") }).getBytes(h)) === null);
   const one = new ContentClient({ cairn: src(good) });
-  ok("W21 honest: the single-source happy path returns the parsed object", (await one.get<typeof obj>(h))?.title === "t");
+  ok("honest: the origin's verified bytes parse to the object", (await one.get<typeof obj>(h))?.title === "t");
 
   const raw = new TextEncoder().encode("not json at all");
   const rawHash = "0x" + Buffer.from(await crypto.subtle.digest("SHA-256", raw)).toString("hex");
@@ -46,6 +38,19 @@ console.log("ContentClient (W21, typed get error):");
   ok("get(): verified non-JSON bytes throw a CairnError with code CONTENT_NOT_JSON (was a raw SyntaxError)", e instanceof CairnError && errorCode(e) === "CONTENT_NOT_JSON" && !(e instanceof SyntaxError));
   ok("get(): the parse error is kept as the cause", e instanceof CairnError && (e as Error & { cause?: unknown }).cause instanceof SyntaxError);
   ok("get() honest: getBytes() still returns those verified raw bytes", (await notJson.getBytes(rawHash))?.length === raw.length);
+}
+
+console.log("Cairn facade content reads:");
+{
+  const seen: string[] = [];
+  const f = (async (u: unknown) => {
+    const url = new URL(String(u));
+    seen.push(url.origin + url.pathname);
+    return url.pathname === `/content/${h}` ? new Response(good as Uint8Array<ArrayBuffer>, { status: 200 }) : new Response("nope", { status: 404 });
+  }) as unknown as typeof fetch;
+  const cairn = new Cairn({ network: "mainnet", fetch: f });
+  ok("honest: cairn.content.get returns the verified object from the cairn origin", (await cairn.content.get<typeof obj>(h))?.title === "t");
+  ok("it asks the origin's /content and no other source (no indexer or swarm round trip)", seen.length === 1 && seen[0] === `https://cairn-substrate.com/content/${h}`);
 }
 
 console.log("Http clamps (M-67):");

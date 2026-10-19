@@ -96,12 +96,9 @@ try {
   });
 
   console.log("honest path (the rest of the 0.6.0 surface):");
-  ok("every name 0.6.0 exported outside the registry surface is still exported, per entry", () => {
+  ok("each entry exports exactly the 0.6.0 names outside the registry surface: none missing, none added", () => {
     assert.deepEqual(Object.keys(pinned).sort(), entries);
-    for (const e of entries) {
-      const have = new Set(typeExports[e]);
-      assert.deepEqual(pinned[e].filter((n) => !have.has(n)), [], `${e}: missing`);
-    }
+    for (const e of entries) assert.deepEqual([...typeExports[e]].sort(), [...pinned[e]].sort(), e);
   });
   ok("every other IndexerClient method of 0.6.0 is still a method, and nothing was added", () => {
     const have = Object.getOwnPropertyNames(runtime.indexer.IndexerClient.prototype).filter((n) => n !== "constructor").sort();

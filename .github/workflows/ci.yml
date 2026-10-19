@@ -39,7 +39,7 @@ jobs:
         run: pnpm lint
       - name: no em dash in tracked docs, no sibling-checkout reads outside the listed exceptions
         run: pnpm check:dashes-paths
-      - name: build (all 9 subpaths emit ESM+CJS+dts)
+      - name: build (every subpath emits ESM+CJS+dts)
         run: pnpm build
       - name: test (sdk/connect/errors/controller/react/hardening)
         run: pnpm test

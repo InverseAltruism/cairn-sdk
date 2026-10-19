@@ -33,12 +33,6 @@ export interface CairnBaseUrls {
    * needs a direct indexer endpoint (set this to a localhost/private indexer URL).
    */
   indexer?: string;
-  /**
-   * Optional direct csd-swarm gateway base. Not set by default — content is reached
-   * via the indexer proxy (which fronts the swarm) and the cairn origin, both verified.
-   * Set this only if you run a public swarm gateway.
-   */
-  swarm?: string;
 }
 
 export interface CairnConfig {
@@ -146,10 +140,6 @@ export class Cairn {
     this.cairnHttp = new Http({ baseUrl: cairn, fetch, timeoutMs });
     this._cairnBase = cairn;
     const indexerHttp = new Http({ baseUrl: indexer, fetch, timeoutMs });
-    // Optional direct swarm gateway (not public by default; the indexer fronts it).
-    const swarmHttp = config.baseUrls?.swarm
-      ? new Http({ baseUrl: config.baseUrls.swarm.replace(/\/+$/, ""), fetch, timeoutMs })
-      : undefined;
 
     this._spvCp = config.spvCheckpoint ?? DEFAULT_SPV_CHECKPOINT;
     this.chain = new Chain({ rpcUrl: rpc, fetch, timeoutMs });
@@ -166,8 +156,7 @@ export class Cairn {
       WebSocketImpl: config.WebSocketImpl,
       headerMerkleAt: (h: number) => this.verifiedHeaderMerkleAt(h),
     });
-    // Content sources tried in order: direct swarm (if set) → indexer (fronts swarm) → cairn origin.
-    this.content = new ContentClient({ swarm: swarmHttp, indexer: indexerHttp, cairn: this.cairnHttp });
+    this.content = new ContentClient({ cairn: this.cairnHttp });
     this.names = new NamesClient(this.cairnHttp);
   }
 
