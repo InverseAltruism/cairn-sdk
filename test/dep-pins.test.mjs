@@ -56,6 +56,12 @@ ok("the parser read every package.json dependency from the lockfile, peer suffix
   assert.deepEqual(names(importer.devDependencies), names(pkg.devDependencies));
   assert.equal(importer.devDependencies.tsup.version, pkg.devDependencies.tsup);
 });
+// GHSA-g7r4-m6w7-qqqr (low; the dev server on Windows) affects esbuild >=0.27.3 <0.28.1. tsup 8.5.1 keeps its own
+// esbuild ^0.27 (its dist has no call to esbuild's serve); tsup 9 moves to ^0.28.2.
+ok("the direct dev esbuild is 0.28.1 or later", () => {
+  const [maj, min, pat] = pkg.devDependencies.esbuild.split(".").map(Number);
+  assert.ok(maj > 0 || min > 28 || (min === 28 && pat >= 1), pkg.devDependencies.esbuild);
+});
 ok("a caret range on a dev dependency is an offence", () => {
   const caret = { ...pkg, devDependencies: { ...pkg.devDependencies, tsx: "^" + pkg.devDependencies.tsx } };
   assert.ok(pinOffences(caret, importer).some((l) => l.startsWith("devDependencies.tsx:") && l.includes("not an exact version")));

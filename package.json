@@ -80,7 +80,7 @@
     "@biomejs/biome": "2.5.15",
     "@inversealtruism/csd-siwc": "0.1.19",
     "@types/node": "22.19.20",
-    "esbuild": "0.27.7",
+    "esbuild": "0.28.2",
     "playwright-core": "1.60.0",
     "tsup": "8.5.1",
     "tsx": "4.22.4",
