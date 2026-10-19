@@ -23,9 +23,6 @@ importers:
       '@inversealtruism/csd-light':
         specifier: 0.1.23
         version: 0.1.23
-      '@inversealtruism/csd-registry':
-        specifier: 0.1.20
-        version: 0.1.20
       '@inversealtruism/csd-tx':
         specifier: 0.1.21
         version: 0.1.21
@@ -444,10 +441,6 @@ packages:
 
   '@inversealtruism/csd-light@0.1.23':
     resolution: {integrity: sha512-db4Ykub/Zz7iWHuEiXj/EV91quBoG7w2YfVHxLuZWr577zn8FKm9nMMhQeqnaedhZRKfRSA+xwdRFq4VchwFRw==}
-    engines: {node: '>=18'}
-
-  '@inversealtruism/csd-registry@0.1.20':
-    resolution: {integrity: sha512-O1VMo5eKQZP08d5zFt/aeN07ttIiLR/IcKx0J78x0N+DIncEhf83ktzERk6H6QZQ7C0OXwCW7IAmLrez5cECwA==}
     engines: {node: '>=18'}
 
   '@inversealtruism/csd-siwc@0.1.19':
@@ -1056,11 +1049,6 @@ snapshots:
     dependencies:
       '@inversealtruism/csd-client': 0.1.18
       '@inversealtruism/csd-codec': 0.1.18
-
-  '@inversealtruism/csd-registry@0.1.20':
-    dependencies:
-      '@inversealtruism/csd-codec': 0.1.18
-      '@inversealtruism/csd-crypto': 0.1.18
 
   '@inversealtruism/csd-siwc@0.1.19':
     dependencies:

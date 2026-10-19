@@ -1,5 +1,74 @@
 # Changelog
 
+## 0.7.0 (prepared 2026-10-19, not yet published): registry API removed, content from the cairn origin only
+
+A minor bump on 0.x: a call that compiled under 0.6.0 no longer does, so a `^0.6.x` range does not pick this up.
+
+### Removed (breaking for importers of the registry API)
+
+Decision P-5 (2026-10-13): one naming system. The registry served the swarm's peer and gateway lists, and the
+swarm is dead; the indexer's `/registry/peers` and `/registry/gateways` answer `[]` today and
+return 404 once the indexer release of this wave is deployed. The `@inversealtruism/csd-registry` package is
+removed from the csd-sdk monorepo and deprecated on npm after this release, so nothing here depends on it.
+Replacement: none for peers, gateways, identity reads and the record builders; for .csd names use `cairn.names`
+(server-trusted display reads; the wallet verifies a payment target on-device).
+
+- `RegistryClient` (export) and its option type `RegistryClientOptions`, the `cairn.registry` namespace, and the
+  `@inversealtruism/cairn-sdk/registry` subpath export. That removes `registry.gateways()`, `peers()`,
+  `resolveName(handle)`, `reverseName(addr)` and `.fromRecords`.
+- The csd-registry re-exports that subpath carried: `fromRecords`, `verifyPeer`, `verifyGateway`,
+  `verifyIdentitySig`, `DOMAINS`, `buildPeerRecord`, `buildGatewayRecord`, `buildIdentityCommit`,
+  `buildIdentityReveal`, `epochOf`, and the types `RankedPeer`, `RankedGateway`, `ResolvedIdentity`,
+  `ChainRecord`, `ResolveOpts`, `BuiltRecord`.
+- `IndexerClient.registryPeers()`, `registryGateways()`, `identity(handle)` and `reverseIdentity(addr)`
+  (`cairn.index.*`). The last two read the indexer's `/identity/:handle` and `/address/:a/identity`, the
+  registry's identity layer, which the indexer removes in the same wave (they answer 404 when no binding exists).
+- The dependency `@inversealtruism/csd-registry` (0.1.20). The lockfile diff only removes it and its entry.
+- `examples/register-swarm-peer.mjs`, which built and proposed swarm peer and gateway records, and the registry
+  lines of `examples/read-only.mjs` and `test/e2e/e2e-read.mjs`.
+
+### What a 0.6.0 user sees after the indexer deploy
+
+`cairn.registry.peers()` and `cairn.registry.gateways()` (and `cairn.index.registryPeers()` and
+`registryGateways()`) reject with `HttpError` status 404 instead of resolving `[]`. `cairn.index.identity()` and
+`reverseIdentity()` reject with `HttpError` 404 once the route is gone. `registry.resolveName()` and
+`reverseName()` turned a 404 into `null`, so they resolve `null` after the deploy. Code that guarded these calls with a `.catch(() => [])` keeps working; code that did not now throws.
+On 0.7.0, `cairn.registry` is undefined and the names above are not exported or not methods. A TypeScript build
+fails at the import or the property access. In plain JavaScript, an ESM `import { RegistryClient }` fails when the
+module loads (`SyntaxError`), `import("@inversealtruism/cairn-sdk/registry")` fails with
+`ERR_PACKAGE_PATH_NOT_EXPORTED`, under CommonJS `RegistryClient` is `undefined`, and calling `cairn.registry.*` or
+`cairn.index.identity()` throws a `TypeError`.
+
+### Content reads from the cairn origin only
+
+The swarm is dead and the indexer removes its `/content` route in the same wave (it fetched from the swarm and
+answers 502 today), so `cairn.content` now reads only the cairn origin's `/content/<hash>`, which holds the bytes.
+Verification is unchanged: bytes that do not hash to the requested hash throw `ContentVerificationError`; a 404 or
+an unreachable origin resolves `null`, as 0.6.0 did when every source failed.
+
+- `baseUrls.swarm` is removed from `CairnBaseUrls`.
+- `ContentClientOptions` is `{ cairn: Http }` (`cairn` required); its `swarm` and `indexer` options are removed,
+  and with them the multi-source order (a mismatching source no longer falls through to the next one, since there
+  is one source).
+
+What a 0.6.0 user sees: content reads through the facade keep working after the indexer deploy, with one extra 404
+round trip to the indexer before the origin answers; on 0.7.0 that round trip is gone. In plain JavaScript a
+`baseUrls.swarm` value is ignored, and `new ContentClient({ swarm })` or `({ indexer })` without `cairn` throws a
+`TypeError` at construction (a TypeScript build fails at the option).
+
+### Surface
+
+The public export list (values and types, every entry) is otherwise unchanged: 208 names at 0.6.0, 189 after
+removing the 18 names of the registry entry and `RegistryClient` from the root entry. The four removed
+`IndexerClient` methods and `Cairn.registry` are members, not export names, so they do not change that count.
+`test/no-registry-surface.test.mjs` builds the package and pins the export list and the `IndexerClient` method
+list against `test/fixtures/public-surface-0.6.0.json`.
+
+### Dependencies
+
+- Removed `@inversealtruism/csd-registry` 0.1.20. No dependency added or bumped.
+- `SDK_VERSION` is 0.7.0.
+
 ## 0.6.0 (2026-10-18) - cairnx-core 0.2.0 and csd-codec 0.1.18 (csd-sdk publish window 2)
 
 A minor bump: the re-exported `bindOfferTerms` changes its default and a call that compiled under 0.5.0 no

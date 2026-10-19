@@ -66,12 +66,6 @@ if (contentHash) {
   h.ok("content.hash(obj) reproduces the on-chain payload_hash", cairn.content.hash(got) === String(contentHash).toLowerCase(), "byte-identical canonicalization");
 }
 
-h.section("registry (L3)");
-const gws = await cairn.registry.gateways();
-h.ok("registry.gateways resolves", Array.isArray(gws), `${gws.length} gateway(s)`);
-const peers = await cairn.registry.peers();
-h.ok("registry.peers resolves (may be empty by design)", Array.isArray(peers));
-
 h.section("adversarial: verification actually rejects bad inputs");
 const bogus = await cairn.index.verifyInclusion("0x" + "00".repeat(32));
 h.ok("verifyInclusion of a bogus txid → not included", bogus.included === false && bogus.trustLevel === "not-found");

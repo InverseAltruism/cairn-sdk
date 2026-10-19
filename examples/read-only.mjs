@@ -1,7 +1,7 @@
 // Runnable read-only example: works against live mainnet, no wallet, no build step beyond `pnpm build`.
 //   node examples/read-only.mjs
 // Demonstrates the read surfaces: chain tip, indexer health and proposals, trust-minimized
-// merkle inclusion, registry, and verified content fetch.
+// merkle inclusion, and verified content fetch.
 import { Cairn } from "../dist/index.js";
 
 const cairn = new Cairn({ network: "mainnet" });
@@ -16,9 +16,6 @@ const domains = await cairn.index.domains();
 const busiest = domains[0]?.domain;
 console.log(`domains:          ${domains.length} (busiest: ${busiest ?? "none"})`);
 
-const gateways = await cairn.registry.gateways();
-console.log(`registry:         ${gateways.length} gateway(s)`);
-
 const proposals = busiest ? await cairn.index.domainProposals(busiest) : [];
 const newest = proposals.reduce((a, p) => (!a || p.height > a.height ? p : a), null);
 if (newest) {
@@ -26,9 +23,9 @@ if (newest) {
   const incl = await cairn.index.verifyInclusion(newest.txid);
   console.log(`inclusion:        ${incl.trustLevel} (block ${incl.blockHeight})${incl.included ? "" : `  reason: ${incl.reason}`}`);
 
-  // self-certifying content fetch (sha256(bytes) === payload_hash, enforced client-side); null if no source stores it
+  // self-certifying content fetch (sha256(bytes) === payload_hash, enforced client-side); null if the origin does not hold it
   const content = await cairn.content.get(newest.payload_hash);
-  console.log(`content (verified): ${content === null ? "not stored by any source" : JSON.stringify(content).slice(0, 120)}`);
+  console.log(`content (verified): ${content === null ? "not held by the origin" : JSON.stringify(content).slice(0, 120)}`);
 }
 
 console.log("\nOK: all reads served from cairn-substrate.com; content and inclusion verified client-side.");

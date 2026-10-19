@@ -1,22 +1,18 @@
-// ContentClient — self-certifying content over the L1 swarm + cairn origin.
+// ContentClient: self-certifying content from the cairn origin's `/content` store.
 //
 // Content is addressed by `payloadHash` = sha256(canonicalJson(obj)). Retrieval is
 // ALWAYS verified client-side: bytes that don't hash to the requested hash are
-// rejected (ContentVerificationError), so an untrusted gateway/transport cannot
-// serve tampered content. Publishing is anchored on-chain by a Propose carrying the
-// payload hash (`wallet.propose`); `put()` here computes the hash/bytes for that.
+// rejected (ContentVerificationError), so the transport cannot serve tampered
+// content. Publishing is anchored on-chain by a Propose carrying the payload hash
+// (`wallet.propose`); `put()` here computes the hash/bytes for that.
 
 import { payloadHash, canonicalJson, verifyContentBytes } from "@inversealtruism/csd-codec";
 import type { Http } from "./http.js";
 import { CairnError, ContentVerificationError } from "./errors.js";
 
 export interface ContentClientOptions {
-  /** Swarm gateway HTTP client (e.g. https://cairn-substrate.com/swarm). */
-  swarm?: Http;
-  /** Cairn origin HTTP client (serves /content as origin + fallback). */
-  cairn?: Http;
-  /** Indexer HTTP client (also joins the swarm gateway at /content). */
-  indexer?: Http;
+  /** Cairn origin HTTP client; it serves `/content/<hash>`. */
+  cairn: Http;
 }
 
 export interface PreparedContent {
@@ -24,19 +20,20 @@ export interface PreparedContent {
   payloadHash: string;
   /** The exact canonical JSON string that was hashed. */
   canonical: string;
-  /** UTF-8 bytes of the canonical JSON (what the swarm stores / serves). */
+  /** UTF-8 bytes of the canonical JSON (what the origin stores and serves). */
   bytes: Uint8Array;
 }
 
 export class ContentClient {
-  private readonly sources: { name: string; http: Http; path: (hash: string) => string }[];
+  private readonly cairn: Http;
 
   constructor(opts: ContentClientOptions) {
-    this.sources = [];
-    // Preference order: swarm gateway → indexer → cairn origin. Each is verified anyway.
-    if (opts.swarm) this.sources.push({ name: "swarm", http: opts.swarm, path: (h) => `/content/${h}` });
-    if (opts.indexer) this.sources.push({ name: "indexer", http: opts.indexer, path: (h) => `/content/${h}` });
-    if (opts.cairn) this.sources.push({ name: "cairn", http: opts.cairn, path: (h) => `/content/${h}` });
+    // A plain-JS 0.6.0 caller passing only `swarm` or `indexer` would otherwise read null for every hash, with no
+    // tamper check: refuse at construction instead.
+    if (!opts?.cairn || typeof opts.cairn.getBytes !== "function") {
+      throw new TypeError("ContentClient needs a `cairn` Http client (the swarm and indexer sources were removed in 0.7.0)");
+    }
+    this.cairn = opts.cairn;
   }
 
   /**
@@ -64,28 +61,21 @@ export class ContentClient {
 
   /**
    * Fetch content by hash and VERIFY it self-certifies (sha256(bytes) == hash).
-   * Tries each configured source in order; a source that is unreachable, lacks
-   * the content or serves bytes that don't match the hash is skipped. Returns the
-   * first verified bytes, or null if no source holds it. Throws
-   * ContentVerificationError only when no source served verified bytes and at
-   * least one served mismatching bytes (tampering / wrong object).
+   * Returns the verified bytes, or null when the origin does not hold the content
+   * or cannot be reached (as 0.6.0 did when every source failed). Throws
+   * ContentVerificationError when the origin serves bytes that don't match the hash.
    */
   async getBytes(hash: string): Promise<Uint8Array | null> {
     const h = normalizeHash(hash);
-    let mismatched = false;
-    for (const src of this.sources) {
-      let got: { bytes: Uint8Array; headers: Headers } | null = null;
-      try {
-        got = await src.http.getBytes(src.path(h));
-      } catch {
-        continue; // source unreachable — try the next
-      }
-      if (!got) continue; // 404 from this source
-      if (!verifyContentBytes(got.bytes, h)) { mismatched = true; continue; }
-      return got.bytes;
+    let got: { bytes: Uint8Array; headers: Headers } | null = null;
+    try {
+      got = await this.cairn.getBytes(`/content/${h}`);
+    } catch {
+      return null; // origin unreachable: not found, as 0.6.0 reported it when every source failed
     }
-    if (mismatched) throw new ContentVerificationError(h);
-    return null;
+    if (!got) return null; // 404
+    if (!verifyContentBytes(got.bytes, h)) throw new ContentVerificationError(h);
+    return got.bytes;
   }
 
   /** Fetch + verify + parse as UTF-8 JSON. Returns null if not found. Throws a CairnError with code
