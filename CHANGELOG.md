@@ -375,3 +375,28 @@ marks a safe auto-retry (nothing signed); a terminal CairnError is definitively 
 Added: `preverifyOffer` / `Cairn.verifyOfferForFill` (F13-helper) - a diligent dApp can merkle-prove an
 offer + bind the payment recipient to its on-chain author before fillOffer.
 Hardening: the spv-checkpoint parity guard fails-not-silent-skips (I2); the stray npm lockfile removed (W-K1).
+
+## Notes moved from AGENTS.md (2026-10-22)
+
+History that used to sit in the maintainer briefing. The rules it led to stay in `AGENTS.md`.
+
+- Stray npm lockfile (W-K1): a second lockfile, `package-lock.json`, had drifted to 0.2.3 while the package
+  was 0.2.4, a supply-chain ambiguity. It was removed on 2026-07-17 (commit 09b25ff, released in 0.3.0).
+- CI dep-pin gate (fixed in 0.2.2, 2026-07-10): the old ci.yml gate demanded that every
+  `@inversealtruism/csd-*` pin be one uniform version, which cannot hold under independent per-package
+  versioning, so it could never pass. It was reworked to per-package exact-semver hygiene over every
+  `@inversealtruism/*` pin, now including cairnx-core, which the old name filter excluded.
+- Pin drift (fixed in 0.2.2): `package.json` pins had drifted; 0.2.2 re-pinned to the published versions.
+- The SDK originally shipped with no CI at all, and pin drift went unnoticed until a review caught it.
+- Stale lockfile (found at 0.4.2): the lockfile had been stale since the 0.4.0 release, so `package.json`
+  pinned newer cairnx-core, csd-codec, csd-light and csd-registry versions than `node_modules` carried.
+  Every green result that certified 0.4.1 and 0.4.2, including the ASDK-1 parity corpus, had run against the
+  wrong dependency graph, and `tsc` could not catch it because those `.d.ts` files are identical.
+- `scripts/live-wallet-ui.mjs` was added in commit 76a0a10 (2026-07-08).
+- Audit-ID markers in `src/` comments, all remediated; each marks why a guard exists:
+  - M3: no over-claimed `verified-inclusion`.
+  - H2 / UTXO-VALUE-1: `Chain.send` spends only verified inputs.
+  - CAIRNSDK-DESER-1/3/4: buffer caps and merkle-proof pre-validation.
+  - CAIRNSDK-VP-4: a submit rejection is folded into `ok`.
+  - CONNECT-1 / CTRL-ADOPT-1: no adoption of a forged account.
+  - F11: ghost reconnect.
