@@ -46,15 +46,28 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
 
 - **Verified (cryptographic):** transaction signing + sighash (in the wallet); `LightClient` tx
   *inclusion* (Merkle branch folded against a **PoW-verified** header it re-derives LWMA difficulty
-  for, anchored to a baked checkpoint); content self-certification (`sha256(bytes) == payloadHash`);
+  for, anchored to a baked checkpoint); content self-certification (`sha256(bytes) == payloadHash`;
+  `cairn.content.get()` throws `ContentVerificationError` on a mismatch, so an untrusted gateway cannot
+  serve tampered content);
   SIWC sign-ins (domain + nonce + chain + time + signature + `hash160(pub)==account`).
 - **RPC-trusted (display only):** balances / UTXO sets / history / prices. CSD headers carry no UTXO
   commitment, so non-spend can't be proven from headers, so `LightClient.balance()` is tagged
   `rpc-trusted` and never hides that. Verify what matters; treat balances as a hint.
 - **Indexer = untrusted derived view:** the `IndexerClient` re-folds Merkle proofs
-  (`verifyInclusion`); it's a prover, not an authority. `included` is `true` only with
-  `trustLevel: "verified-inclusion"` (the proof root matched a PoW-verified header). A proof that
-  only folds is `"proof-consistent"` with `included: false` and a `reason`.
+  (`verifyInclusion`); it's a prover, not an authority. `verifyInclusion()` folds the proof and checks
+  its root against a header from `headerMerkleAt`. The default `Cairn` wiring backs that with a light
+  client that PoW-verifies headers forward from a pinned checkpoint (`DEFAULT_SPV_CHECKPOINT`; pass
+  `spvCheckpoint` in the config to keep a different anchor). `included` is `true` only with
+  `trustLevel: "verified-inclusion"` (the proof root matched a PoW-verified header). When no header can
+  be verified (the tx is below the checkpoint, the header source is unreachable, or none is configured)
+  a proof that only folds is `"proof-consistent"` with `included: false` and a `reason`: the indexer
+  alone vouches for it. Gate on `included` or on `trustLevel === "verified-inclusion"`; they agree.
+  When a release moves the default checkpoint, transactions below the new anchor drop to
+  `"proof-consistent"`; the changelog names the affected band.
+- **Reorgs near the tip:** a header within 12 blocks of the light client's cached tip is first compared
+  with the header the base serves at that height, so a block orphaned by a reorg stops counting. The
+  hosted base edge-caches rows at or below its tip minus 6, so against cairn-substrate.com this catches
+  reorgs of up to 6 blocks; a self-hosted base without that cache gets the full 12.
 
 **Filling an offer (F13, diligent-dApp pre-verify):** `fillOffer` is resolver-trusted at this SDK layer:
 the SDK does NOT SPV-verify the `outputs` you hand the wallet, so a lying resolver could redirect the

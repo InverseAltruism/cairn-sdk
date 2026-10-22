@@ -2,13 +2,7 @@
 
 > Onboarding briefing for coding agents and contributors working on this repo. `AGENTS.md` is the canonical briefing; `CLAUDE.md` is a symlink to it. Production hosting and operations specifics are intentionally out of scope here and maintained privately.
 
-`@inversealtruism/cairn-sdk` (npm; the version is in `package.json`) is the Compute Substrate dApp kit: the single umbrella package a third party installs to build on CSD/Cairn. It composes the published low-level `@inversealtruism/csd-*` primitives (from the csd-sdk monorepo) behind one `Cairn` facade:
-
-- `cairn.wallet`: connect the Cairn Wallet extension (window.cairn), clear-signed writes; keys never leave the extension
-- `cairn.chain`: node RPC, tx builders, verifying LightClient (re-exports csd-client/tx/codec/crypto/light)
-- `cairn.index`: L2 indexer (Esplora REST + merkle proofs + SSE/WS)
-- `cairn.content`: self-certifying content (sha256 verified client-side)
-- `cairn.names`: .csd names + CairnX market READS
+`@inversealtruism/cairn-sdk` (npm; the version is in `package.json`) is the Compute Substrate dApp kit: the single umbrella package a third party installs to build on CSD/Cairn. It composes the published low-level `@inversealtruism/csd-*` primitives (from the csd-sdk monorepo) behind one `Cairn` facade with five namespaces (`wallet`, `chain`, `index`, `content`, `names`); `README.md` describes them for users.
 
 It also owns the dApp-facing wallet API contract (src/connect.ts CairnProvider) and the client half of SIWC (Sign in with CSD; server verification is `@inversealtruism/csd-siwc`). Position: csd-sdk = chain primitives (the "ethers" layer); cairn-sdk = the "wagmi + service clients" layer. The repo doubles as the ecosystem's live browser E2E rig (scripts/ harnesses driving the production site + wallet).
 
@@ -26,7 +20,7 @@ Known deviations (checked 2026-10-11, not exhaustive): the opt-in wallet-connect
 
 ## The stack around it
 
-Everything defaults to the hosted public bases at https://cairn-substrate.com: RPC proxy /api/rpc, SPV headers /api/headers, content /content, indexer proxy /explorer/api, names /trade/api/cairnx/*. Those are reverse proxies in front of the node, the csd-indexer, and the cairnx names/market resolver; every base is overridable via CairnConfig for self-hosted setups. The chain is the only source of truth; every read carries an honest trust level (docs/SDK-GUIDE.md has the verifies-vs-trusts table).
+Everything defaults to the hosted public bases at https://cairn-substrate.com: RPC proxy /api/rpc, SPV headers /api/headers, content /content, indexer proxy /explorer/api, names /trade/api/cairnx/*. Those are reverse proxies in front of the node, the csd-indexer, and the cairnx names/market resolver; every base is overridable via CairnConfig for self-hosted setups. The chain is the only source of truth; every read carries an honest trust level, described once in docs/SDK-GUIDE.md ("What the SDK verifies vs trusts").
 
 ## Architecture
 
@@ -40,7 +34,7 @@ Everything defaults to the hosted public bases at https://cairn-substrate.com: R
 - `chain.ts`: tip/utxos/submit/light(); Chain.send() = key-backed send via buildSendVerified + verifyInputValues (fail-closed).
 - `controller.ts` (framework-agnostic reactive store; spoofed-accountsChanged adoption guard), `react.ts` (createCairnHooks(React), zero react dependency), `errors.ts` (CairnError hierarchy with stable codes; SDK_VERSION manually kept == package.json, test-enforced), `http.ts` (15s timeout, 16MiB streamed byte cap, idempotent-GET-only retries).
 
-docs/SDK-GUIDE.md (third-party guide incl. the verifies-vs-trusts table), examples/ (read-only, wallet-connect, siwc-login, node-signer, hello-csd), scripts/ (esbuild example build + 6 maintainer-run live E2E harnesses: scripts/live-wallet-ui.mjs, scripts/names-e2e.mjs, scripts/names-buy-e2e.mjs, scripts/ux-live-readonly.mjs, scripts/ux-openlane-buy.mjs, scripts/wallet-send-spv-e2e.mjs).
+docs/SDK-GUIDE.md (third-party guide incl. the verifies-vs-trusts section), examples/ (read-only, wallet-connect, siwc-login, node-signer, hello-csd), scripts/ (esbuild example build + 6 maintainer-run live E2E harnesses: scripts/live-wallet-ui.mjs, scripts/names-e2e.mjs, scripts/names-buy-e2e.mjs, scripts/ux-live-readonly.mjs, scripts/ux-openlane-buy.mjs, scripts/wallet-send-spv-e2e.mjs).
 
 Deps: exact-pinned in `package.json`, which is the single source for every version and pin (csd-siwc is a devDependency; dev dependencies are exact too, and `test/dep-pins.test.mjs` checks every pin against `pnpm-lock.yaml`). `src/fillverify.ts` imports `feeBpsAt`, `bindOfferTerms` and `provenOfferTerms` from cairnx-core (no local copies; the ProvenOfferTerms interface and producer are single-sourced and corpus-equivalence-pinned by test/proven-terms-corpus.test.ts). It exports the `preverifyOffer` helper and the throw-on-nested-refusal write wrapper. The give and want-type binds are ON: `bindOfferTerms` over the branded `MintedProvenOfferTerms` (cairnx-core's default since 0.2.0; fillverify also passes `{ give: true, wantType: true }`) binds the give legs with a symmetric want-type refusal, `OfferFillCheck.terms` keeps that brand (`test/fillverify-types.test.mjs` type-checks it), the opt-in sums seam runs over the discriminated `fillOutputPlan`, and `fillEndorsement`/`fillOutputPlan` are the successors (deprecated `fillIsSafe`/`requiredFillOutputs`/`previewFill` stay exported, behavior-frozen; `fillEndorsement`'s not-endorsable verdict means PROCEED-unendorsed, never a refusal of an honest token fill).
 
@@ -48,7 +42,7 @@ Deps: exact-pinned in `package.json`, which is the single source for every versi
 
 - Connection never pre-approves signatures: connect/getAddress are the only silent-after-consent calls; every signing method opens the wallet's clear-sign window (extension-enforced). Never imply otherwise in docs.
 - DEFAULT_SPV_CHECKPOINT is copied from cairn/public/trade/swapguard.js's baked anchor in the same cycle. This repo checks that the constant is a real block (test/spv-checkpoint.test.ts against the header capture); it does not read the cairn tree, so the copy in cairn (swapguard.js and its ops files) is checked in the cairn repo when the anchor moves.
-- Never over-claim trust levels: verified-inclusion requires a PoW-verified header; same-origin proxy setups honestly degrade to proof-consistent.
+- Never over-claim trust levels: verified-inclusion requires a PoW-verified header; same-origin proxy setups honestly degrade to proof-consistent. The user-facing description lives in docs/SDK-GUIDE.md; change it there.
 - cairn.names.* are SERVER-TRUSTED display reads. Never wire them straight into a payment target; payment-grade resolution is the wallet's on-device SPV path. (Trust-model note, evident from public source: the `fillOffer` provider call remains resolver-trusted AT THE SDK LAYER; `preverifyOffer`/fillverify (F13 + the B7b binds) is the diligent dApp's merkle-proven corroboration, fail-closed on a positive mismatch and fail-soft on an unreachable chain view, and the wallet's own on-device fill-SPV is the payment-grade boundary.)
 - SDK_VERSION in src/errors.ts bumps together with package.json.
 - csd-* deps exact-pinned, no carets.
@@ -109,7 +103,7 @@ Depends on the published `@inversealtruism/csd-*` / `@inversealtruism/cairnx-cor
 | Doc | Holds |
 |---|---|
 | `README.md` | what the package is, install, quick start |
-| `docs/SDK-GUIDE.md` | third-party developer guide, including the verifies-vs-trusts table |
+| `docs/SDK-GUIDE.md` | third-party developer guide; the one description of the trust levels |
 | `CHANGELOG.md` | one entry per release; every SPV checkpoint move names the affected band |
 | `test/e2e/README.md` | the test layers and how to run them |
 | `.githooks/README.md` | the secret-scan pre-commit hook |
