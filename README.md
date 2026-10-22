@@ -39,8 +39,8 @@ cairn.index.streamAll({ onBlock: (e) => console.log("new block", e) });
 
 The SDK follows the exact model MetaMask uses, there is **no allowlist you maintain**:
 
-- **`connect()` / `getAddress()`** grant *address visibility*. The first time a site connects, the user approves once; after that the wallet answers silently (the site shows up under **Settings → Connected sites**, revocable anytime). This is the only "silent" call.
-- **Every signing / fund-moving call:** `send`, `propose`, `attest`, `signIn`, `sealClaim`, `revealClaim`, **always** opens the wallet's clear-signing approval window, **every time**, no matter what. Being "connected" never pre-approves a signature. A connected site cannot move a satoshi without an explicit, fully-disclosed approval click.
+- **`connect()` / `getAddress()`** grant *address visibility*. The first time a site connects, the user approves once; after that the wallet answers silently (the site shows up under **Settings → Connected sites**, revocable anytime). These are the only calls that can return the address without a prompt. `getPermissions()` (read this site's own grant) and `revokePermissions()` (drop it) are silent too; neither signs anything.
+- **Every signing / fund-moving call:** `send`, `propose`, `attest`, `fillOffer`, `sealClaim`, `revealClaim` and `signInWithCsd`, **always** opens the wallet's clear-signing approval window, **every time**, no matter what. Being "connected" never pre-approves a signature. A connected site cannot move a satoshi without an explicit, fully-disclosed approval click. The legacy `signIn()` is deprecated and first-party-only: the wallet refuses it from any other site with `FIRST_PARTY_ONLY` before prompting; use `signInWithCsd()`.
 
 ```ts
 import { connect, UserRejectedError, NotInstalledError } from "@inversealtruism/cairn-sdk";
@@ -68,8 +68,8 @@ Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{con
 
 ## Examples
 
-- **`examples/read-only.mjs`:** runs today against live mainnet, no wallet, no build: `npm run test:live`. Demonstrates chain/indexer reads + verified merkle inclusion + verified content fetch.
-- **`examples/hello-csd/`:** a no-framework browser dApp (connect → read recent proposals → live feed). Build the bundle with `npm run build:example`, then serve the folder from **localhost** (the wallet injects there) with the Cairn Wallet installed.
+- **`examples/read-only.mjs`:** runs against live mainnet with no wallet. It imports the built `dist/`, so run `pnpm build` first, then `pnpm test:live`. Demonstrates chain/indexer reads + verified merkle inclusion + verified content fetch.
+- **`examples/hello-csd/`:** a no-framework browser dApp (connect → read recent proposals → live feed). Build the bundle with `pnpm build:example`, then serve the folder from **localhost** (the wallet injects there) with the Cairn Wallet installed.
 
 ## Trust model & honest limits
 
