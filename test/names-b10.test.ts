@@ -90,6 +90,25 @@ async function main() {
     check("W37 honest: empty lists pass", (await names.offers()).length === 0 && (await names.bids()).length === 0 && (await names.names()).length === 0);
   }
 
+  console.log("offers()/bids(): open rows by default, from a server that serves every status");
+  {
+    const offerRows = ["open", "filled", "cancelled", "expired"].map((status, i) => ({ id: `o${i}`, status }));
+    const bidRows = ["done", "open", "cancelled", "expired"].map((status, i) => ({ id: `b${i}`, status }));
+    const { fetch, calls } = mockFetch((u) => {
+      const p = new URL(u).pathname;
+      if (p === "/trade/api/cairnx/offers") return { status: 200, body: JSON.stringify(offerRows) };
+      if (p === "/trade/api/cairnx/bids") return { status: 200, body: JSON.stringify(bidRows) };
+      return undefined;
+    });
+    const names = new NamesClient(new Http({ baseUrl: "https://x.example", fetch }));
+    const ids = (rows: unknown[]) => rows.map((r) => (r as { id: string }).id).join(",");
+    const statusAsked = () => new URL(calls.at(-1)!).searchParams.get("status");
+    check("offers() returns only the open offer and asks the server for status=open", ids(await names.offers()) === "o0" && statusAsked() === "open");
+    check("bids() returns only the open bid and asks the server for status=open", ids(await names.bids()) === "b1" && statusAsked() === "open");
+    check("offers({ status: \"filled\" }) returns the filled rows", ids(await names.offers({ status: "filled" })) === "o1" && statusAsked() === "filled");
+    check("honest: offers({ status: \"all\" }) returns every row without a status filter", ids(await names.offers({ status: "all" })) === "o0,o1,o2,o3" && statusAsked() === null);
+  }
+
   console.log("nameHistory(): the cairnx object shape, guarded");
   {
     // Captured verbatim from 127.0.0.1:8794/cairnx/name-history/{cairn,6} (read-only GET, 2026-10-13).

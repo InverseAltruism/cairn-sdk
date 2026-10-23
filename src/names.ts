@@ -17,7 +17,7 @@
 // malformed input fails fast client-side instead of round-tripping to a 404. Responses that a dApp does
 // arithmetic or iteration on (token amounts and decimals, the list reads) are shape-checked before they are
 // returned; a body that does not match throws a typed HttpError instead of reaching the caller as a typed lie.
-import { NAME_RE, RESERVED_NAMES, TICKER_RE, HASH_RE, deploy, parseAmount, type NameState } from "@inversealtruism/cairnx-core";
+import { NAME_RE, RESERVED_NAMES, TICKER_RE, HASH_RE, deploy, parseAmount, type BidStatus, type NameState, type OfferStatus } from "@inversealtruism/cairnx-core";
 import type { Http } from "./http.js";
 import { HttpError } from "./errors.js";
 
@@ -151,10 +151,18 @@ export class NamesClient {
     return new HttpError(200, this.http.url(path), `malformed response: ${what}`);
   }
 
-  private async list(path: string): Promise<unknown[]> {
-    const body = await this.http.getJson<unknown>(path);
+  private async list(path: string, query?: Record<string, string>): Promise<unknown[]> {
+    const body = await this.http.getJson<unknown>(path, query);
     if (!Array.isArray(body)) throw this.malformed(path, "expected an array");
     return body;
+  }
+
+  /** Rows of a market list with one status, or every row for "all". */
+  private async byStatus(path: string, status: string): Promise<unknown[]> {
+    if (status === "all") return this.list(path);
+    const rows = await this.list(path, { status });
+    // Filtered here as well, so a server that ignores ?status cannot hand back rows of another status.
+    return rows.filter((r) => (r as { status?: unknown } | null)?.status === status);
   }
 
   /** Resolve a .csd name for DISPLAY (server-trusted; see the module trust note). null = unknown/invalid name. */
@@ -222,11 +230,17 @@ export class NamesClient {
     return t as TokenInfo;
   }
 
-  /** Open offers (the market's display list). */
-  offers(): Promise<unknown[]> { return this.list(`/trade/api/cairnx/offers`); }
+  /** Offers with one status, open ones by default (the market's display list). `{ status: "all" }` returns every
+   *  offer the server holds, filled, cancelled and expired ones included. */
+  offers(opts: { status?: OfferStatus | "all" } = {}): Promise<unknown[]> {
+    return this.byStatus(`/trade/api/cairnx/offers`, opts.status ?? "open");
+  }
 
-  /** Open bids. */
-  bids(): Promise<unknown[]> { return this.list(`/trade/api/cairnx/bids`); }
+  /** Bids with one status, open ones by default. `{ status: "all" }` returns every bid the server holds, done,
+   *  cancelled and expired ones included. */
+  bids(opts: { status?: BidStatus | "all" } = {}): Promise<unknown[]> {
+    return this.byStatus(`/trade/api/cairnx/bids`, opts.status ?? "open");
+  }
 
   /** The full canonical CairnX state (large; prefer the scoped reads above). */
   state(): Promise<unknown> { return this.http.getJson<unknown>(`/trade/api/cairnx/state`); }
