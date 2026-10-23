@@ -49,7 +49,7 @@ docs/SDK-GUIDE.md (third-party guide incl. the verifies-vs-trusts section), exam
 Deps and the fill-verify surface:
 
 - Every dependency, dev dependencies included, is exact-pinned in `package.json`, the single source for every version and pin (csd-siwc is a devDependency). `test/dep-pins.test.mjs` checks every pin against `pnpm-lock.yaml`.
-- `src/fillverify.ts` imports `feeBpsAt`, `bindOfferTerms` and `provenOfferTerms` from cairnx-core, with no local copies. The ProvenOfferTerms interface and producer are single-sourced and corpus-equivalence-pinned by `test/proven-terms-corpus.test.ts`.
+- `src/fillverify.ts` imports `feeBpsAt`, `bindOfferTerms`, `provenOfferTerms` and `provenOfferRefusal` (the resolver's creation rules for a proven offer) from cairnx-core, with no local copies. The ProvenOfferTerms interface and producer are single-sourced and corpus-equivalence-pinned by `test/proven-terms-corpus.test.ts`.
 - fillverify exports the `preverifyOffer` helper and the throw-on-nested-refusal write wrapper.
 - The give and want-type binds are on: `bindOfferTerms` over the branded `MintedProvenOfferTerms` checks them by default in cairnx-core, and fillverify also passes `{ give: true, wantType: true }`. It binds the give legs with a symmetric want-type refusal.
 - `OfferFillCheck.terms` keeps that brand (`test/fillverify-types.test.mjs` type-checks it). The opt-in sums seam runs over the discriminated `fillOutputPlan`.

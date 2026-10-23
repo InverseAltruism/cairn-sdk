@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- `preverifyOffer` and `cairn.verifyOfferForFill` refuse every offer the CairnX resolver rejects at creation
+  from the record alone, through cairnx-core's `provenOfferRefusal` over the merkle-proven Propose (the give's
+  backing is chain state and stays resolver-trusted). Before, they checked only the
+  domain, a treasury payee and the expiry, and reported `ok: true, trust: "verified"` for an offer the resolver
+  rejects under the v1.2 shape gate, the v1.3 ban on open CSD-priced offers (anchored from 31,100 to below
+  34,000) or the v2.1 duration cap (40,100 to below 41,300), so a fill would have paid for nothing. Every such
+  refusal now reads `CairnX rejects this offer (<the resolver's note>) - a fill would move CSD for nothing`, with
+  `trust: "verified"` and `blockHeight`. A Propose outside `cairnx:v1` used to return `trust: "unverified"`; it
+  is now refused after the author bind with `trust: "verified"`, and while the author cannot be proven yet it
+  returns the transient author answer first.
+
 ## 0.8.0 (prepared 2026-10-23, not yet published): open-only market lists, token records checked
 
 A minor bump on 0.x: `offers()` and `bids()` return fewer rows by default, so a `^0.7.x` range does not pick this up.
