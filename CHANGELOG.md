@@ -14,6 +14,9 @@
   `trust: "verified"` and `blockHeight`. A Propose outside `cairnx:v1` used to return `trust: "unverified"`; it
   is now refused after the author bind with `trust: "verified"`, and while the author cannot be proven yet it
   returns the transient author answer first.
+- A token-priced offer served with another `want.ticker` or `want.amount` is refused by `bindOfferTerms`' want
+  leg (cairnx-core 0.2.2) with the served-terms reason, which now names the want's type or token price; the
+  SDK's own copy of that check is gone.
 
 ## 0.8.0 (prepared 2026-10-23, not yet published): open-only market lists, token records checked
 

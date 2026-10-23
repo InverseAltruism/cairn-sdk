@@ -240,7 +240,7 @@ await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsemen
 
 console.log("\nP75-5 fill-surface guards:");
 
-// MF-06: a token-priced offer's served price is bound to the merkle-bound record
+// MF-06: a token-priced offer's served price is bound to the merkle-bound record (cairnx-core bindOfferTerms' want leg)
 {
   const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { ticker: "BBB", amount: "5", payto: SELLER } };
   const tx = proposeTx(SELLER_KEY, rec, 3);
@@ -251,11 +251,11 @@ console.log("\nP75-5 fill-surface guards:");
   });
   await ok("[MF-06] a served want.amount bait-and-switch on a token-priced offer is REFUSED", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedTok({ ticker: "BBB", amount: "5000000", payto: SELLER }) });
-    return r.ok === false && /want ticker\/amount/.test(r.reason ?? "");
+    return r.ok === false && /want's type or token price/.test(r.reason ?? "");
   });
   await ok("[MF-06] a served want.ticker swap on a token-priced offer is REFUSED", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedTok({ ticker: "SCAM", amount: "5", payto: SELLER }) });
-    return r.ok === false && /want ticker\/amount/.test(r.reason ?? "");
+    return r.ok === false && /want's type or token price/.test(r.reason ?? "");
   });
 }
 
