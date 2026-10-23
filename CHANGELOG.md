@@ -1,6 +1,28 @@
 # Changelog
 
-## 0.7.0 (prepared 2026-10-19, not yet published): registry API removed, content from the cairn origin only
+## 0.8.0 (prepared 2026-10-23, not yet published): open-only market lists, token records checked
+
+A minor bump on 0.x: `offers()` and `bids()` return fewer rows by default, so a `^0.7.x` range does not pick this up.
+
+### Changed
+
+- `cairn.names.offers()` and `cairn.names.bids()` return open rows only, as their docs said. They ask the
+  resolver for `?status=open` and drop any row of another status the server returns. Before this release they
+  returned every row the resolver holds (on 2026-10-23: 237 offers of which 2 open, 206 bids of which 1 open).
+  `offers({ status })` and `bids({ status })` select another status (`OfferStatus` or `BidStatus` from
+  cairnx-core); `{ status: "all" }` returns the full list as 0.7.0 did.
+- `cairn.names.token(ticker)` and `tokens()` throw `HttpError` ("malformed response: ...", naming the field) for a
+  record with decimals outside the range cairnx-core's deploy parser accepts (0 to 8), with `supply`, `minted` or
+  `mintLimit` above cairnx-core's `MAX_AMOUNT`, or, for `token(ticker)`, with a ticker other than the one asked
+  for. Before, decimals had only a lower bound, amounts no upper bound, and `token("AAA")` returned a record
+  for `BBB`. Records the live resolver serves pass unchanged (pinned on a capture of its 20 tokens).
+
+### Dependencies
+
+- No dependency added or bumped.
+- `SDK_VERSION` is 0.8.0.
+
+## 0.7.0 (2026-10-19): registry API removed, content from the cairn origin only
 
 A minor bump on 0.x: a call that compiled under 0.6.0 no longer does, so a `^0.6.x` range does not pick this up.
 
