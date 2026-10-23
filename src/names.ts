@@ -17,7 +17,7 @@
 // malformed input fails fast client-side instead of round-tripping to a 404. Responses that a dApp does
 // arithmetic or iteration on (token amounts and decimals, the list reads) are shape-checked before they are
 // returned; a body that does not match throws a typed HttpError instead of reaching the caller as a typed lie.
-import { NAME_RE, RESERVED_NAMES, TICKER_RE, HASH_RE, deploy, parseAmount, type BidStatus, type NameState, type OfferStatus } from "@inversealtruism/cairnx-core";
+import { NAME_RE, RESERVED_NAMES, TICKER_RE, HASH_RE, MAX_TOKEN_DECIMALS, parseAmount, type BidStatus, type NameState, type OfferStatus } from "@inversealtruism/cairnx-core";
 import type { Http } from "./http.js";
 import { HttpError } from "./errors.js";
 
@@ -104,12 +104,8 @@ const nameOk = (n: unknown): n is string =>
 
 // parseAmount applies cairnx-core's MAX_AMOUNT; minted and served amounts may be zero.
 const amountOk = (v: unknown): v is string => parseAmount(v, { allowZero: true }) !== null;
-// The decimals range is consensus and lives only in cairnx-core's deploy parser, so it is probed, not re-declared.
-const decimalsOk = (d: unknown): d is number => {
-  if (!Number.isSafeInteger(d)) return false;
-  try { deploy({ ticker: "AAA", decimals: d as number, supply: "1", mint: "issuer" }); return true; }
-  catch { return false; } // the builder throws when the record fails the consensus parser
-};
+const decimalsOk = (d: unknown): d is number =>
+  Number.isSafeInteger(d) && (d as number) >= 0 && (d as number) <= MAX_TOKEN_DECIMALS;
 const heightOk = (v: unknown): boolean => Number.isSafeInteger(v) && (v as number) >= 0;
 function nameHistoryProblem(h: unknown, name: string): string | null {
   if (!h || typeof h !== "object" || Array.isArray(h)) return "not an object";
