@@ -1,0 +1,256 @@
+{
+ "tokens": [
+  {
+   "ticker": "BCH",
+   "deployId": "0xe4d15365d6e8e1aba6ee21c6abf9621336c17f9a220b80a8934c2778da323cb4",
+   "deployer": "0x3328969eecc36971148ef319d17d466b1289ed19",
+   "name": "Bitcoin Cash",
+   "decimals": 8,
+   "supply": "2100000000000000",
+   "minted": "2100000000000000",
+   "mint": "issuer",
+   "height": 102965
+  },
+  {
+   "ticker": "BTC",
+   "deployId": "0xcd3bc159a28bb4091228f969c282de84880e87a2e1d91f28b7293e529d198d5a",
+   "deployer": "0x16e824f9ddf8186b01cc017155258f8d733c7c93",
+   "name": "Bitcoin in CSD",
+   "decimals": 8,
+   "supply": "2100000000000000",
+   "minted": "3700000000000",
+   "mint": "open",
+   "mintLimit": "100000000000",
+   "height": 32650
+  },
+  {
+   "ticker": "CAD",
+   "deployId": "0xee8597b079f81ff77b8255fc1b4a1ba985ad56a78d7ad72170431a95ecf1f486",
+   "deployer": "0x3328969eecc36971148ef319d17d466b1289ed19",
+   "name": "Canadian dollars",
+   "decimals": 0,
+   "supply": "50000000000",
+   "minted": "7500000000",
+   "mint": "open",
+   "mintLimit": "500000000",
+   "height": 101805,
+   "tmeta": "0xee8597b079f81ff77b8255fc1b4a1ba985ad56a78d7ad72170431a95ecf1f486"
+  },
+  {
+   "ticker": "CAIRN",
+   "deployId": "0xdf7113afc41319b700c26f26ba657c8267533a3dd511cc59776601a9aba03517",
+   "deployer": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "name": "Cairn",
+   "decimals": 8,
+   "supply": "2100000000000000",
+   "minted": "2100000000000000",
+   "mint": "issuer",
+   "height": 30279
+  },
+  {
+   "ticker": "CSD2THEMOON",
+   "deployId": "0x62bbc29ac5acb9d79b2ea358173c02bb05bc9456af11a036f7a8b562f3cc39ce",
+   "deployer": "0x16e824f9ddf8186b01cc017155258f8d733c7c93",
+   "decimals": 8,
+   "supply": "10512000000000000",
+   "minted": "10512000000000000",
+   "mint": "open",
+   "mintLimit": "10512000000000000",
+   "height": 35214
+  },
+  {
+   "ticker": "CSDEEZNUTS",
+   "deployId": "0x63badf4709cb77d1286d7f5a3d25c6227b551e6e020ec9b72c323923ae0b5f83",
+   "deployer": "0x8d7b6aaeb9e6c2aa446b8d610127ac2f56b6d1a2",
+   "name": "CEE DEEZ NUTS",
+   "decimals": 1,
+   "supply": "696969690",
+   "minted": "10000010",
+   "mint": "issuer",
+   "height": 33903
+  },
+  {
+   "ticker": "CXBCH",
+   "deployId": "0xaa466e3ceb8e081d415b294e62f0609b76f38da20b317f3e35f667088ec02489",
+   "deployer": "0x3328969eecc36971148ef319d17d466b1289ed19",
+   "name": "CairnX Bitcoin Cash",
+   "decimals": 8,
+   "supply": "2100000000000000",
+   "minted": "0",
+   "mint": "issuer",
+   "height": 102978
+  },
+  {
+   "ticker": "CXBTC",
+   "deployId": "0x94d1ec3e0b639103cdcea53e0460254555e801fd3e655a6bd3619c01deaa6edd",
+   "deployer": "0x3328969eecc36971148ef319d17d466b1289ed19",
+   "name": "CaitnX Bitcoin",
+   "decimals": 8,
+   "supply": "2100000000000000",
+   "minted": "0",
+   "mint": "issuer",
+   "height": 102980
+  },
+  {
+   "ticker": "CXLTC",
+   "deployId": "0xc28220d2eb61a7e6d4b05822f92f05ff777b6c63a3b367665b32e3c6d07808b3",
+   "deployer": "0x3328969eecc36971148ef319d17d466b1289ed19",
+   "name": "Cairnx Litecoin",
+   "decimals": 8,
+   "supply": "8400000000000000",
+   "minted": "0",
+   "mint": "issuer",
+   "height": 102979
+  },
+  {
+   "ticker": "CXZEC",
+   "deployId": "0x41c1eed062a43d3a8a5b3d862a4d8d5e05ec1f749f2c91921de8d4a74ea6e50d",
+   "deployer": "0x3328969eecc36971148ef319d17d466b1289ed19",
+   "name": "CairnX Zcash",
+   "decimals": 8,
+   "supply": "2100000000000000",
+   "minted": "2100000000000000",
+   "mint": "issuer",
+   "height": 102981
+  },
+  {
+   "ticker": "DUST",
+   "deployId": "0x67402c68a71715d0bb107008437778399e89fe4bb30fc8c98b30a95e0f942baa",
+   "deployer": "0xd018baeb6167a87f244826f77f47f75ce26b0212",
+   "name": "DUST2",
+   "decimals": 0,
+   "supply": "1000000",
+   "minted": "12000",
+   "mint": "open",
+   "mintLimit": "1000",
+   "height": 31902
+  },
+  {
+   "ticker": "LTC",
+   "deployId": "0xf21d97019064cc08d3e16078ec75069615ddfedfd295a01f61f5044ec9b02313",
+   "deployer": "0x3328969eecc36971148ef319d17d466b1289ed19",
+   "name": "Litecoin",
+   "decimals": 8,
+   "supply": "8400000000000000",
+   "minted": "8400000000000000",
+   "mint": "issuer",
+   "height": 102958
+  },
+  {
+   "ticker": "MRLUX",
+   "deployId": "0x7197a3171902a71e72482f24ccc52903a67468c9ece960956e201d2f6d9d28b2",
+   "deployer": "0x89944a5ea4ca5af386c28c46854eb462aebd6907",
+   "name": "MrLux",
+   "decimals": 0,
+   "supply": "100000",
+   "minted": "100000",
+   "mint": "issuer",
+   "height": 112696
+  },
+  {
+   "ticker": "PRBX2",
+   "deployId": "0x563d651c97bd2795153b54e505a61995b5fe5c1f47f9802324740ac892463b9e",
+   "deployer": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "decimals": 0,
+   "supply": "1000",
+   "minted": "1000",
+   "mint": "issuer",
+   "height": 31342
+  },
+  {
+   "ticker": "SENSE",
+   "deployId": "0x275fd9352a2e7f7cf93c535402f141f5270efecabc6ac99967555bd68500ce49",
+   "deployer": "0x3328969eecc36971148ef319d17d466b1289ed19",
+   "name": "Cairn Sense",
+   "decimals": 8,
+   "supply": "100000000000000000",
+   "minted": "100000000000000000",
+   "mint": "issuer",
+   "height": 101873
+  },
+  {
+   "ticker": "STONKS",
+   "deployId": "0x4ac41f67619f3d30144f2ae858d7c57f181caea38eab4191eca80c03c2af1d22",
+   "deployer": "0xac937051bb05cfeb823e8a111633eff41dfef17b",
+   "decimals": 0,
+   "supply": "1000000",
+   "minted": "1000000",
+   "mint": "issuer",
+   "height": 121032
+  },
+  {
+   "ticker": "SUNRX",
+   "deployId": "0x250efec47cb11a0517cd118c89b2e262ea34ab6625e1c0b87e9e7a0e6114ac6e",
+   "deployer": "0x04c1ed8f11ec4bf805e7a323561d5c9c8688f7da",
+   "name": "SUNRX",
+   "decimals": 8,
+   "supply": "10000000000000",
+   "minted": "2000000000000",
+   "mint": "issuer",
+   "height": 104574
+  },
+  {
+   "ticker": "XE5XNS",
+   "deployId": "0x36d5dc08f99ee05e37d709352e4a4511563f9c15e04f7f0edaaf399dc5b867f9",
+   "deployer": "0x44d92872a5b65d37d60ed532f41efe7c5aed59ec",
+   "name": "CairnX e2e",
+   "decimals": 2,
+   "supply": "100000",
+   "minted": "8000",
+   "mint": "open",
+   "mintLimit": "1000",
+   "height": 29865
+  },
+  {
+   "ticker": "XE6GMK",
+   "deployId": "0x4cf2750d55eebffb4a61bb2e61c0b781183b78012f43ba08adac5abcf4092080",
+   "deployer": "0x6b09ce74e6070ebc982ab0fb793a211c4d24f016",
+   "name": "CairnX e2e",
+   "decimals": 2,
+   "supply": "100000",
+   "minted": "5000",
+   "mint": "open",
+   "mintLimit": "1000",
+   "height": 37012
+  },
+  {
+   "ticker": "ZEC",
+   "deployId": "0x504afb44c9813f745809f7957ff22316b613d12626a0535cc9cc7bbddfc1215f",
+   "deployer": "0x3328969eecc36971148ef319d17d466b1289ed19",
+   "name": "ZCASH",
+   "decimals": 8,
+   "supply": "2100000000000000",
+   "minted": "2100000000000000",
+   "mint": "issuer",
+   "height": 102964
+  }
+ ],
+ "token": {
+  "BTC": {
+   "ticker": "BTC",
+   "deployId": "0xcd3bc159a28bb4091228f969c282de84880e87a2e1d91f28b7293e529d198d5a",
+   "deployer": "0x16e824f9ddf8186b01cc017155258f8d733c7c93",
+   "name": "Bitcoin in CSD",
+   "decimals": 8,
+   "supply": "2100000000000000",
+   "minted": "3700000000000",
+   "mint": "open",
+   "mintLimit": "100000000000",
+   "height": 32650,
+   "holders": {
+    "0x16e824f9ddf8186b01cc017155258f8d733c7c93": {
+     "available": "1000000000000",
+     "locked": "0"
+    },
+    "0x3328969eecc36971148ef319d17d466b1289ed19": {
+     "available": "2600000000000",
+     "locked": "0"
+    },
+    "0x89944a5ea4ca5af386c28c46854eb462aebd6907": {
+     "available": "100000000000",
+     "locked": "0"
+    }
+   }
+  }
+ }
+}

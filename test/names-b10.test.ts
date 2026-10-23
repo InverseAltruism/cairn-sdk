@@ -1,6 +1,8 @@
 // B10 surfaces (Plan 57): the names/CairnX read namespace, native wallet error-code mapping,
 // and the http hardening (opt-in GET retry + typed malformed-JSON errors). All offline.
 import { readFileSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
+import { MAX_AMOUNT } from "@inversealtruism/cairnx-core";
 import { NamesClient } from "../src/names.js";
 import { Http } from "../src/http.js";
 import { mapProviderError, UserRejectedError, WalletLockedError, UnsupportedMethodError, CairnError, HttpError } from "../src/errors.js";
@@ -63,6 +65,10 @@ async function main() {
     await throwsMalformed("token(): a negative decimals is refused", { ...good, decimals: -1 }, () => names.token("BTC"), /bad decimals/);
     await throwsMalformed("token(): supply as a float number is refused", { ...good, supply: 1e30 }, () => names.token("BTC"), /supply/);
     await throwsMalformed("token(): minted with a decimal point is refused", { ...good, minted: "1.5" }, () => names.token("BTC"), /minted/);
+    await throwsMalformed("token(): decimals above the consensus range (9) is refused", { ...good, decimals: 9 }, () => names.token("BTC"), /bad decimals \(9\)/);
+    await throwsMalformed("token(): a record for another ticker is refused", { ...good, ticker: "BBB" }, () => names.token("BTC"), /ticker is "BBB", expected "BTC"/);
+    await throwsMalformed("token(): minted above MAX_AMOUNT is refused", { ...good, minted: String(MAX_AMOUNT + 1n) }, () => names.token("BTC"), /minted .*MAX_AMOUNT/);
+    await throwsMalformed("tokens(): supply above MAX_AMOUNT is refused", [good, { ...good, supply: String(MAX_AMOUNT + 1n) }], () => names.tokens(), /token row 1: supply/);
     await throwsMalformed("offers(): a non-array is refused", { offers: [] }, () => names.offers(), /expected an array/);
     await throwsMalformed("bids(): a non-array is refused", null, () => names.bids(), /expected an array/);
     await throwsMalformed("names(): a non-array is refused", "names", () => names.names(), /expected an array/);
@@ -72,6 +78,14 @@ async function main() {
     check("W37 honest: well-formed token rows pass unchanged", list.length === 2 && list[1]!.ticker === "CAIRN" && list[0]!.decimals === 8);
     body = JSON.stringify(good);
     check("W37 honest: a well-formed token() body passes", (await names.token("BTC"))?.supply === "2100000000000000");
+    body = JSON.stringify({ ...good, decimals: 0, supply: String(MAX_AMOUNT) });
+    check("honest: decimals 0 and supply at MAX_AMOUNT pass", (await names.token("BTC"))?.supply === String(MAX_AMOUNT));
+    // Captured from https://cairn-substrate.com/trade/api/cairnx/tokens and /token/BTC (read-only GETs, 2026-10-23).
+    const LIVE = JSON.parse(readFileSync(new URL("./fixtures/cairnx-tokens-live.json", import.meta.url), "utf8")) as { tokens: unknown[]; token: { BTC: unknown } };
+    body = JSON.stringify(LIVE.tokens);
+    check(`honest: the ${LIVE.tokens.length} live token rows pass unchanged`, isDeepStrictEqual(await names.tokens(), LIVE.tokens));
+    body = JSON.stringify(LIVE.token.BTC);
+    check("honest: the live token(\"BTC\") body passes unchanged", isDeepStrictEqual(await names.token("BTC"), LIVE.token.BTC));
     body = "[]";
     check("W37 honest: empty lists pass", (await names.offers()).length === 0 && (await names.bids()).length === 0 && (await names.names()).length === 0);
   }

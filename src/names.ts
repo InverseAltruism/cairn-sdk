@@ -17,7 +17,7 @@
 // malformed input fails fast client-side instead of round-tripping to a 404. Responses that a dApp does
 // arithmetic or iteration on (token amounts and decimals, the list reads) are shape-checked before they are
 // returned; a body that does not match throws a typed HttpError instead of reaching the caller as a typed lie.
-import { NAME_RE, RESERVED_NAMES, TICKER_RE, AMOUNT_RE, HASH_RE, type NameState } from "@inversealtruism/cairnx-core";
+import { NAME_RE, RESERVED_NAMES, TICKER_RE, HASH_RE, deploy, parseAmount, type NameState } from "@inversealtruism/cairnx-core";
 import type { Http } from "./http.js";
 import { HttpError } from "./errors.js";
 
@@ -102,9 +102,14 @@ export interface NameHistory {
 const nameOk = (n: unknown): n is string =>
   typeof n === "string" && NAME_RE.test(n) && !RESERVED_NAMES.has(n);
 
-const amountOk = (v: unknown): v is string => typeof v === "string" && AMOUNT_RE.test(v);
-// The upper bound on decimals is enforced by cairnx-core's deploy parser and not exported, so it is not
-// re-declared here; the guard keeps decimals a usable non-negative integer.
+// parseAmount applies cairnx-core's MAX_AMOUNT; minted and served amounts may be zero.
+const amountOk = (v: unknown): v is string => parseAmount(v, { allowZero: true }) !== null;
+// The decimals range is consensus and lives only in cairnx-core's deploy parser, so it is probed, not re-declared.
+const decimalsOk = (d: unknown): d is number => {
+  if (!Number.isSafeInteger(d)) return false;
+  try { deploy({ ticker: "AAA", decimals: d as number, supply: "1", mint: "issuer" }); return true; }
+  catch { return false; } // the builder throws when the record fails the consensus parser
+};
 const heightOk = (v: unknown): boolean => Number.isSafeInteger(v) && (v as number) >= 0;
 function nameHistoryProblem(h: unknown, name: string): string | null {
   if (!h || typeof h !== "object" || Array.isArray(h)) return "not an object";
@@ -122,14 +127,16 @@ function nameHistoryProblem(h: unknown, name: string): string | null {
   return null;
 }
 
-function tokenProblem(t: unknown): string | null {
+/** Why a served token record is unusable, or null. `ticker` is the one the caller asked for, when it asked for one. */
+function tokenProblem(t: unknown, ticker?: string): string | null {
   if (!t || typeof t !== "object") return "not an object";
   const r = t as Record<string, unknown>;
   if (typeof r.ticker !== "string" || !TICKER_RE.test(r.ticker)) return "bad ticker";
-  if (!Number.isSafeInteger(r.decimals) || (r.decimals as number) < 0) return `bad decimals (${String(r.decimals)})`;
-  if (!amountOk(r.supply)) return "supply is not a base-unit integer string";
-  if (!amountOk(r.minted)) return "minted is not a base-unit integer string";
-  if (r.mintLimit !== undefined && !amountOk(r.mintLimit)) return "mintLimit is not a base-unit integer string";
+  if (ticker !== undefined && r.ticker !== ticker) return `ticker is ${JSON.stringify(r.ticker)}, expected ${JSON.stringify(ticker)}`;
+  if (!decimalsOk(r.decimals)) return `bad decimals (${String(r.decimals)}), not an integer in the consensus range`;
+  if (!amountOk(r.supply)) return "supply is not a base-unit integer string within MAX_AMOUNT";
+  if (!amountOk(r.minted)) return "minted is not a base-unit integer string within MAX_AMOUNT";
+  if (r.mintLimit !== undefined && !amountOk(r.mintLimit)) return "mintLimit is not a base-unit integer string within MAX_AMOUNT";
   return null;
 }
 
@@ -202,14 +209,15 @@ export class NamesClient {
     return rows as TokenInfo[];
   }
 
-  /** One token by ticker. null = unknown/invalid ticker. Throws a typed HttpError on a malformed body. */
+  /** One token by ticker. null = unknown/invalid ticker. Throws a typed HttpError on a malformed body or a
+   *  record for another ticker. */
   async token(ticker: string): Promise<TokenInfo | null> {
     if (typeof ticker !== "string" || !TICKER_RE.test(ticker)) return null;
     const path = `/trade/api/cairnx/token/${ticker}`;
     let t: unknown;
     try { t = await this.http.getJson<unknown>(path); }
     catch (e: any) { if (e?.status === 404) return null; throw e; }
-    const p = tokenProblem(t);
+    const p = tokenProblem(t, ticker);
     if (p) throw this.malformed(path, p);
     return t as TokenInfo;
   }
