@@ -9,30 +9,30 @@ importers:
   .:
     dependencies:
       '@inversealtruism/cairnx-core':
-        specifier: 0.2.0
-        version: 0.2.0
+        specifier: 0.2.2
+        version: 0.2.2
       '@inversealtruism/csd-client':
-        specifier: 0.1.18
-        version: 0.1.18
+        specifier: 0.1.19
+        version: 0.1.19
       '@inversealtruism/csd-codec':
         specifier: 0.1.18
         version: 0.1.18
       '@inversealtruism/csd-crypto':
-        specifier: 0.1.18
-        version: 0.1.18
+        specifier: 0.1.20
+        version: 0.1.20
       '@inversealtruism/csd-light':
+        specifier: 0.1.25
+        version: 0.1.25
+      '@inversealtruism/csd-tx':
         specifier: 0.1.23
         version: 0.1.23
-      '@inversealtruism/csd-tx':
-        specifier: 0.1.21
-        version: 0.1.21
     devDependencies:
       '@biomejs/biome':
         specifier: 2.5.15
         version: 2.5.15
       '@inversealtruism/csd-siwc':
-        specifier: 0.1.19
-        version: 0.1.19
+        specifier: 0.1.21
+        version: 0.1.21
       '@types/node':
         specifier: 22.19.20
         version: 22.19.20
@@ -423,32 +423,32 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@inversealtruism/cairnx-core@0.2.0':
-    resolution: {integrity: sha512-0zQuGWq4sGC+ZhTYbZTLOcIlHK5qXOFYgT40x6olJLgf+C4L4DZJZeqGujSlLMJFQOabBmQEi032qOOLgBlIEw==}
+  '@inversealtruism/cairnx-core@0.2.2':
+    resolution: {integrity: sha512-WKft7TPYYR+hQ1DFA1tV44SjAPff1Dmi4GBWJaCWVk+hGwIssCMqJKrG/VTbbGA9Eo3vA7avFBfgaDdQrVZ7Ww==}
     engines: {node: '>=18'}
 
-  '@inversealtruism/csd-client@0.1.18':
-    resolution: {integrity: sha512-piJFd02/CQLmjqIiNeYgOBUKvlF1g/G8th/tBObYJ3SakBF7NK/2dk1xXLpBe92Fr8r7vL9DIygWnhxInF6fGw==}
+  '@inversealtruism/csd-client@0.1.19':
+    resolution: {integrity: sha512-8nF5PPTvK3cUH2VERjs9fJ5EqF7AdtlvVY37BFKdW5AdTTOZy4vaAFZb0bTi+EYNXpZVTAGeVqrmZdx5tuVozA==}
     engines: {node: '>=18'}
 
   '@inversealtruism/csd-codec@0.1.18':
     resolution: {integrity: sha512-/K0CdP9TlWPyUMlBwH6KGbQ3iSxO7RKC38+3/osAleGam8kld6p1s3VSzoJ6oyOiH2hSQa36uEDm10bvBuH3XQ==}
     engines: {node: '>=18'}
 
-  '@inversealtruism/csd-crypto@0.1.18':
-    resolution: {integrity: sha512-uTCkPg1fmgDKC0N+jOvCwU86pfeES85ncrurbP7JDjbMjjMyTo5/8iqT7kOSwR2B9a2JhSL0JTAEZYOQCabxXg==}
+  '@inversealtruism/csd-crypto@0.1.20':
+    resolution: {integrity: sha512-W3ZUaeyODbw9/z4xtdG82ASM4LRMdS1dqNDAbV8PMc7HSYfN/aR1veVuMYRz/aqkObqJrEWIz3ELnVr9M92Xlg==}
     engines: {node: '>=18'}
 
-  '@inversealtruism/csd-light@0.1.23':
-    resolution: {integrity: sha512-db4Ykub/Zz7iWHuEiXj/EV91quBoG7w2YfVHxLuZWr577zn8FKm9nMMhQeqnaedhZRKfRSA+xwdRFq4VchwFRw==}
+  '@inversealtruism/csd-light@0.1.25':
+    resolution: {integrity: sha512-g+InolYaPKHcYZ2DVRjB2++7eeMCb8Un6wR++J2+/prLBTsXMoPK3hX7jGehw/ZZJ1/Th0gi0x980aHPonyUGw==}
     engines: {node: '>=18'}
 
-  '@inversealtruism/csd-siwc@0.1.19':
-    resolution: {integrity: sha512-WwZ+W/7B1tC+EzQDeiIy86a4qOizL/eDq5feyjUZ1WVzB6SEzHaRoRQS69fpg3ecTozrceHdX+Piztx4FxbM5Q==}
+  '@inversealtruism/csd-siwc@0.1.21':
+    resolution: {integrity: sha512-j2ZOfzsId8+TdWBfDyZBrbwNWP8ktlvsRHFNjsRrVxz83fkcyXTluUxP6jXT5sBX+lYDD8FRuXAG3b6TnMPVdg==}
     engines: {node: '>=18'}
 
-  '@inversealtruism/csd-tx@0.1.21':
-    resolution: {integrity: sha512-0Qrp4ScM9IGo5NSPv4Lhr7AwPnFPKDov3HqVcq/53UmC7pn3fJq5k4khmI9YrYbC9CrFjL28FQ+aWeaMNc22xA==}
+  '@inversealtruism/csd-tx@0.1.23':
+    resolution: {integrity: sha512-pDstjeL81LpQ6npNh/g5qUklH2Stm1TjU3+b9ZNDrLeFdmQfxTujySvrUD7uhTYSO2b8Dbl26ddQxrwvkWNpug==}
     engines: {node: '>=18'}
 
   '@jridgewell/gen-mapping@0.3.13':
@@ -1027,11 +1027,11 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@inversealtruism/cairnx-core@0.2.0':
+  '@inversealtruism/cairnx-core@0.2.2':
     dependencies:
       '@inversealtruism/csd-codec': 0.1.18
 
-  '@inversealtruism/csd-client@0.1.18':
+  '@inversealtruism/csd-client@0.1.19':
     dependencies:
       '@inversealtruism/csd-codec': 0.1.18
 
@@ -1039,27 +1039,27 @@ snapshots:
     dependencies:
       '@noble/hashes': 1.8.0
 
-  '@inversealtruism/csd-crypto@0.1.18':
+  '@inversealtruism/csd-crypto@0.1.20':
     dependencies:
       '@inversealtruism/csd-codec': 0.1.18
       '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
 
-  '@inversealtruism/csd-light@0.1.23':
+  '@inversealtruism/csd-light@0.1.25':
     dependencies:
-      '@inversealtruism/csd-client': 0.1.18
+      '@inversealtruism/csd-client': 0.1.19
       '@inversealtruism/csd-codec': 0.1.18
 
-  '@inversealtruism/csd-siwc@0.1.19':
+  '@inversealtruism/csd-siwc@0.1.21':
     dependencies:
       '@inversealtruism/csd-codec': 0.1.18
-      '@inversealtruism/csd-crypto': 0.1.18
+      '@inversealtruism/csd-crypto': 0.1.20
       '@noble/hashes': 1.8.0
 
-  '@inversealtruism/csd-tx@0.1.21':
+  '@inversealtruism/csd-tx@0.1.23':
     dependencies:
       '@inversealtruism/csd-codec': 0.1.18
-      '@inversealtruism/csd-crypto': 0.1.18
+      '@inversealtruism/csd-crypto': 0.1.20
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

@@ -12,14 +12,19 @@ A minor bump on 0.x: `offers()` and `bids()` return fewer rows by default, so a 
   `offers({ status })` and `bids({ status })` select another status (`OfferStatus` or `BidStatus` from
   cairnx-core); `{ status: "all" }` returns the full list as 0.7.0 did.
 - `cairn.names.token(ticker)` and `tokens()` throw `HttpError` ("malformed response: ...", naming the field) for a
-  record with decimals outside the range cairnx-core's deploy parser accepts (0 to 8), with `supply`, `minted` or
+  record with decimals outside 0 to cairnx-core's `MAX_TOKEN_DECIMALS` (8), with `supply`, `minted` or
   `mintLimit` above cairnx-core's `MAX_AMOUNT`, or, for `token(ticker)`, with a ticker other than the one asked
   for. Before, decimals had only a lower bound, amounts no upper bound, and `token("AAA")` returned a record
   for `BBB`. Records the live resolver serves pass unchanged (pinned on a capture of its 20 tokens).
 
 ### Dependencies
 
-- No dependency added or bumped.
+- Re-pinned to the csd-sdk window of 2026-10-23: cairnx-core 0.2.0 to 0.2.2, csd-client 0.1.18 to 0.1.19,
+  csd-crypto 0.1.18 to 0.1.20, csd-light 0.1.23 to 0.1.25, csd-tx 0.1.21 to 0.1.23, and the dev dependency
+  csd-siwc 0.1.19 to 0.1.21. csd-codec stays 0.1.18. No dependency added.
+- cairnx-core 0.2.2's `bindOfferTerms` also binds a token-priced offer's served `want.ticker` and `want.amount`.
+  `preverifyOffer` runs its own token-price check first, so a mismatch keeps the reason "the served want
+  ticker/amount don't match the offer's on-chain record" instead of the generic served-terms reason.
 - `SDK_VERSION` is 0.8.0.
 
 ## 0.7.0 (2026-10-19): registry API removed, content from the cairn origin only

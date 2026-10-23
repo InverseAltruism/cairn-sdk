@@ -291,6 +291,12 @@ export async function preverifyOffer(opts: {
       return { ok: false, trust: "verified", reason: "the served offer is missing seller (the rebate recipient) - pass the resolver's full offer object, or omit servedOffer", ...base };
     if (String(so.seller).toLowerCase() !== seller)
       return { ok: false, trust: "verified", reason: "the served seller doesn't match the offer's on-chain author (a lying resolver may be redirecting your payment)", ...base };
+    // P75-5 MF-06: the token PRICE legs, bound verbatim to the merkle-bound record; an absent served field
+    // fails closed. bindOfferTerms below refuses the same mismatch from cairnx-core 0.2.2 on, with its generic
+    // reason, so this runs first to keep the specific one.
+    if (isTokenWant(offerRec.want)
+        && (String(so?.want?.ticker) !== String(offerRec.want.ticker) || String(so?.want?.amount) !== String(offerRec.want.amount)))
+      return { ok: false, trust: "verified", reason: "the served want ticker/amount don't match the offer's on-chain record (a lying resolver could bait-and-switch the token price)", ...base };
     // B7b: both legs on, stated explicitly (cairnx-core 0.2.0 also defaults them on): the give legs (W7
     // shortchange: give.amount inflated a millionfold passes every legacy leg) + the symmetric want-type
     // refusal (proven-token served as CSD, which only the wallet caught one-sidedly before). Give is
@@ -298,15 +304,6 @@ export async function preverifyOffer(opts: {
     // verbatim and tracks delivered separately).
     if (bindOfferTerms(opts.servedOffer, terms, { give: true, wantType: true }))
       return { ok: false, trust: "verified", reason: "the served terms don't match the offer's on-chain record (fee, rebate, partial sizing, the give, or the want type - a lying resolver could mis-size or re-route the fill, redirecting or burning your payment)", ...base };
-    // P75-5 MF-06: the token PRICE legs. bindOfferTerms's wantType leg compares only the PRESENCE of a
-    // served want.ticker against the proven want type, and provenOfferTerms carries no token ticker or
-    // amount, so a token-priced offer's served price was UNBOUND: a bait-and-switch want.ticker or
-    // want.amount returned ok:true trust:"verified". Bind both VERBATIM against the merkle-bound record
-    // (the same verbatim-string precedent as the give legs; a pure local comparison, no cairnx-core
-    // change). String(undefined) can never equal a record value, so an absent served field fails closed.
-    if (isTokenWant(offerRec.want)
-        && (String(so?.want?.ticker) !== String(offerRec.want.ticker) || String(so?.want?.amount) !== String(offerRec.want.amount)))
-      return { ok: false, trust: "verified", reason: "the served want ticker/amount don't match the offer's on-chain record (a lying resolver could bait-and-switch the token price)", ...base };
   }
   if (sumsMismatch) return { ok: false, trust: "verified", reason: sumsMismatch, ...base };
   return { ok: true, trust: "verified", ...base };
