@@ -1,6 +1,6 @@
 // .csd names + CairnX market READS for third parties (Plan 56 item 20 / Plan 57 B10).
 //
-// Before this module the facade had NO CairnX surface at all — a third party would conclude
+// Before this module the facade had NO CairnX surface at all; a third party would conclude
 // Cairn is a signal board plus explorer and miss the names/trading product entirely. This is
 // the read side: resolution, name detail/history, primary names, tokens, offers, bids, state.
 //
@@ -21,7 +21,7 @@ import { NAME_RE, RESERVED_NAMES, TICKER_RE, HASH_RE, deploy, parseAmount, type 
 import type { Http } from "./http.js";
 import { HttpError } from "./errors.js";
 
-/** `/cairnx/resolve/:name` — the display-path name→address resolution. */
+/** `/cairnx/resolve/:name`: the display-path name→address resolution. */
 export interface NameResolution {
   ok: boolean;
   name: string;
@@ -34,7 +34,7 @@ export interface NameResolution {
   tipHeight?: number;
 }
 
-/** `/cairnx/name/:name` — full name detail (lease, lock, resting offer, recapture window). */
+/** `/cairnx/name/:name`: full name detail (lease, lock, resting offer, recapture window). */
 export interface NameDetail {
   name: string;
   owner: string;

@@ -23,7 +23,7 @@ function mockFetch(route: Route): { fetch: typeof fetch; calls: string[] } {
 }
 
 async function main() {
-  console.log("— NamesClient (mocked front door) —");
+  console.log("NamesClient (mocked front door)");
   {
     const { fetch, calls } = mockFetch((u) => {
       if (u.endsWith("/trade/api/cairnx/resolve/cairn")) return { status: 200, body: JSON.stringify({ ok: true, name: "cairn", addr: "0x" + "aa".repeat(20), via: "owner", lapsed: false }) };
@@ -140,7 +140,7 @@ async function main() {
     await bad("nameHistory: a missing resolve is refused", { ...LIVE.cairn, resolve: null }, /resolve/);
   }
 
-  console.log("— native wallet error codes (0.2.46) preferred over string matching —");
+  console.log("native wallet error codes (0.2.46) preferred over string matching");
   {
     check("code USER_REJECTED -> UserRejectedError even with novel UX copy", mapProviderError("the human copy changed!", "USER_REJECTED") instanceof UserRejectedError);
     check("code APPROVAL_CLOSED maps to the user-rejection class", mapProviderError("window closed", "APPROVAL_CLOSED") instanceof UserRejectedError);
@@ -152,7 +152,7 @@ async function main() {
     check("fallback: unknown string without code stays generic UNKNOWN", mapProviderError("weird").code === "UNKNOWN");
   }
 
-  console.log("— http: opt-in GET retry + typed malformed-JSON —");
+  console.log("http: opt-in GET retry + typed malformed-JSON");
   {
     let n = 0;
     const flaky = (async () => { n++; return n < 3 ? new Response("boom", { status: 503 }) : new Response("{\"ok\":true}", { status: 200 }); }) as typeof fetch;
