@@ -58,7 +58,7 @@ try {
 
 **`cairn.index`:** `tipHeight()`, `block()/blockTxids()`, `tx()/txStatus()/txMerkleProof()`, `address()/addressTxs()/addressUtxo()`, `domains()/domainProposals(domain)`, `proposal()/attestations()`, `reputation()`, **`verifyInclusion(txid)`** (trust-minimized), `streamAll()/streamBlocks()/streamDomain()` (SSE), `subscribe()` (WS).
 
-**`cairn.names`:** `resolve(name)` (display-path name to address), `name(name)`/`nameHistory(name)`, `primary(addr)` (reverse lookup)/`namesOf(addr)`, `names()`, `tokens()/token(ticker)`, `offers()`, `bids()`, `state()` (the canonical CairnX state). Reads go through the public `/trade/api/cairnx/*` proxy; for payment-grade name resolution verify through the wallet or a replaying resolver, not a bare read (see `src/names.ts` header).
+**`cairn.names`:** `resolve(name)` (display-path name to address), `name(name)`/`nameHistory(name)`, `primary(addr)` (reverse lookup)/`namesOf(addr)`, `names()`, `tokens()/token(ticker)`, `offers()`/`bids()` (open rows by default; pass `{ status }` for another status, or `{ status: "all" }` for every row), `state()` (the canonical CairnX state). Reads go through the public `/trade/api/cairnx/*` proxy; for payment-grade name resolution verify through the wallet or a replaying resolver, not a bare read (see `src/names.ts` header).
 
 **`cairn.content`:** `prepare(obj)`/`put(obj)` → `{ payloadHash, canonical, bytes }`; `get(hash)` / `getBytes(hash)` (fetch **and verify** `sha256(bytes) === hash`, throws `ContentVerificationError` on tamper); `hash(obj)`.
 

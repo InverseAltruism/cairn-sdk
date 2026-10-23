@@ -147,7 +147,9 @@
    "taker": "0x006ede675891be2eed90192c0a0e0a06d60febb6",
    "giveTicker": "CAIRN",
    "giveAmount": "10000000000",
-   "wantType": "token"
+   "wantType": "token",
+   "wantTicker": "XE5XNS",
+   "wantAmount": "50"
   }
  },
  {
@@ -1563,7 +1565,9 @@
    "taker": "0x006ede675891be2eed90192c0a0e0a06d60febb6",
    "giveTicker": "CAIRN",
    "giveAmount": "10000000000",
-   "wantType": "token"
+   "wantType": "token",
+   "wantTicker": "XE5XNS",
+   "wantAmount": "50"
   }
  },
  {

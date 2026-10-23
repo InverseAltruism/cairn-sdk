@@ -1,6 +1,6 @@
 // .csd names + CairnX market READS for third parties (Plan 56 item 20 / Plan 57 B10).
 //
-// Before this module the facade had NO CairnX surface at all — a third party would conclude
+// Before this module the facade had NO CairnX surface at all; a third party would conclude
 // Cairn is a signal board plus explorer and miss the names/trading product entirely. This is
 // the read side: resolution, name detail/history, primary names, tokens, offers, bids, state.
 //
@@ -17,11 +17,11 @@
 // malformed input fails fast client-side instead of round-tripping to a 404. Responses that a dApp does
 // arithmetic or iteration on (token amounts and decimals, the list reads) are shape-checked before they are
 // returned; a body that does not match throws a typed HttpError instead of reaching the caller as a typed lie.
-import { NAME_RE, RESERVED_NAMES, TICKER_RE, AMOUNT_RE, HASH_RE, type NameState } from "@inversealtruism/cairnx-core";
+import { NAME_RE, RESERVED_NAMES, TICKER_RE, HASH_RE, MAX_TOKEN_DECIMALS, parseAmount, type BidStatus, type NameState, type OfferStatus } from "@inversealtruism/cairnx-core";
 import type { Http } from "./http.js";
 import { HttpError } from "./errors.js";
 
-/** `/cairnx/resolve/:name` — the display-path name→address resolution. */
+/** `/cairnx/resolve/:name`: the display-path name→address resolution. */
 export interface NameResolution {
   ok: boolean;
   name: string;
@@ -34,7 +34,7 @@ export interface NameResolution {
   tipHeight?: number;
 }
 
-/** `/cairnx/name/:name` — full name detail (lease, lock, resting offer, recapture window). */
+/** `/cairnx/name/:name`: full name detail (lease, lock, resting offer, recapture window). */
 export interface NameDetail {
   name: string;
   owner: string;
@@ -102,9 +102,10 @@ export interface NameHistory {
 const nameOk = (n: unknown): n is string =>
   typeof n === "string" && NAME_RE.test(n) && !RESERVED_NAMES.has(n);
 
-const amountOk = (v: unknown): v is string => typeof v === "string" && AMOUNT_RE.test(v);
-// The upper bound on decimals is enforced by cairnx-core's deploy parser and not exported, so it is not
-// re-declared here; the guard keeps decimals a usable non-negative integer.
+// parseAmount applies cairnx-core's MAX_AMOUNT; minted and served amounts may be zero.
+const amountOk = (v: unknown): v is string => parseAmount(v, { allowZero: true }) !== null;
+const decimalsOk = (d: unknown): d is number =>
+  Number.isSafeInteger(d) && (d as number) >= 0 && (d as number) <= MAX_TOKEN_DECIMALS;
 const heightOk = (v: unknown): boolean => Number.isSafeInteger(v) && (v as number) >= 0;
 function nameHistoryProblem(h: unknown, name: string): string | null {
   if (!h || typeof h !== "object" || Array.isArray(h)) return "not an object";
@@ -122,14 +123,16 @@ function nameHistoryProblem(h: unknown, name: string): string | null {
   return null;
 }
 
-function tokenProblem(t: unknown): string | null {
+/** Why a served token record is unusable, or null. `ticker` is the one the caller asked for, when it asked for one. */
+function tokenProblem(t: unknown, ticker?: string): string | null {
   if (!t || typeof t !== "object") return "not an object";
   const r = t as Record<string, unknown>;
   if (typeof r.ticker !== "string" || !TICKER_RE.test(r.ticker)) return "bad ticker";
-  if (!Number.isSafeInteger(r.decimals) || (r.decimals as number) < 0) return `bad decimals (${String(r.decimals)})`;
-  if (!amountOk(r.supply)) return "supply is not a base-unit integer string";
-  if (!amountOk(r.minted)) return "minted is not a base-unit integer string";
-  if (r.mintLimit !== undefined && !amountOk(r.mintLimit)) return "mintLimit is not a base-unit integer string";
+  if (ticker !== undefined && r.ticker !== ticker) return `ticker is ${JSON.stringify(r.ticker)}, expected ${JSON.stringify(ticker)}`;
+  if (!decimalsOk(r.decimals)) return `bad decimals (${String(r.decimals)}), not an integer in the consensus range`;
+  if (!amountOk(r.supply)) return "supply is not a base-unit integer string within MAX_AMOUNT";
+  if (!amountOk(r.minted)) return "minted is not a base-unit integer string within MAX_AMOUNT";
+  if (r.mintLimit !== undefined && !amountOk(r.mintLimit)) return "mintLimit is not a base-unit integer string within MAX_AMOUNT";
   return null;
 }
 
@@ -144,10 +147,18 @@ export class NamesClient {
     return new HttpError(200, this.http.url(path), `malformed response: ${what}`);
   }
 
-  private async list(path: string): Promise<unknown[]> {
-    const body = await this.http.getJson<unknown>(path);
+  private async list(path: string, query?: Record<string, string>): Promise<unknown[]> {
+    const body = await this.http.getJson<unknown>(path, query);
     if (!Array.isArray(body)) throw this.malformed(path, "expected an array");
     return body;
+  }
+
+  /** Rows of a market list with one status, or every row for "all". */
+  private async byStatus(path: string, status: string): Promise<unknown[]> {
+    if (status === "all") return this.list(path);
+    const rows = await this.list(path, { status });
+    // Filtered here as well, so a server that ignores ?status cannot hand back rows of another status.
+    return rows.filter((r) => (r as { status?: unknown } | null)?.status === status);
   }
 
   /** Resolve a .csd name for DISPLAY (server-trusted; see the module trust note). null = unknown/invalid name. */
@@ -202,23 +213,30 @@ export class NamesClient {
     return rows as TokenInfo[];
   }
 
-  /** One token by ticker. null = unknown/invalid ticker. Throws a typed HttpError on a malformed body. */
+  /** One token by ticker. null = unknown/invalid ticker. Throws a typed HttpError on a malformed body or a
+   *  record for another ticker. */
   async token(ticker: string): Promise<TokenInfo | null> {
     if (typeof ticker !== "string" || !TICKER_RE.test(ticker)) return null;
     const path = `/trade/api/cairnx/token/${ticker}`;
     let t: unknown;
     try { t = await this.http.getJson<unknown>(path); }
     catch (e: any) { if (e?.status === 404) return null; throw e; }
-    const p = tokenProblem(t);
+    const p = tokenProblem(t, ticker);
     if (p) throw this.malformed(path, p);
     return t as TokenInfo;
   }
 
-  /** Open offers (the market's display list). */
-  offers(): Promise<unknown[]> { return this.list(`/trade/api/cairnx/offers`); }
+  /** Offers with one status, open ones by default (the market's display list). `{ status: "all" }` returns every
+   *  offer the server holds, filled, cancelled and expired ones included. */
+  offers(opts: { status?: OfferStatus | "all" } = {}): Promise<unknown[]> {
+    return this.byStatus(`/trade/api/cairnx/offers`, opts.status ?? "open");
+  }
 
-  /** Open bids. */
-  bids(): Promise<unknown[]> { return this.list(`/trade/api/cairnx/bids`); }
+  /** Bids with one status, open ones by default. `{ status: "all" }` returns every bid the server holds, done,
+   *  cancelled and expired ones included. */
+  bids(opts: { status?: BidStatus | "all" } = {}): Promise<unknown[]> {
+    return this.byStatus(`/trade/api/cairnx/bids`, opts.status ?? "open");
+  }
 
   /** The full canonical CairnX state (large; prefer the scoped reads above). */
   state(): Promise<unknown> { return this.http.getJson<unknown>(`/trade/api/cairnx/state`); }
