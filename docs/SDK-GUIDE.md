@@ -75,7 +75,8 @@ payment. Before you build those `outputs`, corroborate the offer on-chain with
 `await cairn.verifyOfferForFill(offerId, servedOffer, { pay, plannedOutputs })`. It merkle-proves the offer's
 Propose into the PoW-verified header chain (from the pinned SPV checkpoint), binds the record to its on-chain
 commitment, derives the payment recipient + seller from the offer's on-chain author (the funding input's
-prevout owner, not the malleable scriptSig), and, when you pass the resolver-served `offer`, binds its
+prevout owner, accepted only when the Propose body carries that owner's signature, which the merkle root does
+not commit: a body served without it has no author yet and answers transiently), and, when you pass the resolver-served `offer`, binds its
 payto/seller + fee/rebate/partial terms to the proven ones. It refuses an offer under the creation rules
 cairnx-core `provenOfferRefusal` covers (a Propose outside the `cairnx:v1` settlement domain, a treasury payee,
 an expiry already past when it was mined, and the height-gated record rules such as the v1.3 ban on open
