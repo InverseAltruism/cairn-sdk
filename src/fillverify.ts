@@ -26,6 +26,7 @@
 // behavior-frozen `fillIsSafe` / `requiredFillOutputs` / `previewFill` exported for existing consumers).
 import { rpcTxToTx, type RpcTxJson } from "@inversealtruism/csd-client";
 import { txid, payloadHash } from "@inversealtruism/csd-codec";
+import { authorOf } from "@inversealtruism/csd-crypto";
 import {
   parseRecord, feeBpsAt, bindOfferTerms, provenOfferTerms, provenOfferRefusal, fillOutputPlan, isTokenWant,
   fillEndorsement, fillIsSafe, requiredFillOutputs, previewFill,
@@ -114,11 +115,10 @@ function bindPlannedSums(
   return undefined;
 }
 
-// The on-chain author of an offer Propose = the funding input's prevout OWNER (only that owner's key can spend
-// the coin it funds, and the owner is txid-committed). We fetch the source tx, RECOMPUTE its txid (so a forged
-// body whose recomputed id still matches the outpoint is impossible), and read the funded output's scriptPubkey.
-// This is txid-bound (range-INDEPENDENT), NOT scriptSig-recovered (the merkle root does not commit the scriptSig,
-// so a strip/re-sign would else redirect it). Returns the lowercased 0x-addr, or null on any miss/mismatch/coinbase.
+// The offer's author: csd-crypto `authorOf` over the proven Propose and the funded output's scriptPubkey. That
+// scriptPubkey is read from the source tx only after its recomputed txid equals the outpoint (the txid commits it).
+// The Propose's scriptSig is not merkle-committed, so a body served without the owner's signature has no author.
+// Returns the lowercased 0x-addr, or null on any miss, mismatch, coinbase or unsigned body.
 async function provenAuthor(
   client: { tx(id: string): Promise<unknown> },
   provenTx: ReturnType<typeof rpcTxToTx>,
@@ -132,9 +132,7 @@ async function provenAuthor(
   let src: ReturnType<typeof rpcTxToTx>;
   try { src = rpcTxToTx(body); } catch { return null; }
   if (String(txid(src)).toLowerCase() !== String(in0.prevTxid).toLowerCase()) return null;   // forged source body
-  const out = src.outputs?.[Number(in0.vout)];
-  const spk = out?.scriptPubkey ? String(out.scriptPubkey).toLowerCase() : null;
-  return spk && ADDR.test(spk) ? spk : null;
+  return authorOf(provenTx, src.outputs?.[Number(in0.vout)]?.scriptPubkey);
 }
 
 /**

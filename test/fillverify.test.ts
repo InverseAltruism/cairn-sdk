@@ -35,20 +35,20 @@ function proposeTx(priv: string, rec: object, nonce = 1, domain = DOMAIN, expire
   const phash = payloadHash(rec);
   const prev = "0x" + nonce.toString(16).padStart(2, "0").repeat(32).slice(0, 64);
   const stripped = { version: 1, inputs: [{ prevTxid: prev, vout: 0, scriptSig: "0x" }], outputs: [{ value: 1000, scriptPubkey: a }], locktime: 0, app: { type: "Propose" as const, domain, payloadHash: phash, uri, expiresEpoch } };
-  const { sig64, pub33 } = signDigest(sighash(stripped), priv);
-  const scriptSig = buildScriptSig(sig64, pub33);
   const id = txid(stripped);
-  const json = { txid: id, version: 1, locktime: 0, inputs: [{ prev_txid: prev, vout: 0, script_sig: scriptSig }], outputs: [{ value: 1000, script_pubkey: a }], app: { type: "Propose" as const, domain, payload_hash: phash, uri, expires_epoch: expiresEpoch } };
+  const json = { txid: id, version: 1, locktime: 0, inputs: [{ prev_txid: prev, vout: 0, script_sig: "0x" }], outputs: [{ value: 1000, script_pubkey: a }], app: { type: "Propose" as const, domain, payload_hash: phash, uri, expires_epoch: expiresEpoch } };
   // the funding source tx (a coinbase-like body whose output[0] the offer input spends), owner = the signer
   const srcStripped = { version: 1, inputs: [{ prevTxid: "0x" + "00".repeat(32), vout: 0xffffffff, scriptSig: "0x" + nonce.toString(16).padStart(8, "0") }], outputs: [{ value: 5_000_000_000, scriptPubkey: a }], locktime: 0, app: { type: "None" as const } };
   const srcId = txid(srcStripped);
   // rewire the offer input to spend the real source tx's output[0]
   json.inputs[0]!.prev_txid = srcId;
   const srcJson = { txid: srcId, version: 1, locktime: 0, inputs: [{ prev_txid: "0x" + "00".repeat(32), vout: 0xffffffff, script_sig: "0x" + nonce.toString(16).padStart(8, "0") }], outputs: [{ value: 5_000_000_000, script_pubkey: a }], app: { type: "None" } };
-  // recompute the offer txid AFTER rewiring the input (txid blanks scriptSig, so re-sign is not needed for id)
+  // recompute the offer txid AFTER rewiring the input, then sign the rewired body: the sighash commits the prevout
   const rewired = rpcTxToTx(json);
   const newId = txid(rewired);
   json.txid = newId;
+  const { sig64, pub33 } = signDigest(sighash(rewired), priv);
+  json.inputs[0]!.script_sig = buildScriptSig(sig64, pub33);
   prevoutOf.set(srcId.toLowerCase(), srcJson as never);
   return { json, id: newId.toLowerCase(), author: a.toLowerCase(), phash, uri };
 }
@@ -217,6 +217,24 @@ await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsemen
     const noSrc = { async tx() { return { ok: false }; } };
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: noSrc, offerId: tx.id, servedOffer: servedFor({ id: tx.id }) });
     return r.ok === false && r.transient === true;
+  });
+  await ok("[author = csd-crypto authorOf] only the funding output's owner, signing this Propose, is the author; any other body fails SOFT", async () => {
+    const withSig = (scriptSig: string) => ({ ...tx.json, inputs: [{ ...tx.json.inputs[0]!, script_sig: scriptSig }] });
+    const signedBy = (key: string) => { const { sig64, pub33 } = signDigest(sighash(rpcTxToTx(tx.json)), key); return buildScriptSig(sig64, pub33); };
+    const verdict = async (json: object, client: { tx(id: string): Promise<unknown> } = mockClient) => {
+      const r = await preverifyOffer({ light: mockLight(json, tx.phash), client, offerId: tx.id });
+      return r.ok === false && r.transient === true && /prove the offer's on-chain author/.test(r.reason ?? "") ? "soft" : r.ok ? `ok:${r.seller}` : `refused:${r.reason}`;
+    };
+    const srcId = String(tx.json.inputs[0]!.prev_txid).toLowerCase();
+    const forgedSrc = { async tx() { return { ok: true, tx: { ...prevoutOf.get(srcId)!, outputs: [{ value: 5_000_000_000, script_pubkey: ATTACKER }] } }; } };
+    const got = [
+      await verdict(withSig(signedBy(SELLER_KEY))),     // honest: the owner's signature, the production call shape
+      await verdict(withSig(signedBy(ATTACKER_KEY))),   // another key's valid signature: the txid does not commit it
+      await verdict(withSig("0x")),                     // unsigned
+      await verdict(withSig("0x" + "ab".repeat(99))),   // not a signature
+      await verdict(withSig(signedBy(ATTACKER_KEY)), forgedSrc),   // re-signed, and a source body paying that key whose txid is not the outpoint
+    ];
+    return got[0] === `ok:${SELLER}` && got.slice(1).every((v) => v === "soft");
   });
   await ok("[commitment mismatch] a served appPayloadHash that the record does not hash to is REFUSED (unverified)", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, "0x" + "de".repeat(32)), client: mockClient, offerId: tx.id });

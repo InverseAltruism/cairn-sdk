@@ -18,6 +18,13 @@
   `trust: "verified"` and `blockHeight`. A Propose outside `cairnx:v1` used to return `trust: "unverified"`; it
   is now refused after the author bind with `trust: "verified"`, and while the author cannot be proven yet it
   returns the transient author answer first.
+- The offer author in `preverifyOffer` is csd-crypto's `authorOf` over the merkle-proven Propose and the funding
+  output's scriptPubkey (read from the source tx once its recomputed txid equals the outpoint). Before, it was the
+  scriptPubkey owner alone. The two agree on every tx the chain admits (the node requires a 99-byte scriptSig that
+  verifies against the spent output's owner); they differ only on a served body whose scriptSig is missing,
+  malformed or another key's, which the merkle root does not commit. Such a body now returns the existing transient
+  "couldn't prove the offer's on-chain author yet" answer instead of the owner. A source scriptPubkey written
+  without `0x` now resolves to its address.
 - A token-priced offer served with another `want.ticker` or `want.amount` is refused by `bindOfferTerms`' want
   leg (cairnx-core 0.2.2) with the served-terms reason, which now names the want's type or token price; the
   SDK's own copy of that check is gone.
