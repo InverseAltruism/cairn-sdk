@@ -155,8 +155,8 @@ await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsemen
     });
     // non-safe-integer expiry (>= 2^53): the codec's u64 refuses to even RE-DERIVE such a tx
     // (txid throws), so preverifyOffer fails closed at the re-derivation step - never ok:true. The
-    // resolver also rejects a non-safe-integer expiresEpoch outright (resolve.ts), and the expiry
-    // check in fillverify carries a matching !Number.isSafeInteger refusal as defense-in-depth.
+    // resolver also rejects a non-safe-integer expiresEpoch outright, and provenOfferRefusal applies
+    // that same rule to a bigint epoch from an exact parse.
     {
       const badJson = { txid: K(0x99), version: 1, locktime: 0, inputs: [{ prev_txid: K(0x01), vout: 0, script_sig: "0x" }], outputs: [{ value: 1000, script_pubkey: SELLER }], app: { type: "Propose", domain: DOMAIN, payload_hash: "0x" + "0".repeat(64), uri: "x", expires_epoch: 9007199254740992 } };
       await ok("[S-B4] a non-safe-integer expires_epoch offer is REFUSED (fail-closed)", async () => {
@@ -164,6 +164,19 @@ await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsemen
         return r.ok === false;
       });
     }
+    // The v1.3 open CSD offer ban (anchors in [V13 31100, V17 34000)): the resolver rejects an untaken CSD-priced
+    // offer there, so a fill pays for nothing. The taker-bound offer at the same height is admitted.
+    const H13 = 33000;
+    const open13 = proposeTx(SELLER_KEY, { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } }, 14);
+    await ok("[admission] an open CSD-priced offer mined under the v1.3 ban is REFUSED (the resolver rejects it)", async () => {
+      const r = await preverifyOffer({ light: mockLight(open13.json, open13.phash, H13), client: mockClient, offerId: open13.id });
+      return r.ok === false && r.trust === "verified" && r.blockHeight === H13 && /v1\.3: CSD-priced offers must be taker-bound/.test(r.reason ?? "");
+    });
+    const bound13 = proposeTx(SELLER_KEY, { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER }, taker: ATTACKER }, 15);
+    await ok("[admission honest] the taker-bound offer at the same height verifies", async () => {
+      const r = await preverifyOffer({ light: mockLight(bound13.json, bound13.phash, H13), client: mockClient, offerId: bound13.id });
+      return r.ok === true && r.trust === "verified" && r.seller === SELLER;
+    });
   }
   await ok("[deflated feeBps] a served feeBps=0 (proven 150) is REFUSED", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, feeBps: 0 }) });
@@ -227,7 +240,7 @@ await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsemen
 
 console.log("\nP75-5 fill-surface guards:");
 
-// MF-06: a token-priced offer's served price is bound to the merkle-bound record
+// MF-06: a token-priced offer's served price is bound to the merkle-bound record (cairnx-core bindOfferTerms' want leg)
 {
   const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { ticker: "BBB", amount: "5", payto: SELLER } };
   const tx = proposeTx(SELLER_KEY, rec, 3);
@@ -238,11 +251,11 @@ console.log("\nP75-5 fill-surface guards:");
   });
   await ok("[MF-06] a served want.amount bait-and-switch on a token-priced offer is REFUSED", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedTok({ ticker: "BBB", amount: "5000000", payto: SELLER }) });
-    return r.ok === false && /want ticker\/amount/.test(r.reason ?? "");
+    return r.ok === false && /want's type or token price/.test(r.reason ?? "");
   });
   await ok("[MF-06] a served want.ticker swap on a token-priced offer is REFUSED", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedTok({ ticker: "SCAM", amount: "5", payto: SELLER }) });
-    return r.ok === false && /want ticker\/amount/.test(r.reason ?? "");
+    return r.ok === false && /want's type or token price/.test(r.reason ?? "");
   });
 }
 
@@ -250,9 +263,9 @@ console.log("\nP75-5 fill-surface guards:");
 {
   const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
   const wrong = proposeTx(SELLER_KEY, rec, 4, "board:v1");
-  await ok("[MF-07] a Propose from a non-cairnx:v1 settlement domain is REFUSED (unverified)", async () => {
+  await ok("[MF-07] a Propose from a non-cairnx:v1 settlement domain is REFUSED by the admission check", async () => {
     const r = await preverifyOffer({ light: mockLight(wrong.json, wrong.phash), client: mockClient, offerId: wrong.id });
-    return r.ok === false && r.trust === "unverified" && /settlement domain/.test(r.reason ?? "");
+    return r.ok === false && r.trust === "verified" && /not a cairnx:v1 Propose \(domain "board:v1"\)/.test(r.reason ?? "");
   });
   const tx = proposeTx(SELLER_KEY, rec, 5);
   await ok("[MF-07 happy] the cairnx:v1 domain still verifies (zero false-refuse)", async () => {

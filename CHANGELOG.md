@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- `preverifyOffer` and `cairn.verifyOfferForFill` refuse an offer under each creation rule cairnx-core 0.2.2's
+  `provenOfferRefusal` covers, over the merkle-proven Propose: the settlement domain, the v1.2 shape gate, the
+  v1.3 ban on open CSD-priced offers, a treasury payee, an expiry outside the safe range or past at the anchor,
+  and the v2.1 duration cap (the give's backing is chain state and stays resolver-trusted). Two record-only
+  activation gates are not in that function yet and so not checked here: an offer anchored before CairnX
+  activation (29,860) and a name-give offer before v1.1 (29,960); a resolver serves neither, and both join
+  `provenOfferRefusal` in the next cairnx-core release. Before, they checked only the
+  domain, a treasury payee and the expiry, and reported `ok: true, trust: "verified"` for an offer the resolver
+  rejects under the v1.2 shape gate, the v1.3 ban on open CSD-priced offers (anchored from 31,100 to below
+  34,000) or the v2.1 duration cap (40,100 to below 41,300), so a fill would have paid for nothing. Every such
+  refusal now reads `CairnX rejects this offer (<the resolver's note>) - a fill would move CSD for nothing`, with
+  `trust: "verified"` and `blockHeight`. A Propose outside `cairnx:v1` used to return `trust: "unverified"`; it
+  is now refused after the author bind with `trust: "verified"`, and while the author cannot be proven yet it
+  returns the transient author answer first.
+- A token-priced offer served with another `want.ticker` or `want.amount` is refused by `bindOfferTerms`' want
+  leg (cairnx-core 0.2.2) with the served-terms reason, which now names the want's type or token price; the
+  SDK's own copy of that check is gone.
+
 ## 0.8.0 (prepared 2026-10-23, not yet published): open-only market lists, token records checked
 
 A minor bump on 0.x: `offers()` and `bids()` return fewer rows by default, so a `^0.7.x` range does not pick this up.

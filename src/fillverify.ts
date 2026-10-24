@@ -27,8 +27,8 @@
 import { rpcTxToTx, type RpcTxJson } from "@inversealtruism/csd-client";
 import { txid, payloadHash } from "@inversealtruism/csd-codec";
 import {
-  DOMAIN, parseRecord, feeBpsAt, bindOfferTerms, provenOfferTerms, fillOutputPlan, isTokenWant,
-  fillEndorsement, fillIsSafe, requiredFillOutputs, previewFill, TREASURY_ADDR, epochOf,
+  parseRecord, feeBpsAt, bindOfferTerms, provenOfferTerms, provenOfferRefusal, fillOutputPlan, isTokenWant,
+  fillEndorsement, fillIsSafe, requiredFillOutputs, previewFill,
   type MintedProvenOfferTerms, type OfferState,
 } from "@inversealtruism/cairnx-core";
 import type { InclusionResult } from "@inversealtruism/csd-light";
@@ -183,11 +183,6 @@ export async function preverifyOffer(opts: {
   if (String(provenId).toLowerCase() !== id) return { ok: false, trust: "unverified", reason: "the merkle-proven tx doesn't match the offer id" };
   const app = incl.tx.app;
   if (!app || app.type !== "Propose") return { ok: false, trust: "unverified", reason: "the offer tx is not a Propose" };
-  // P75-5 MF-07: the settlement-domain bind. cairnx:v1 (the single-sourced cairnx-core DOMAIN constant) is
-  // the ONLY CairnX settlement domain, so a Propose from any other domain whose payload happens to parse as
-  // an offer record is a spoof, never an honest offer. Fail-closed with zero false-refuse on the hot path.
-  if (String(app.domain) !== DOMAIN)
-    return { ok: false, trust: "unverified", reason: `the offer tx is not a ${DOMAIN} Propose (wrong settlement domain)` };
 
   let rec: { t?: string; want?: { payto?: string; value?: string }; taker?: string; bid?: string; min?: string } | null;
   try { rec = parseRecord(app.uri, incl.appPayloadHash) as typeof rec; } catch { rec = null; }
@@ -200,28 +195,17 @@ export async function preverifyOffer(opts: {
   // The cast is sound: rec passed the t==="offer" payload-hash-bound guard above; parseRecord's widened
   // partial type simply lacks the OfferRecord brand the pinned signatures demand.
   const offerRec = rec as Parameters<typeof provenOfferTerms>[0];
+  // The resolver's own creation rules over the proven Propose (the cairnx:v1 domain, a treasury payee, the expiry
+  // and the gated record rules); the give's backing is chain state and is not checked here.
+  const ee = (app as { expires_epoch?: unknown }).expires_epoch;
+  const refusal = provenOfferRefusal(offerRec, { domain: String(app.domain), height: blockHeight, expiresEpoch: typeof ee === "bigint" ? ee : Number(ee), seller });
+  if (refusal) return { ok: false, trust: "verified", blockHeight, reason: `CairnX rejects this offer (${refusal}) - a fill would move CSD for nothing` };
   const w = rec.want ?? {};
   const payto = (w.payto && ADDR.test(String(w.payto).toLowerCase())) ? String(w.payto).toLowerCase() : seller;
   // B4b: the ONE pinned producer; blockHeight is the merkle-proven inclusion height, never served.
   // Keeps the BRANDED MintedProvenOfferTerms (no widening annotation): bindOfferTerms with the give and
   // wantType legs on accepts only minted terms, so a hand-built terms object there is a compile error.
   const terms = provenOfferTerms(offerRec, blockHeight);
-
-  // S-B4: refuse records the chain's own resolver REJECTS at creation (cairnx-core resolve.ts) -
-  // they would otherwise return ok:true trust:"verified" while the fill's give is a no-op (the CSD
-  // moves, nothing is delivered). Both checks run over the merkle-proven record + the merkle-proven
-  // inclusion height, never a served field:
-  //   - payto == the protocol treasury (resolve.ts: "payto cannot be the protocol treasury").
-  if (payto === TREASURY_ADDR)
-    return { ok: false, trust: "verified", blockHeight, reason: "the offer's payment recipient is the protocol treasury - the chain rejects it, and a fill would move CSD for nothing" };
-  //   - already expired at its anchor height (resolve.ts: "already expired at anchor"). The proven
-  //   expiry is the on-chain Propose's expires_epoch; blockHeight is the merkle-proven inclusion height.
-  //   Mirrors resolve.ts exactly: a NON-safe-integer expires_epoch is rejected outright (the node
-  //   accepts an unbounded u64), so refuse on that too, not just on a past anchor.
-  const provenExpiresEpoch = Number((app as { expires_epoch?: unknown }).expires_epoch);
-  if (!Number.isSafeInteger(provenExpiresEpoch) || epochOf(blockHeight) > provenExpiresEpoch)
-    return { ok: false, trust: "verified", blockHeight, reason: "the offer was already expired when it was mined - the chain rejects it, and a fill would move CSD for nothing" };
-
 
   // B7b (REBIND W3/M1) OPT-IN sums seam: when the caller states the `pay` it intends, size the PROVEN CSD
   // output plan from the merkle-proven offer via the discriminated `fillOutputPlan` (the M1 successor to
@@ -278,7 +262,7 @@ export async function preverifyOffer(opts: {
   const base = { payto, seller, terms, blockHeight, ...planFields };
 
   if (opts.servedOffer !== undefined && opts.servedOffer !== null) {
-    const so = opts.servedOffer as { want?: { payto?: unknown; ticker?: unknown; amount?: unknown }; seller?: unknown };
+    const so = opts.servedOffer as { want?: { payto?: unknown }; seller?: unknown };
     // P75-5 MF-09: every served leg fails CLOSED, including ABSENCE. A partial served offer (a dApp
     // hand-building one) previously skipped the payto/seller bind entirely and still earned ok:true
     // trust:"verified". BREAKING REFUSAL for such callers; the reason NAMES the missing field. A
@@ -291,19 +275,12 @@ export async function preverifyOffer(opts: {
       return { ok: false, trust: "verified", reason: "the served offer is missing seller (the rebate recipient) - pass the resolver's full offer object, or omit servedOffer", ...base };
     if (String(so.seller).toLowerCase() !== seller)
       return { ok: false, trust: "verified", reason: "the served seller doesn't match the offer's on-chain author (a lying resolver may be redirecting your payment)", ...base };
-    // P75-5 MF-06: the token PRICE legs, bound verbatim to the merkle-bound record; an absent served field
-    // fails closed. bindOfferTerms below refuses the same mismatch from cairnx-core 0.2.2 on, with its generic
-    // reason, so this runs first to keep the specific one.
-    if (isTokenWant(offerRec.want)
-        && (String(so?.want?.ticker) !== String(offerRec.want.ticker) || String(so?.want?.amount) !== String(offerRec.want.amount)))
-      return { ok: false, trust: "verified", reason: "the served want ticker/amount don't match the offer's on-chain record (a lying resolver could bait-and-switch the token price)", ...base };
     // B7b: both legs on, stated explicitly (cairnx-core 0.2.0 also defaults them on): the give legs (W7
-    // shortchange: give.amount inflated a millionfold passes every legacy leg) + the symmetric want-type
-    // refusal (proven-token served as CSD, which only the wallet caught one-sidedly before). Give is
-    // compared as VERBATIM strings, never a deep object compare (resolve.ts copies the record's give
-    // verbatim and tracks delivered separately).
+    // shortchange: give.amount inflated a millionfold passes every legacy leg) + the want leg (its type, and a
+    // token want's ticker and amount, verbatim). Give is compared as VERBATIM strings, never a deep object
+    // compare (resolve.ts copies the record's give verbatim and tracks delivered separately).
     if (bindOfferTerms(opts.servedOffer, terms, { give: true, wantType: true }))
-      return { ok: false, trust: "verified", reason: "the served terms don't match the offer's on-chain record (fee, rebate, partial sizing, the give, or the want type - a lying resolver could mis-size or re-route the fill, redirecting or burning your payment)", ...base };
+      return { ok: false, trust: "verified", reason: "the served terms don't match the offer's on-chain record (fee, rebate, partial sizing, the give, or the want's type or token price - a lying resolver could mis-size, re-price or re-route the fill, redirecting or burning your payment)", ...base };
   }
   if (sumsMismatch) return { ok: false, trust: "verified", reason: sumsMismatch, ...base };
   return { ok: true, trust: "verified", ...base };

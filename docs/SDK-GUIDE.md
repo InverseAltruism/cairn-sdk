@@ -76,8 +76,10 @@ payment. Before you build those `outputs`, corroborate the offer on-chain with
 Propose into the PoW-verified header chain (from the pinned SPV checkpoint), binds the record to its on-chain
 commitment, derives the payment recipient + seller from the offer's on-chain author (the funding input's
 prevout owner, not the malleable scriptSig), and, when you pass the resolver-served `offer`, binds its
-payto/seller + fee/rebate/partial terms to the proven ones. It refuses a Propose outside the `cairnx:v1`
-settlement domain, binds a token-priced offer's served `want.ticker`/`want.amount` verbatim to the record,
+payto/seller + fee/rebate/partial terms to the proven ones. It refuses an offer under the creation rules
+cairnx-core `provenOfferRefusal` covers (a Propose outside the `cairnx:v1` settlement domain, a treasury payee,
+an expiry already past when it was mined, and the height-gated record rules such as the v1.3 ban on open
+CSD-priced offers; the activation gates at 29,860 and, for name offers, 29,960 are not in it yet), binds a token-priced offer's served `want.ticker`/`want.amount` verbatim to the record,
 and refuses a served offer whose `want.payto` or `seller` is absent (the reason names the missing field, so
 pass the resolver's full offer object or omit `servedOffer`).
 
