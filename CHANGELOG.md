@@ -29,7 +29,7 @@
   leg (cairnx-core 0.2.2) with the served-terms reason, which now names the want's type or token price; the
   SDK's own copy of that check is gone.
 
-## 0.8.0 (prepared 2026-10-23, not yet published): open-only market lists, token records checked
+## 0.8.0 (2026-10-23): open-only market lists, token records checked
 
 A minor bump on 0.x: `offers()` and `bids()` return fewer rows by default, so a `^0.7.x` range does not pick this up.
 
