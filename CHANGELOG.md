@@ -4,9 +4,13 @@
 
 ### Changed
 
-- `preverifyOffer` and `cairn.verifyOfferForFill` refuse every offer the CairnX resolver rejects at creation
-  from the record alone, through cairnx-core's `provenOfferRefusal` over the merkle-proven Propose (the give's
-  backing is chain state and stays resolver-trusted). Before, they checked only the
+- `preverifyOffer` and `cairn.verifyOfferForFill` refuse an offer under each creation rule cairnx-core 0.2.2's
+  `provenOfferRefusal` covers, over the merkle-proven Propose: the settlement domain, the v1.2 shape gate, the
+  v1.3 ban on open CSD-priced offers, a treasury payee, an expiry outside the safe range or past at the anchor,
+  and the v2.1 duration cap (the give's backing is chain state and stays resolver-trusted). Two record-only
+  activation gates are not in that function yet and so not checked here: an offer anchored before CairnX
+  activation (29,860) and a name-give offer before v1.1 (29,960); a resolver serves neither, and both join
+  `provenOfferRefusal` in the next cairnx-core release. Before, they checked only the
   domain, a treasury payee and the expiry, and reported `ok: true, trust: "verified"` for an offer the resolver
   rejects under the v1.2 shape gate, the v1.3 ban on open CSD-priced offers (anchored from 31,100 to below
   34,000) or the v2.1 duration cap (40,100 to below 41,300), so a fill would have paid for nothing. Every such
