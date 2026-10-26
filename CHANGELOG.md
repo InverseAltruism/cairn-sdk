@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+## 0.8.1
+
 ### Changed
 
+- Re-pinned to npm window 5: cairnx-core 0.2.3, csd-client 0.1.20, csd-light 0.1.26. cairnx-core 0.2.3's
+  `provenOfferRefusal` adds the two record-only activation gates noted below (an offer anchored before CairnX
+  activation at 29,860, a name-give offer before v1.1 at 29,960), so `preverifyOffer` now refuses both too.
 - `preverifyOffer` and `cairn.verifyOfferForFill` refuse an offer under each creation rule cairnx-core 0.2.2's
   `provenOfferRefusal` covers, over the merkle-proven Propose: the settlement domain, the v1.2 shape gate, the
   v1.3 ban on open CSD-priced offers, a treasury payee, an expiry outside the safe range or past at the anchor,

@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@inversealtruism/cairnx-core':
-        specifier: 0.2.2
-        version: 0.2.2
+        specifier: 0.2.3
+        version: 0.2.3
       '@inversealtruism/csd-client':
-        specifier: 0.1.19
-        version: 0.1.19
+        specifier: 0.1.20
+        version: 0.1.20
       '@inversealtruism/csd-codec':
         specifier: 0.1.18
         version: 0.1.18
@@ -21,8 +21,8 @@ importers:
         specifier: 0.1.20
         version: 0.1.20
       '@inversealtruism/csd-light':
-        specifier: 0.1.25
-        version: 0.1.25
+        specifier: 0.1.26
+        version: 0.1.26
       '@inversealtruism/csd-tx':
         specifier: 0.1.23
         version: 0.1.23
@@ -423,12 +423,12 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@inversealtruism/cairnx-core@0.2.2':
-    resolution: {integrity: sha512-WKft7TPYYR+hQ1DFA1tV44SjAPff1Dmi4GBWJaCWVk+hGwIssCMqJKrG/VTbbGA9Eo3vA7avFBfgaDdQrVZ7Ww==}
+  '@inversealtruism/cairnx-core@0.2.3':
+    resolution: {integrity: sha512-BzIE82Ab1RnnxNoZ7S9mRgamnt6C//vfSSp4/JvBocfEtoiXzFIj3i5zTdCRAv2/PCqHIvgT5K3kcO2DCa26Ww==}
     engines: {node: '>=18'}
 
-  '@inversealtruism/csd-client@0.1.19':
-    resolution: {integrity: sha512-8nF5PPTvK3cUH2VERjs9fJ5EqF7AdtlvVY37BFKdW5AdTTOZy4vaAFZb0bTi+EYNXpZVTAGeVqrmZdx5tuVozA==}
+  '@inversealtruism/csd-client@0.1.20':
+    resolution: {integrity: sha512-AhbKDwDsnXW+UlgMOn9yTUDgeky31hoW8mdNGDGx9nIyJeAfA2fDMZa95i9J26VTKWbolClMrj0GDBGkKsWDvw==}
     engines: {node: '>=18'}
 
   '@inversealtruism/csd-codec@0.1.18':
@@ -439,8 +439,8 @@ packages:
     resolution: {integrity: sha512-W3ZUaeyODbw9/z4xtdG82ASM4LRMdS1dqNDAbV8PMc7HSYfN/aR1veVuMYRz/aqkObqJrEWIz3ELnVr9M92Xlg==}
     engines: {node: '>=18'}
 
-  '@inversealtruism/csd-light@0.1.25':
-    resolution: {integrity: sha512-g+InolYaPKHcYZ2DVRjB2++7eeMCb8Un6wR++J2+/prLBTsXMoPK3hX7jGehw/ZZJ1/Th0gi0x980aHPonyUGw==}
+  '@inversealtruism/csd-light@0.1.26':
+    resolution: {integrity: sha512-7frTqIYGsbtXiykYa0tmvieBQt3oe8nWOztbxopzhNrfJHMy0eeMIDSaqU85jmj1qEdlKBT8chSAer28mc2ugw==}
     engines: {node: '>=18'}
 
   '@inversealtruism/csd-siwc@0.1.21':
@@ -1027,11 +1027,11 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@inversealtruism/cairnx-core@0.2.2':
+  '@inversealtruism/cairnx-core@0.2.3':
     dependencies:
       '@inversealtruism/csd-codec': 0.1.18
 
-  '@inversealtruism/csd-client@0.1.19':
+  '@inversealtruism/csd-client@0.1.20':
     dependencies:
       '@inversealtruism/csd-codec': 0.1.18
 
@@ -1045,9 +1045,9 @@ snapshots:
       '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
 
-  '@inversealtruism/csd-light@0.1.25':
+  '@inversealtruism/csd-light@0.1.26':
     dependencies:
-      '@inversealtruism/csd-client': 0.1.19
+      '@inversealtruism/csd-client': 0.1.20
       '@inversealtruism/csd-codec': 0.1.18
 
   '@inversealtruism/csd-siwc@0.1.21':
