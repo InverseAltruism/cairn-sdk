@@ -68,6 +68,10 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
   with the header the base serves at that height, so a block orphaned by a reorg stops counting. The
   hosted base edge-caches rows at or below its tip minus 6, so against cairn-substrate.com this catches
   reorgs of up to 6 blocks; a self-hosted base without that cache gets the full 12.
+- **A long-lived instance:** the header cache advances on demand. When a transaction sits more than 256
+  blocks above it (a page open for hours, or a header pre-warm that failed), `verifyInclusion` and
+  `verifyOfferForFill` sync the cache forward first through `/api/headers` (512 headers a request), so
+  the first check after a long idle takes a few requests longer; later checks add none.
 
 **Filling an offer (F13, diligent-dApp pre-verify):** `fillOffer` is resolver-trusted at this SDK layer:
 the SDK does NOT SPV-verify the `outputs` you hand the wallet, so a lying resolver could redirect the

@@ -14,7 +14,7 @@
 //   await cairn.connect();                       // prompts the wallet once
 
 import { Http, readCapped, retryAfterMs, RetryWaitBudget, type FetchLike } from "./http.js";
-import { Chain, LightClient, type BlockHeader } from "./chain.js";
+import { Chain, LightClient, type BlockHeader, type InclusionResult } from "./chain.js";
 import { IndexerClient } from "./indexer.js";
 import { ContentClient } from "./content.js";
 import { NamesClient } from "./names.js";
@@ -106,6 +106,9 @@ const SPV_RETRY_WAIT_BUDGET_MS = 16_000;
 // blocks; a self-hosted base without that cache gets the full 12.
 const SPV_RECHECK_DEPTH = 12;
 const spvTipOf = (lc: LightClient): number => lc.baseHeight + lc.chain.length - 1;
+// csd-light's verifyTxInclusion answer for a tx more than 256 blocks above the cached tip: it syncs on demand only
+// up to that gap (which bounds what one lying /tx height can make it fetch) and asks the caller to sync.
+const SPV_BEYOND_TIP = /^tx at \d+ is \d+ blocks beyond tip; sync\(\d+\) first$/;
 
 
 export class Cairn {
@@ -232,13 +235,13 @@ export class Cairn {
     // W12: ADVANCE TO THE LIVE TIP after the seed. Before B7c the SDK's SPV only seeded the checkpoint
     // window and never reached tip, so a near-tip offer never merkle-proved and every downstream fill
     // bind was dead (the inertness that hid the SDK's want-type hole; this is why B7c lands AFTER B7b's
-    // binds are on). A transient tip/sync failure must NOT brick the seed: verifyTxInclusion self-syncs
-    // (also batched) to a tx's height on demand, so fall soft and keep the seeded client usable.
+    // binds are on). A transient tip/sync failure must NOT brick the seed: verifiedHeaderMerkleAt and the fill
+    // handle in verifyOfferForFill sync forward (batched) on demand, so fall soft and keep the seeded client usable.
     try {
       const tipHeight = Number((await this.chain.tip()).height);
       const have = spvTipOf(lc);
       if (Number.isFinite(tipHeight) && tipHeight > have) await lc.sync(tipHeight);
-    } catch { /* keep the seeded client; on-demand batched sync covers what this pre-warm missed */ }
+    } catch { /* keep the seeded client; the on-demand syncs cover what this pre-warm missed */ }
     return lc;
   }
 
@@ -343,13 +346,25 @@ export class Cairn {
     // eats a structural (reorg) throw and reports transient forever, so we hand it a light handle whose
     // verifyTxInclusion reseeds ONCE on a structural break. Structurally typed, so fillverify.ts is untouched.
     // A verified inclusion answered from a cached near-tip header gets the same reorg re-check as verifyInclusion.
+    // Past csd-light's on-demand gap (a long-lived instance, or a pre-warm that failed) the handle syncs the cache
+    // to the node tip once and asks again; a fresh cache costs no extra request.
     const light = {
-      verifyTxInclusion: (txidHex: string) => this.withSpvReseed(async (lc) => {
+      verifyTxInclusion: (txidHex: string) => this.withSpvReseed(async (lc): Promise<InclusionResult> => {
         const haveTo = spvTipOf(lc);
-        const r = await lc.verifyTxInclusion(txidHex);
-        if (r.trustLevel === "verified-inclusion" && typeof r.blockHeight === "number" && r.blockHeight <= haveTo)
-          await this.recheckCachedHeader(lc, r.blockHeight, haveTo);
-        return r;
+        let r = await lc.verifyTxInclusion(txidHex);
+        if (r.trustLevel === "rpc-trusted" && SPV_BEYOND_TIP.test(r.reason ?? "")) {
+          const tipHeight = Number((await this.chain.tip()).height);
+          if (Number.isSafeInteger(tipHeight) && tipHeight > spvTipOf(lc)) await lc.sync(tipHeight);
+          r = await lc.verifyTxInclusion(txidHex);
+        }
+        if (r.trustLevel !== "verified-inclusion") return r;
+        // The containing height comes from the node's /tx answer; checked once here, so a height served as a
+        // JSON string cannot skip the re-check below.
+        const height = Number(r.blockHeight);
+        if (!Number.isSafeInteger(height))
+          return { trustLevel: "rpc-trusted", included: false, reason: `the node's containing height for this tx is not a block height (${String(r.blockHeight)})` };
+        if (height <= haveTo) await this.recheckCachedHeader(lc, height, haveTo);
+        return { ...r, blockHeight: height };
       }),
     };
     return preverifyOffer({ light, client: this.chain.client, offerId, servedOffer, pay: opts?.pay, plannedOutputs: opts?.plannedOutputs });

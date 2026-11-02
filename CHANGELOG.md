@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changed
+
+- `cairn.verifyOfferForFill` no longer answers `transient` on every call for an offer mined more than 256 blocks
+  above the SDK's cached header tip (an instance alive for about 8.5 hours or more, or one whose header pre-warm
+  failed). csd-light syncs on demand only within 256 blocks; past that the fill check now reads the node tip once,
+  syncs the header cache to it through `/api/headers` (512 headers a request), and asks again. That is the only
+  added cost, paid once per such gap; a check on a fresh cache adds no request.
+- The near-tip reorg re-check of `cairn.verifyOfferForFill` also runs when the node serves the containing height as
+  a JSON string, and a containing height that is not an integer answers `trust: "unverified"`.
+
 ## 0.8.1
 
 ### Changed

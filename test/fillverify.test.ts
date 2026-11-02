@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { addrFromPriv, signDigest, buildScriptSig } from "@inversealtruism/csd-crypto";
 import { provenOfferTerms, epochOf } from "@inversealtruism/cairnx-core";
-import { txid, sighash, canonicalJson, payloadHash, rpcTxToTx } from "../src/chain.js";
+import { txid, sighash, canonicalJson, payloadHash, rpcTxToTx, merkleRoot } from "../src/chain.js";
 import {
   Cairn,
   preverifyOffer, feeBpsAt, bindOfferTerms,
@@ -467,6 +467,26 @@ console.log("\nP75-5 fill-surface guards:");
       seen.filter((u) => u.endsWith(`/api/headers/${near}/1`)).length === 1 && seen.filter((u) => u.endsWith(`/api/headers/${BASE}/46`)).length === 1);
   }
 
+  // The containing height comes from the node's /tx answer, which csd-light passes through untyped. One served as a
+  // JSON string still gets the near-tip re-check; one that is not an integer is not a verified height at all.
+  {
+    const near = TIP - 2;
+    const tx = proposeTx(SELLER_KEY, rec, 17);
+    const seen: string[] = [];
+    const cairn = mkCairn(seen);
+    const lc = await (cairn as unknown as { seededSpvLight(): Promise<{ verifyTxInclusion: unknown }> }).seededSpvLight();
+    const answer = (blockHeight: unknown) => async () => ({ trustLevel: "verified-inclusion", included: true, blockHeight, confirmations: 3, tx: tx.json, appPayloadHash: tx.phash });
+    (cairn as unknown as { chain: unknown }).chain = { client: mockClient };
+    lc.verifyTxInclusion = answer(String(near));
+    const r = await cairn.verifyOfferForFill(tx.id);
+    await ok("[string height] a containing height served as a string runs the near-tip re-check and verifies at that height", () =>
+      seen.filter((u) => u.endsWith(`/api/headers/${near}/1`)).length === 1 && r.ok === true && r.blockHeight === near);
+    lc.verifyTxInclusion = answer(`${near}.5`);
+    const r2 = await cairn.verifyOfferForFill(tx.id);
+    await ok("[string height] a containing height that is not an integer is not verified", () =>
+      r2.ok === false && r2.trust === "unverified" && /not a block height/.test(r2.reason ?? ""));
+  }
+
   // F4: an offer mined below the synced base is permanent for this checkpoint, so it is not transient, and the
   // reason names config.spvCheckpoint. csd-light's real verifyTxInclusion produces the below-base answer here.
   {
@@ -476,6 +496,71 @@ console.log("\nP75-5 fill-surface guards:");
     await ok("[F4] the reason says it is below the checkpoint window and names config.spvCheckpoint", () => /below this SDK's SPV checkpoint window \(base 115358\)/.test(r.reason ?? "") && /config\.spvCheckpoint/.test(r.reason ?? ""));
     const r2 = await mkCairn([], undefined).verifyOfferForFill("0x" + "cd".repeat(32));
     await ok("[F4 honest] a tx the node does not place in a block (mempool/unknown) stays transient", () => r2.ok === false && r2.transient === true);
+  }
+
+  // An offer more than 256 blocks above the cached SPV tip: csd-light's own on-demand sync stops at that gap, so the
+  // fill handle advances the cache to the node tip. The real facade and the real LightClient run; headers above the
+  // fixture are synthetic, so only their PoW check is replaced (the fixture's real headers keep it).
+  {
+    const GAP = 300, OFFER_H = TIP + GAP;
+    const tx = proposeTx(SELLER_KEY, rec, 16);
+    const synth = new Map<number, Row>();
+    let prevHash = ROWS[ROWS.length - 1]!.hash;
+    for (let h = TIP + 1; h <= OFFER_H; h++) {
+      const hash = "0x" + h.toString(16).padStart(64, "0");
+      const merkle = h === OFFER_H ? merkleRoot([tx.id]) : "0x" + "00".repeat(32);
+      synth.set(h, { height: h, header: { version: 1, prev: prevHash, merkle, time: 1791507021 + (h - TIP) * 120, bits: 453910147, nonce: 0 }, hash });
+      prevHash = hash;
+    }
+    const rowAt = (h: number) => (h <= TIP ? ROWS[h - BASE] : synth.get(h));
+    // prewarmTip: what /api/rpc/tip answers during the seed (null = a 502, the failed pre-warm).
+    const facade = async (prewarmTip: number | null) => {
+      const seen: string[] = [];
+      let tipNow: number | null = prewarmTip;
+      const j = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json" } });
+      const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: (async (input: RequestInfo | URL) => {
+        const url = String(input);
+        seen.push(url);
+        const m = url.match(/\/api\/headers\/(\d+)\/(\d+)$/);
+        if (m) {
+          const rows = Array.from({ length: Number(m[2]) }, (_, i) => rowAt(Number(m[1]) + i));
+          return rows.every(Boolean) ? j({ ok: true, headers: rows }) : j({ error: "beyond tip" }, 503);
+        }
+        if (/\/api\/rpc\/tip$/.test(url)) return tipNow === null ? new Response("bad gateway", { status: 502 }) : j({ height: tipNow });
+        const t = url.match(/\/api\/rpc\/tx\/(0x[0-9a-f]{64})$/);
+        if (t && t[1] === tx.id) return j({ ok: true, height: OFFER_H, tx: tx.json });
+        if (t && prevoutOf.has(t[1]!)) return j({ ok: true, tx: prevoutOf.get(t[1]!) });
+        if (url.endsWith(`/api/rpc/block/height/${OFFER_H}`)) return j({ ok: true, txs: [tx.json] });
+        return new Response("not found", { status: 404 });
+      }) as unknown as typeof fetch });
+      const lc = await (cairn as unknown as { seededSpvLight(): Promise<Record<string, unknown>> }).seededSpvLight();
+      const realVerify = (lc.verifyOne as (...a: unknown[]) => unknown).bind(lc);
+      lc.verifyOne = (height: number, header: unknown, window: unknown, parent: { chainwork: bigint } | undefined, claimedHash: string) =>
+        height <= TIP ? realVerify(height, header, window, parent, claimedHash) : { height, hash: claimedHash, header, chainwork: (parent?.chainwork ?? 0n) + 1n };
+      const cachedTip = (lc.baseHeight as number) + (lc.chain as unknown[]).length - 1;
+      tipNow = OFFER_H;
+      return { cairn, seen, cachedTip };
+    };
+    const headersFrom = (seen: string[], above: number) => seen.filter((u) => { const m = u.match(/\/api\/headers\/(\d+)\//); return !!m && Number(m[1]) > above; });
+    const tipReads = (seen: string[]) => seen.filter((u) => /\/api\/rpc\/tip$/.test(u)).length;
+
+    for (const [label, prewarm] of [["a long-lived instance", TIP], ["a failed pre-warm", null]] as const) {
+      const { cairn, seen, cachedTip } = await facade(prewarm);
+      const before = seen.length;
+      const r = await cairn.verifyOfferForFill(tx.id);
+      const during = seen.slice(before);
+      await ok(`[gap>256, ${label}] cached tip ${cachedTip}, offer at ${OFFER_H}: ok, trust verified, at the offer's height`, () =>
+        OFFER_H - cachedTip > 256 && r.ok === true && r.trust === "verified" && r.blockHeight === OFFER_H && r.seller === SELLER);
+      await ok(`[gap>256, ${label}] the fill path read the node tip once and synced headers above the cached tip`, () =>
+        tipReads(during) === 1 && headersFrom(during, cachedTip).length >= 1);
+      if (prewarm === TIP) {
+        const again = seen.length;
+        const r2 = await cairn.verifyOfferForFill(tx.id);
+        const second = seen.slice(again);
+        await ok("[gap>256 honest] the next check on the now-fresh cache reads no tip and syncs nothing (the near-tip re-check only)", () =>
+          r2.ok === true && tipReads(second) === 0 && headersFrom(second, OFFER_H - 1).length === 1 && headersFrom(second, OFFER_H - 1)[0]!.endsWith(`/api/headers/${OFFER_H}/1`));
+      }
+    }
   }
 }
 
