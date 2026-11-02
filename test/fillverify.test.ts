@@ -254,6 +254,16 @@ await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsemen
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id });
     return r.ok === true && r.payto === SELLER && r.seller === SELLER;
   });
+  // The payee of a payto-less record is the proven author, never the served want.payto: a resolver serving
+  // another address there must not reach the plan.
+  await ok("[payto-less, served payto lie] a served want.payto = ATTACKER is REFUSED and no plan leg pays ATTACKER", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, want: { value: "500000000", payto: ATTACKER } }), pay: "500000000" });
+    return r.ok === false && /payment recipient/.test(r.reason ?? "") && r.payto === SELLER && !(r.outputPlan ?? []).some((o) => o.to === ATTACKER);
+  });
+  await ok("[payto-less, honest] the resolver's own default (want.payto = the author) verifies and the plan pays the author", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000" });
+    return r.ok === true && r.payto === SELLER && (r.outputPlan ?? []).some((o) => o.to === SELLER);
+  });
 }
 
 console.log("\nP75-5 fill-surface guards:");
