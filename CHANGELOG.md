@@ -56,6 +56,9 @@
 - Docs: `cairn.chain.light()` is described as what it is, a light client with no checkpoint and no batch header
   source that proves nothing until seeded (a sync from it reads one block per height through the RPC), and the
   README points at the facade's seeded path instead of calling it a verifying light client.
+- Docs: `verifyInclusion(txid)` proves that `txid` is a node of a PoW-verified block's merkle tree. An inner node
+  or a block's merkle root folds as well (the tree has no leaf and node separation), so the guide and the README
+  now say to hash a transaction body you hold instead of calling the check trust-minimized for any id.
 
 ## 0.8.1
 

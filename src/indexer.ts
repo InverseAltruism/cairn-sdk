@@ -154,7 +154,8 @@ export class IndexerClient {
   // ---- trust-minimized inclusion ----------------------------------------
 
   /**
-   * Verify a tx is included in a block by folding its merkle branch to the root
+   * Verify that `txid` is a node of a block's merkle tree (an inner node or the root folds too, so pass an id you
+   * hashed from a transaction body you hold) by folding its merkle branch to the root
    * with csd-codec.verifyMerkleProof. If `headerMerkleAt` was provided, the
    * proof's root is cross-checked against the header merkle at that height →
    * trustLevel "verified-inclusion" (only as trustworthy as that header source —

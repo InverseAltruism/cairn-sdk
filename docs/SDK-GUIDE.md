@@ -54,8 +54,11 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
   commitment, so non-spend can't be proven from headers, so `LightClient.balance()` is tagged
   `rpc-trusted` and never hides that. Verify what matters; treat balances as a hint.
 - **Indexer = untrusted derived view:** the `IndexerClient` re-folds Merkle proofs
-  (`verifyInclusion`); it's a prover, not an authority. `verifyInclusion()` folds the proof and checks
-  its root against a header from `headerMerkleAt`. The default `Cairn` wiring backs that with a light
+  (`verifyInclusion`). `verifyInclusion()` folds the proof and checks its root against a header from
+  `headerMerkleAt`. What it proves is that a 32-byte value is a node of that block's merkle tree, not that
+  the value is a transaction: the tree has no leaf and node separation, so an inner node or the block's
+  merkle root itself folds as well. Get the id by hashing a transaction body you hold (`txid(tx)` from
+  `…/chain`); an id the indexer or anyone else hands you proves nothing on its own. The default `Cairn` wiring backs that with a light
   client that PoW-verifies headers forward from a pinned checkpoint (`DEFAULT_SPV_CHECKPOINT`; pass
   `spvCheckpoint` in the config to keep a different anchor). `included` is `true` only with
   `trustLevel: "verified-inclusion"` (the proof root matched a PoW-verified header). When no header can
