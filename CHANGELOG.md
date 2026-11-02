@@ -59,6 +59,12 @@
 - Docs: `verifyInclusion(txid)` proves that `txid` is a node of a PoW-verified block's merkle tree. An inner node
   or a block's merkle root folds as well (the tree has no leaf and node separation), so the guide and the README
   now say to hash a transaction body you hold instead of calling the check trust-minimized for any id.
+- `cairn.index.addressUtxo(addr)` follows the indexer's pages: csd-indexer's `/address/:a/utxo` now answers at most
+  1,000 rows in (height, txid, vout) order with `?after=<height>:<txid>:<vout>` for the next page, and the method
+  reads pages until a short one, so it still returns every unspent output (one request per 1,000 rows). An
+  indexer that predates paging answers the whole set in one request, as before. Pages that do not advance throw
+  `HttpError` (`malformed response: the utxo pages do not advance`) instead of looping. Against an indexer that
+  pages, 0.8.1 and earlier return the first 1,000 rows only.
 - Repository only (not in the package): the secret scan's `.gitleaks.toml` is csd-sdk's, which adds a rule for 64
   hex digits assigned to a name containing priv, secret or seed and anchors the `user:pass` allowlist row at both
   ends. The default rules missed `PRIV = "0x.."`, `{ priv: "0x.." }` and `Environment=MM_PRIV=..`.

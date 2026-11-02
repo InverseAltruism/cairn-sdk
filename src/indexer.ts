@@ -5,6 +5,7 @@
 // and MV3 workers) with auto-reconnect; WS uses the global WebSocket if present.
 
 import { verifyMerkleProof } from "@inversealtruism/csd-codec";
+import { HttpError } from "./errors.js";
 import type { Http, FetchLike } from "./http.js";
 
 export interface MerkleProof {
@@ -38,6 +39,22 @@ export interface InclusionResult {
 // BROKEN) instead of a clean {trustLevel:"not-found"} (fail-closed). This never affects a VALID proof.
 const HEX64 = /^0x[0-9a-fA-F]{64}$/;
 const MAX_SSE_BUF = 1024 * 1024; // CAIRNSDK-DESER-1: cap the SSE inter-frame buffer (untrusted source → OOM)
+// csd-indexer's /address/:a/utxo page size (its UTXO_PAGE): a page of exactly this many rows may have a next one.
+const UTXO_PAGE = 1000;
+const UTXO_CURSOR = /^\d{1,16}:0x[0-9a-fA-F]{64}:\d{1,10}$/;
+// The cursor csd-indexer takes for the page after `row`: <block_height>:<txid>:<vout>.
+function utxoCursor(row: unknown): string | null {
+  const r = row as { txid?: unknown; vout?: unknown; status?: { block_height?: unknown } } | null;
+  const c = `${String(r?.status?.block_height)}:${String(r?.txid)}:${String(r?.vout)}`;
+  return UTXO_CURSOR.test(c) ? c : null;
+}
+// Is cursor `a` after `b` in the indexer's (height, txid, vout) order?
+function cursorAfter(a: string, b: string): boolean {
+  const [ha, ta, va] = a.split(":"), [hb, tb, vb] = b.split(":");
+  if (Number(ha) !== Number(hb)) return Number(ha) > Number(hb);
+  if (ta!.toLowerCase() !== tb!.toLowerCase()) return ta!.toLowerCase() > tb!.toLowerCase();
+  return Number(va) > Number(vb);
+}
 function isValidMerkleProof(p: unknown): p is MerkleProof {
   if (!p || typeof p !== "object") return false;
   const m = p as Record<string, unknown>;
@@ -127,8 +144,27 @@ export class IndexerClient {
     return this.http.getJson<unknown[]>(`/address/${encodeURIComponent(a)}/txs`);
   }
 
-  addressUtxo(a: string): Promise<unknown[]> {
-    return this.http.getJson<unknown[]>(`/address/${encodeURIComponent(a)}/utxo`);
+  /** Every unspent output of an address. The indexer answers in pages of at most 1,000 rows; this follows its
+   *  `?after=` cursor until a short page. An indexer that predates paging answers the whole set at once. */
+  async addressUtxo(a: string): Promise<unknown[]> {
+    const path = `/address/${encodeURIComponent(a)}/utxo`;
+    const first = await this.http.getJson<unknown[]>(path);
+    if (!Array.isArray(first) || first.length !== UTXO_PAGE) return first;
+    const out = [...first];
+    let page: unknown[] = first;
+    let prev: string | null = null;
+    while (page.length === UTXO_PAGE) {
+      const after = utxoCursor(page[UTXO_PAGE - 1]);
+      if (!after) throw new HttpError(200, this.http.url(path), "malformed response: a utxo row has no block_height, txid and vout to page from");
+      if (prev !== null && !cursorAfter(after, prev)) throw new HttpError(200, this.http.url(path, { after }), "malformed response: the utxo pages do not advance");
+      page = await this.http.getJson<unknown[]>(path, { after });
+      if (!Array.isArray(page)) throw new HttpError(200, this.http.url(path, { after }), "malformed response: a utxo page is not an array");
+      // An indexer that predates paging ignores `after` and repeats its answer, which was then the whole set.
+      if (prev === null && page.length > 0 && utxoCursor(page[0]) === utxoCursor(first[0])) return first;
+      prev = after;
+      out.push(...page);
+    }
+    return out;
   }
 
   reputation(a: string): Promise<unknown> {
