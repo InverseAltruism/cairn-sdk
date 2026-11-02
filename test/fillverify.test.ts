@@ -308,9 +308,20 @@ console.log("\nP75-5 fill-surface guards:");
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id });
     return r.ok === true;
   });
-  await ok("[MF-07] a served non-open status is refused by the sizer's own status gate (no asserted liveness)", async () => {
+  await ok("[MF-07] a served non-open status is refused (no asserted liveness)", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, status: "cancelled" }), pay: "500000000" });
-    return r.ok === false && /not-open/.test(r.reason ?? "");
+    return r.ok === false && /serves this offer as cancelled, not open/.test(r.reason ?? "") && r.sized === false;
+  });
+  // The resolver's own word that an offer is dead refuses whether or not `pay` is given.
+  for (const status of ["filled", "cancelled", "expired"]) {
+    await ok(`[served ${status}, no pay] refused with the served status named (was ok:true)`, async () => {
+      const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, status }) });
+      return r.ok === false && r.trust === "verified" && new RegExp(`serves this offer as ${status}, not open`).test(r.reason ?? "");
+    });
+  }
+  await ok("[served open, no pay] the two-argument call on an open offer still verifies", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, status: "open" }) });
+    return r.ok === true && r.sized === undefined;
   });
   await ok("[MF-07 happy] a served status:\"open\" sizes normally (real resolver shape)", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id, status: "open" }), pay: "500000000" });
@@ -384,9 +395,20 @@ console.log("\nP75-5 fill-surface guards:");
   });
   const tokRec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { ticker: "BBB", amount: "5", payto: SELLER } };
   const tok = proposeTx(SELLER_KEY, tokRec, 11);
-  await ok("[W15] plannedOutputs on a token-priced offer: planBound false, reason names the token price", async () => {
+  // A token fill moves no CSD, so a positive planned CSD leg on a proven token want is refused (it was planBound:false).
+  await ok("[token, CSD legs] plannedOutputs with a CSD leg on a token-priced offer are REFUSED, with or without pay", async () => {
     const r = await preverifyOffer({ light: mockLight(tok.json, tok.phash), client: mockClient, offerId: tok.id, pay: "1", plannedOutputs: planned });
-    return r.ok === true && r.planBound === false && /token-priced/.test(r.planReason ?? "");
+    const r2 = await preverifyOffer({ light: mockLight(tok.json, tok.phash), client: mockClient, offerId: tok.id, plannedOutputs: planned });
+    return [r, r2].every((x) => x.ok === false && x.trust === "verified" && /token-priced, so a fill moves no CSD/.test(x.reason ?? "") && x.planBound === false);
+  });
+  await ok("[token, CSD legs] a fractional planned amount on a token-priced offer is REFUSED as invalid", async () => {
+    const r = await preverifyOffer({ light: mockLight(tok.json, tok.phash), client: mockClient, offerId: tok.id, plannedOutputs: { [SELLER]: "1.5" } });
+    return r.ok === false && /invalid plannedOutputs/.test(r.reason ?? "");
+  });
+  await ok("[token, honest] a token-priced offer with no CSD legs planned (empty or zero) still verifies, planBound false", async () => {
+    const r = await preverifyOffer({ light: mockLight(tok.json, tok.phash), client: mockClient, offerId: tok.id, pay: "1", plannedOutputs: {} });
+    const r2 = await preverifyOffer({ light: mockLight(tok.json, tok.phash), client: mockClient, offerId: tok.id, pay: "1", plannedOutputs: { [SELLER]: "0" } });
+    return [r, r2].every((x) => x.ok === true && x.planBound === false && x.sized === false && /token-priced/.test(x.planReason ?? ""));
   });
   const partRec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER }, min: "100000000" };
   const part = proposeTx(SELLER_KEY, partRec, 12);
@@ -397,6 +419,110 @@ console.log("\nP75-5 fill-surface guards:");
   await ok("[W15 honest] no plannedOutputs and no pay: neither planBound nor planReason is set (the 2-arg shape is unchanged)", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }) });
     return r.ok === true && r.planBound === undefined && r.planReason === undefined && r.outputPlan === undefined;
+  });
+}
+
+// A partially fillable offer: no plan is sized (its progress is resolver-served), but a pay that cairnx-core's
+// previewFill over the served progress says delivers nothing is refused. Give 10 AAA for 500,000,000, min 100,000,000.
+{
+  const partRec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER }, min: "100000000" };
+  const part = proposeTx(SELLER_KEY, partRec, 18);
+  const served = (extra: object = {}) => servedFor({ id: part.id, min: "100000000", paid: "0", delivered: "0", ...extra });
+  const check = (pay: string, so: unknown = served()) => preverifyOffer({ light: mockLight(part.json, part.phash), client: mockClient, offerId: part.id, servedOffer: so, pay });
+  await ok("[partial below min] pay 1 against the served progress is REFUSED (was ok:true, trust verified)", async () => {
+    const r = await check("1");
+    return r.ok === false && r.trust === "verified" && /would not deliver against the offer's served progress \(below-min\)/.test(r.reason ?? "") && r.sized === false;
+  });
+  await ok("[partial honest] pay at the minimum verifies, unsized (sized false, the partial reason)", async () => {
+    const r = await check("100000000");
+    return r.ok === true && r.sized === false && r.outputPlan === undefined && /partially fillable/.test(r.planReason ?? "");
+  });
+  await ok("[partial honest] the tail below the minimum (served paid 450,000,000) verifies", async () => {
+    const r = await check("50000000", served({ paid: "450000000", delivered: "9" }));
+    return r.ok === true && r.sized === false;
+  });
+  await ok("[partial] a served offer without paid/delivered refuses nothing new (unsized as before)", async () => {
+    const r = await check("1", servedFor({ id: part.id, min: "100000000" }));
+    return r.ok === true && r.sized === false;
+  });
+  const tinyRec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER }, min: "1" };
+  const tiny = proposeTx(SELLER_KEY, tinyRec, 19);
+  await ok("[partial zero delivery] a pay the pro-rata floor delivers 0 tokens for is REFUSED", async () => {
+    const r = await preverifyOffer({ light: mockLight(tiny.json, tiny.phash), client: mockClient, offerId: tiny.id, servedOffer: servedFor({ id: tiny.id, min: "1", paid: "0", delivered: "0" }), pay: "10000000" });
+    return r.ok === false && /served progress \(zero-delivery\)/.test(r.reason ?? "");
+  });
+}
+
+// `me` and `tip` run cairnx-core's fillEndorsement over the served state after the binds. H is 40,000 (V17 and above:
+// an open CSD offer is filled only by the holder of a live claim); tips at or above V28 (60,000) route a live
+// reservation's fill to its fclaim txid.
+{
+  const BUYER = addrFromPriv(K(0x33)).toLowerCase();
+  const FCLAIM = "0x" + "fc".repeat(32);
+  const boundRec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER }, taker: ATTACKER };
+  const bound = proposeTx(SELLER_KEY, boundRec, 20);
+  const openRec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
+  const open = proposeTx(SELLER_KEY, openRec, 21);
+  const tokRec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { ticker: "BBB", amount: "5", payto: SELLER } };
+  const tok = proposeTx(SELLER_KEY, tokRec, 22);
+  const run = (tx: { json: object; phash: string; id: string }, extra: object) =>
+    preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000", ...extra });
+
+  await ok("[taker] an offer bound to another taker is REFUSED with me and tip (was ok:true with an outputPlan)", async () => {
+    const r = await run(bound, { servedOffer: servedFor({ id: bound.id, taker: ATTACKER }), me: BUYER, tip: H + 10 });
+    return r.ok === false && r.trust === "verified" && /CairnX would refuse this fill \(taker-bound offer - not bound to you\)/.test(r.reason ?? "") && r.endorsement?.verdict === "refused";
+  });
+  await ok("[taker honest] the bound taker itself is endorsed, the plan sized and the target the offer id", async () => {
+    const r = await run(bound, { servedOffer: servedFor({ id: bound.id, taker: ATTACKER }), me: ATTACKER, tip: H + 10 });
+    return r.ok === true && r.endorsement?.verdict === "endorsed" && r.fillTarget === bound.id && r.sized === true && Array.isArray(r.outputPlan);
+  });
+  await ok("[taker, no inputs] without me and tip nothing new is refused (ok:true, no endorsement)", async () => {
+    const r = await run(bound, { servedOffer: servedFor({ id: bound.id, taker: ATTACKER }) });
+    return r.ok === true && r.endorsement === undefined && r.fillTarget === undefined;
+  });
+  await ok("[open lane] an open CSD offer with no live claim by me is REFUSED (claim it first)", async () => {
+    const r = await run(open, { servedOffer: servedFor({ id: open.id }), me: BUYER, tip: H + 10 });
+    return r.ok === false && /claim it first/.test(r.reason ?? "");
+  });
+  await ok("[open lane honest] my live claim is endorsed", async () => {
+    const r = await run(open, { servedOffer: servedFor({ id: open.id, claimedBy: BUYER, claimUntilHeight: H + 30 }), me: BUYER, tip: H + 10 });
+    return r.ok === true && r.endorsement?.verdict === "endorsed" && r.fillTarget === open.id;
+  });
+  const held = servedFor({ id: open.id, claimedBy: BUYER, claimUntilHeight: 60_150, claimTxid: FCLAIM });
+  await ok("[V28 reservation] a fill attesting the offer id while my reservation routes it is REFUSED; the target is the fclaim", async () => {
+    const r = await run(open, { servedOffer: held, me: BUYER, tip: 60_100, fillTargetId: open.id });
+    return r.ok === false && /fclaim txid, not the offer id/.test(r.reason ?? "") && r.fillTarget === FCLAIM;
+  });
+  await ok("[V28 reservation honest] attesting the fclaim txid is endorsed", async () => {
+    const r = await run(open, { servedOffer: held, me: BUYER, tip: 60_100, fillTargetId: FCLAIM });
+    return r.ok === true && r.endorsement?.verdict === "endorsed" && r.fillTarget === FCLAIM;
+  });
+  await ok("[token] a token-priced want is not-endorsable, never a refusal", async () => {
+    const r = await run(tok, { servedOffer: { id: tok.id, seller: SELLER, feeBps: 150, height: H, status: "open", give: { ticker: "AAA", amount: "10" }, want: { ticker: "BBB", amount: "5", payto: SELLER } }, pay: "5", me: BUYER, tip: H + 10 });
+    return r.ok === true && r.endorsement?.verdict === "not-endorsable";
+  });
+  await ok("[inputs] me without tip, or me and tip without pay, is refused as invalid before any chain read", async () => {
+    let reads = 0;
+    const light = { async verifyTxInclusion() { reads++; return mockLight(open.json, open.phash).verifyTxInclusion(""); } };
+    const a = await preverifyOffer({ light, client: mockClient, offerId: open.id, pay: "500000000", me: BUYER });
+    const b = await preverifyOffer({ light, client: mockClient, offerId: open.id, me: BUYER, tip: H });
+    return [a, b].every((x) => x.ok === false && /invalid fill inputs/.test(x.reason ?? "")) && reads === 0;
+  });
+  await ok("[inputs] me and tip without the served offer are refused (the endorsement needs its status and claim)", async () => {
+    const r = await run(open, { me: BUYER, tip: H + 10 });
+    return r.ok === false && /needs the resolver's offer object/.test(r.reason ?? "");
+  });
+}
+
+// The proven expiry rides on every verified result: expiresAt is the first height CairnX treats the offer as expired.
+{
+  const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
+  const far = proposeTx(SELLER_KEY, rec, 23);
+  const edge = proposeTx(SELLER_KEY, rec, 24, DOMAIN, epochOf(H));
+  await ok("[expiry] an offer at 40,000 with expires_epoch 9,000,000 expires at 45,060 (the v2.1 cap); one expiring in its own epoch at 40,020", async () => {
+    const r = await preverifyOffer({ light: mockLight(far.json, far.phash), client: mockClient, offerId: far.id });
+    const r2 = await preverifyOffer({ light: mockLight(edge.json, edge.phash), client: mockClient, offerId: edge.id });
+    return r.ok === true && r.expiresEpoch === 9_000_000 && r.expiresAt === 45_060 && r2.ok === true && r2.expiresEpoch === 1333 && r2.expiresAt === 40_020;
   });
 }
 
@@ -421,6 +547,15 @@ console.log("\nP75-5 fill-surface guards:");
   await ok("[MF-11 happy] the 2-arg call shape is unchanged (ok:true, no outputPlan)", async () => {
     const r = await cairn.verifyOfferForFill(tx.id, servedFor({ id: tx.id }));
     return r.ok === true && r.outputPlan === undefined;
+  });
+  const buyer = addrFromPriv(K(0x33)).toLowerCase();
+  await ok("[facade, me and tip] the open CSD offer without my claim is refused through verifyOfferForFill", async () => {
+    const r = await cairn.verifyOfferForFill(tx.id, servedFor({ id: tx.id }), { pay: "500000000", me: buyer, tip: H + 10 });
+    return r.ok === false && /claim it first/.test(r.reason ?? "") && r.endorsement?.verdict === "refused";
+  });
+  await ok("[facade, me and tip honest] with my live claim it is endorsed and the plan sized", async () => {
+    const r = await cairn.verifyOfferForFill(tx.id, servedFor({ id: tx.id, claimedBy: buyer, claimUntilHeight: H + 30 }), { pay: "500000000", me: buyer, tip: H + 10 });
+    return r.ok === true && r.endorsement?.verdict === "endorsed" && r.fillTarget === tx.id && r.sized === true;
   });
 }
 

@@ -11,6 +11,27 @@
   added cost, paid once per such gap; a check on a fresh cache adds no request.
 - The near-tip reorg re-check of `cairn.verifyOfferForFill` also runs when the node serves the containing height as
   a JSON string, and a containing height that is not an integer answers `trust: "unverified"`.
+- `preverifyOffer` and `cairn.verifyOfferForFill` take optional `me` (the address that signs the fill), `tip` (the
+  chain tip height) and `fillTargetId` (the proposal id the attest targets). With `me`, `tip` and `pay` they run
+  cairnx-core's `fillEndorsement` over the served state after the binds: an offer bound to another taker, an open
+  CSD offer the caller holds no live claim or reservation on, or an attest target the offer's routing rejects
+  answers `ok: false` with `CairnX would refuse this fill (<reason>) - do not sign it`. The result then carries
+  `endorsement` (`{ verdict, reason }`) and `fillTarget`. A token-priced want is `not-endorsable`, never refused.
+  `me` without `tip` or `pay` answers `ok: false` ("invalid fill inputs: ..."), as does the endorsement without a
+  served offer. Without these inputs nothing new is refused by them, and `ok` still says only that the record
+  is proven.
+- With `pay`, the result carries `sized` (`true` when `outputPlan` holds the proven outputs for that pay).
+  A partially fillable offer stays unsized, but with a served offer carrying its `paid` and `delivered` a pay
+  that cairnx-core's `previewFill` says delivers nothing (below the minimum, or zero tokens) is refused: `this pay
+  would not deliver against the offer's served progress (<reason>) - refusing (the CSD would be lost)`. Before,
+  such a pay answered `ok: true, trust: "verified"`, and CairnX keeps the CSD of that fill.
+- A served offer status other than `open` is refused whether or not `pay` is given: `the resolver serves this offer
+  as <status>, not open - refusing (CairnX does not apply a fill of it)`. Before, without `pay` it answered
+  `ok: true`, and with `pay` the reason was `this pay would not deliver against the proven offer (not-open) - ...`.
+- On a token-priced offer, `plannedOutputs` with a positive CSD leg is refused (`the offer is token-priced, so a
+  fill moves no CSD: ...`); before, it answered `ok: true, planBound: false`.
+- Every verified result carries the proven expiry: `expiresEpoch` and `expiresAt` (cairnx-core
+  `offerExpiryHeightOf`, the first height at which CairnX treats the offer as expired).
 
 ## 0.8.1
 

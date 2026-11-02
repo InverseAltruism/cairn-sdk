@@ -76,7 +76,7 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
 **Filling an offer (F13, diligent-dApp pre-verify):** `fillOffer` is resolver-trusted at this SDK layer:
 the SDK does NOT SPV-verify the `outputs` you hand the wallet, so a lying resolver could redirect the
 payment. Before you build those `outputs`, corroborate the offer on-chain with
-`await cairn.verifyOfferForFill(offerId, servedOffer, { pay, plannedOutputs })`. It merkle-proves the offer's
+`await cairn.verifyOfferForFill(offerId, servedOffer, { pay, plannedOutputs, me, tip })`. It merkle-proves the offer's
 Propose into the PoW-verified header chain (from the pinned SPV checkpoint), binds the record to its on-chain
 commitment, derives the payment recipient + seller from the offer's on-chain author (the funding input's
 prevout owner, accepted only when the Propose body carries that owner's signature, which the merkle root does
@@ -91,16 +91,40 @@ pass the resolver's full offer object or omit `servedOffer`).
 Pass `opts.pay` (the CSD base units you intend to pay) to receive the PROVEN `outputPlan` for a whole fill of
 a non-partial offer, and `opts.plannedOutputs` (your planned per-address sums) to bind them to that plan
 before signing. The plan is sized only when you also pass the resolver's offer object with its `status`:
-liveness is not provable at this layer, so an offer of unknown status gets no plan. When `plannedOutputs`
-could not be bound (no `pay`, a token-priced or partially fillable offer, no served status), the result says
-so with `planBound: false` and a `planReason`; `ok: true` with `planBound: false` means your outputs were not
-checked. It returns a trust-labeled `OfferFillCheck` (`{ ok, trust, payto, seller, terms, reason,
-transient, outputPlan, planBound, planReason }`): fail-closed on a positive mismatch, fail-soft
-(`transient`) on a lagging or below-checkpoint chain view. Build EXACTLY the `outputPlan`, never the resolver-served outputs a lying
+liveness is not provable at this layer, so an offer of unknown status gets no plan, and a served status other
+than `open` is refused whether or not you pass `pay`. With `pay` the result carries `sized`: `true` when
+`outputPlan` holds the proven outputs for that pay, `false` when the fill could not be sized from proven data
+(`planReason` says why). `ok: true` with `sized: false` is a verdict on the offer record, not on your fill.
+A partially fillable (min-bearing) offer is never sized here, because its progress (`paid`, `delivered`) is
+served by the resolver, not proven; with the served offer, a pay that cairnx-core's `previewFill` says delivers
+nothing (below the minimum, or rounded to zero tokens) is refused, since CairnX would keep the CSD. A pay above
+the served remainder is clamped by CairnX and the excess is not returned, and a resolver can serve a wrong
+`paid`, so for a partial fill rely on the Cairn Wallet's own fill preflight, the payment-grade check. When
+`plannedOutputs` could not be bound (no `pay`, a token-priced or partially fillable offer, no served status),
+the result says so with `planBound: false` and a `planReason`; `ok: true` with `planBound: false` means your
+outputs were not checked. On a token-priced offer a fill moves no CSD, so any positive CSD leg in
+`plannedOutputs` is refused.
+
+Without more inputs `ok` says the offer is proven, not that you can fill it now: an offer bound to another
+taker, or held by someone else's live claim or reservation, still answers `ok: true`. Pass `opts.me` (the
+address that signs the fill) and `opts.tip` (the chain tip height you sign at) together with `pay`, and
+optionally `opts.fillTargetId` (the proposal id your attest will target), to run cairnx-core's
+`fillEndorsement` over the served state after the binds. The result then carries `endorsement` (`{ verdict,
+reason }`) and `fillTarget` (the id the attest must target at that tip: the offer id, or the fclaim txid
+while a live V28 reservation routes the offer). A `refused` verdict answers `ok: false`; `not-endorsable` (a
+token-priced want, whose delivery depends on your token balance) is not a refusal. Every verified result also
+carries the proven expiry: `expiresEpoch` and `expiresAt`, the first block height at which CairnX treats the
+offer as expired. A fill must be mined below `expiresAt`, so compare it with your tip.
+
+It returns a trust-labeled `OfferFillCheck` (`{ ok, trust, payto, seller, terms, reason, transient,
+blockHeight, expiresEpoch, expiresAt, outputPlan, sized, planBound, planReason, endorsement, fillTarget }`):
+fail-closed on a positive mismatch; `transient` on a lagging chain view, where a retry can help; final, with a
+reason naming the anchor, for an offer mined below the SPV checkpoint (pass an older `spvCheckpoint` to
+verify it). Build EXACTLY the `outputPlan`, never the resolver-served outputs a lying
 resolver could redirect. This is best-effort corroboration, not the payment-grade boundary (the Cairn
 Wallet's own on-device fill-SPV in 0.2.60+ is what fails-closed before signing), but a dApp settling real
 value should clear it first. The standalone `preverifyOffer({ light, client, offerId, servedOffer, pay,
-plannedOutputs })` takes an injected light client + tx reader for custom wiring; `bindOfferTerms` / `feeBpsAt`
+plannedOutputs, me, tip, fillTargetId })` takes an injected light client + tx reader for custom wiring; `bindOfferTerms` / `feeBpsAt`
 are the pure term-bind primitives, re-exported from the pinned cairnx-core (single-sourced; the former local
 copies were retired when the pin began exporting them). `bindOfferTerms(servedOffer, terms)` also checks the
 offer's give and want type by default, so `terms` must come from `provenOfferTerms` or from the result's

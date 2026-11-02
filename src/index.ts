@@ -327,7 +327,8 @@ export class Cairn {
    * commitment, derives the payment recipient + seller from the offer's on-chain AUTHOR (the funding input's
    * prevout owner, txid-committed, NOT the malleable scriptSig), and, if you pass the resolver-SERVED `offer`
    * object, binds its payto/seller + fee/rebate/partial terms to the proven ones. Returns a TRUST-LABELED result
-   * (fail-closed on a positive mismatch, fail-soft `transient` on a lagging / below-checkpoint chain view).
+   * (fail-closed on a positive mismatch; `transient` on a lagging chain view; final, naming the anchor, for an
+   * offer mined below the SPV checkpoint).
    *
    * This is best-effort corroboration, NOT the payment-grade boundary: the Cairn Wallet's OWN on-device
    * fill-SPV (0.2.60+, fails-closed before signing) is that. A dApp settling real value should still clear this
@@ -335,12 +336,14 @@ export class Cairn {
    *
    * Pass opts.pay (the CSD base units you intend to pay) to receive the PROVEN outputPlan for a whole fill of a
    * non-partial offer, and opts.plannedOutputs to bind your planned per-address sums to it before signing; build
-   * EXACTLY the outputPlan, never resolver-served outputs.
+   * EXACTLY the outputPlan, never resolver-served outputs. Pass opts.me (your address) and opts.tip (the chain tip
+   * height) with pay to have cairnx-core's fillEndorsement judge the fill for you at that tip; without them `ok`
+   * says the offer record is proven, not that you can fill it now.
    */
   async verifyOfferForFill(
     offerId: string,
     servedOffer?: unknown,
-    opts?: { pay?: bigint | string | number; plannedOutputs?: Record<string, bigint | string | number> },
+    opts?: { pay?: bigint | string | number; plannedOutputs?: Record<string, bigint | string | number>; me?: string; tip?: number; fillTargetId?: string },
   ): Promise<OfferFillCheck> {
     // MF-03: the reseed also covers the fill path. preverifyOffer's own catch (fillverify.ts) otherwise
     // eats a structural (reorg) throw and reports transient forever, so we hand it a light handle whose
@@ -367,7 +370,10 @@ export class Cairn {
         return { ...r, blockHeight: height };
       }),
     };
-    return preverifyOffer({ light, client: this.chain.client, offerId, servedOffer, pay: opts?.pay, plannedOutputs: opts?.plannedOutputs });
+    return preverifyOffer({
+      light, client: this.chain.client, offerId, servedOffer,
+      pay: opts?.pay, plannedOutputs: opts?.plannedOutputs, me: opts?.me, tip: opts?.tip, fillTargetId: opts?.fillTargetId,
+    });
   }
 
   /**
