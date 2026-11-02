@@ -196,6 +196,14 @@ await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsemen
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000" });
     return r.ok === true && Array.isArray(r.outputPlan) && r.outputPlan.length > 0 && r.outputPlan.some((o) => o.to === SELLER) && r.outputPlan.every((o) => typeof o.value === "bigint");
   });
+  // The amounts themselves, against fixed numbers: at H=40,000 the fee is 150 bps of 500,000,000 (7,500,000 to the
+  // treasury) and an untaken offer at or above V17 earns the maker rebate of 25,000,000 + 50 bps (27,500,000), which
+  // merges into the seller's leg because payto is the seller.
+  await ok("[sums amounts] the whole-fill plan at H=40,000 is seller 527,500,000 then treasury 7,500,000", async () => {
+    const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000" });
+    const legs = (r.outputPlan ?? []).map((o) => `${o.to}:${o.value.toString()}`);
+    return r.ok === true && legs.length === 2 && legs[0] === `${SELLER}:527500000` && legs[1] === "0x6b09ce74e6070ebc982ab0fb793a211c4d24f016:7500000";
+  });
   await ok("[sums honest] plannedOutputs equal to the proven plan is ACCEPTED (no false refusal)", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }), pay: "500000000" });
     const planned = Object.fromEntries((r.outputPlan ?? []).map((o) => [o.to, o.value.toString()]));
