@@ -32,6 +32,15 @@
   fill moves no CSD: ...`); before, it answered `ok: true, planBound: false`.
 - Every verified result carries the proven expiry: `expiresEpoch` and `expiresAt` (cairnx-core
   `offerExpiryHeightOf`, the first height at which CairnX treats the offer as expired).
+- `WALLET_UNAVAILABLE` on a write method (`send`, `fillOffer`, `propose`, `attest`, `sealClaim`, `revealClaim`)
+  now throws a `SubmitInFlightError` (`maybeSent: true`, `retryable: false`, the txid when the wallet gave one)
+  instead of a retryable `CairnError`: the wallet's content script sends that code when the page lost its reply,
+  which can happen after the wallet submitted the approved transaction, so retrying could ask the user to pay
+  twice. On `connect` and `getAddress` it stays retryable.
+- A write method that outlasts the connection timeout now rejects with a `SubmitInFlightError` of the new code
+  `WALLET_TIMEOUT` (no txid; message `the wallet did not respond to <method> within <ms>ms; the request may still
+  be open in the wallet and be sent if approved, so check the chain before sending it again`) instead of a
+  `CairnError` with code `UNKNOWN`. Read calls keep the old timeout error.
 
 ## 0.8.1
 

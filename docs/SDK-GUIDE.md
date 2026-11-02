@@ -169,16 +169,23 @@ catch (e) {
 
 Codes: `NOT_INSTALLED`, `USER_REJECTED`, `WALLET_LOCKED`, `UNSUPPORTED_METHOD`, `HTTP_ERROR` (also
 a 2xx body whose shape is wrong, such as a names list read that is not an array), `CONTENT_VERIFICATION`,
-`CONTENT_NOT_JSON` (`content.get()` on verified bytes that are not JSON), `UNKNOWN`.
+`CONTENT_NOT_JSON` (`content.get()` on verified bytes that are not JSON), `WALLET_TIMEOUT` (a write method
+outlasted the connection timeout; see below), `UNKNOWN`.
 
 > **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the
 > source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error and
 > classify every code listed there as of wallet 0.2.73: retryable (`VERIFY_UNAVAILABLE`, `OFFER_UNKNOWN`,
-> `WALLET_UNAVAILABLE`, `REVIEW_REQUIRED`: nothing was signed), in flight (`SUBMIT_MAYBE_INFLIGHT`,
-> `SUBMIT_DUPLICATE`: a `SubmitInFlightError` carrying the txid to reconcile, never retry blindly), and
-> final (every other code, including `OFFER_SOURCE_CONFLICT`, `FILL_LEGACY_SUNSET`, `VERIFY_HORIZON` and
-> `VERIFY_UNREPRESENTABLE`; `retryable: false`). A code the SDK does not know yet still throws, as a final
-> error with the wallet's message.
+> `REVIEW_REQUIRED`, and `WALLET_UNAVAILABLE` on `connect` and `getAddress`: nothing was sent), in flight
+> (`SUBMIT_MAYBE_INFLIGHT`, `SUBMIT_DUPLICATE`, and `WALLET_UNAVAILABLE` on a write method: `send`,
+> `fillOffer`, `propose`, `attest`, `sealClaim`, `revealClaim`), and final (every other code, including
+> `OFFER_SOURCE_CONFLICT`, `FILL_LEGACY_SUNSET`, `VERIFY_HORIZON` and `VERIFY_UNREPRESENTABLE`;
+> `retryable: false`). An in-flight error is a `SubmitInFlightError` (`maybeSent: true`, `retryable: false`)
+> carrying the txid when the wallet knows it: check the chain or the balance before you send again, never retry
+> blindly. `WALLET_UNAVAILABLE` on a write means the page lost the wallet's reply, which can happen after the
+> wallet submitted the approved transaction. A write that outlasts the connection timeout (10 minutes by
+> default; `new WalletConnection(provider, { timeoutMs })`) rejects the same way with code `WALLET_TIMEOUT` and
+> no txid, since the request may still be open in the wallet and be sent if the user approves it. A code the SDK
+> does not know yet still throws, as a final error with the wallet's message.
 
 ## Versioning & dependency hygiene
 
