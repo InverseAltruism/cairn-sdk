@@ -46,13 +46,17 @@ export type CairnErrorCode =
   | "SUBMIT_MAYBE_INFLIGHT"
   | "SUBMIT_DUPLICATE"
   | "NOTHING_TO_CONSOLIDATE"
-  // wallet 0.2.62+ codes listed in WALLET-ERROR-CODES.md
+  // wallet 0.2.62+ codes listed in WALLET-ERROR-CODES.md (SEAL_NOT_MINED since 0.2.74, RESERVATION_DENIED and
+  // RPC_BLOCK_MISMATCH since 0.2.99)
   | "OFFER_SOURCE_CONFLICT"
   | "FILL_LEGACY_SUNSET"
   | "VERIFY_HORIZON"
   | "VERIFY_UNREPRESENTABLE"
   | "WALLET_UNAVAILABLE"
   | "REVIEW_REQUIRED"
+  | "SEAL_NOT_MINED"
+  | "RESERVATION_DENIED"
+  | "RPC_BLOCK_MISMATCH"
   // SDK-side: a write method that outlasted the connection timeout (the wallet may still send it)
   | "WALLET_TIMEOUT"
   | "UNKNOWN";
@@ -210,12 +214,13 @@ const NATIVE_CODES = new Set<CairnErrorCode>(["FIRST_PARTY_ONLY", "RATE_LIMITED"
 // auto-retry. The AMBIGUOUS-INFLIGHT codes are handled separately by mapSubmitResultError and
 // mapWriteProviderError because they must carry the txid (SubmitInFlightError). WALLET-ERROR-CODES.md is canonical.
 // WALLET_UNAVAILABLE is transient for a call that sends nothing (connect, getAddress) and in flight on a write.
-const NESTED_TRANSIENT = new Set<CairnErrorCode>(["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN", "WALLET_UNAVAILABLE", "REVIEW_REQUIRED"]);
+const NESTED_TRANSIENT = new Set<CairnErrorCode>(["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN", "WALLET_UNAVAILABLE", "REVIEW_REQUIRED", "SEAL_NOT_MINED"]);
 const NESTED_TERMINAL = new Set<CairnErrorCode>([
   "FILL_UNSAFE", "FILL_WRONG_TARGET", "SOURCE_DIVERGENCE", "VERIFY_TAMPER", "SUBMIT_REJECTED",
   "BAD_REQUEST", "BAD_FEE", "BAD_OUTPUTS", "NO_OUTPUTS", "ZERO_ADDR_REFUSED", "TOO_MANY_INPUTS",
   "INSUFFICIENT", "FEE_CAP", "FEE_TOO_LOW", "ACCOUNT_CHANGED", "GHOST_INPUTS_SKIPPED", "NOTHING_TO_CONSOLIDATE",
   "OFFER_SOURCE_CONFLICT", "FILL_LEGACY_SUNSET", "VERIFY_HORIZON", "VERIFY_UNREPRESENTABLE",
+  "RESERVATION_DENIED", "RPC_BLOCK_MISMATCH",
 ]);
 
 export function mapProviderError(error: string, code?: string): CairnError {

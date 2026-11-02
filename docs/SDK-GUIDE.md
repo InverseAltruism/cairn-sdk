@@ -174,12 +174,13 @@ outlasted the connection timeout; see below), `UNKNOWN`.
 
 > **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the
 > source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error and
-> classify every code listed there as of wallet 0.2.73: retryable (`VERIFY_UNAVAILABLE`, `OFFER_UNKNOWN`,
-> `REVIEW_REQUIRED`, and `WALLET_UNAVAILABLE` on `connect` and `getAddress`: nothing was sent), in flight
+> classify every code listed there as of wallet 0.3.1 except `RESERVATION_UNCONFIRMED`, which the wallet returns
+> to its approval window only: retryable (`VERIFY_UNAVAILABLE`, `OFFER_UNKNOWN`, `REVIEW_REQUIRED`,
+> `SEAL_NOT_MINED`, and `WALLET_UNAVAILABLE` on `connect` and `getAddress`: nothing was sent), in flight
 > (`SUBMIT_MAYBE_INFLIGHT`, `SUBMIT_DUPLICATE`, and `WALLET_UNAVAILABLE` on a write method: `send`,
 > `fillOffer`, `propose`, `attest`, `sealClaim`, `revealClaim`), and final (every other code, including
-> `OFFER_SOURCE_CONFLICT`, `FILL_LEGACY_SUNSET`, `VERIFY_HORIZON` and `VERIFY_UNREPRESENTABLE`;
-> `retryable: false`). An in-flight error is a `SubmitInFlightError` (`maybeSent: true`, `retryable: false`)
+> `OFFER_SOURCE_CONFLICT`, `FILL_LEGACY_SUNSET`, `VERIFY_HORIZON`, `VERIFY_UNREPRESENTABLE`,
+> `RESERVATION_DENIED` and `RPC_BLOCK_MISMATCH`; `retryable: false`). An in-flight error is a `SubmitInFlightError` (`maybeSent: true`, `retryable: false`)
 > carrying the txid when the wallet knows it: check the chain or the balance before you send again, never retry
 > blindly. `WALLET_UNAVAILABLE` on a write means the page lost the wallet's reply, which can happen after the
 > wallet submitted the approved transaction. A write that outlasts the connection timeout (10 minutes by

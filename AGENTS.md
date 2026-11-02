@@ -129,7 +129,7 @@ What verify-tarball checks:
 - SSE through a buffering reverse proxy needs `X-Accel-Buffering: no` from the origin (the hosted proxy sets it); WS subscribe still needs a direct indexer URL because the hosted proxy is REST+SSE only.
 - esbuild CLI shim ELF-errors under pnpm; scripts/build-example.mjs uses the JS API, keep it that way.
 - Audit-ID markers in `src/` comments (M3, H2, CAIRNSDK-*, CONNECT-1 and others) are mapped to the guards they explain in CHANGELOG.md, "Notes moved from AGENTS.md".
-- mapProviderError and the write wrappers classify every code in WALLET-ERROR-CODES.md (the wallet repo's canonical contract) as retryable, in flight or final; add a new wallet code to `src/errors.ts` and `test/errors.test.ts` when the wallet adds one.
+- mapProviderError and the write wrappers classify every code in WALLET-ERROR-CODES.md (the wallet repo's canonical contract; `RESERVATION_UNCONFIRMED` never reaches a page) as retryable, in flight or final; add a new wallet code to `src/errors.ts` and `test/errors.test.ts` when the wallet adds one.
 - Large-tx submits: a reverse proxy with a small body cap on POST /api/rpc/tx/submit answers HTTP 400 before the tx reaches the node (a 64KB cap is hit at roughly 127+ inputs). The cairn server has a scoped 512KB cap on that route.
 - Symptom on a server without that cap: a big Chain.send()/submit 400s with no node-side error. Suspect the proxy body cap on the server you target before blaming the SDK.
 

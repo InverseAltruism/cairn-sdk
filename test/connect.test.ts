@@ -292,6 +292,9 @@ console.log("=== a write the wallet may have submitted: WALLET_UNAVAILABLE and t
   const nested = new WalletConnection(mockProvider({ send: () => Promise.resolve({ ok: true, result: { ok: false, code: "WALLET_UNAVAILABLE", error: "unavailable" } }) }));
   const ne = await grab(() => nested.send({ to: "0xd", amount: 1 }));
   ok("a nested WALLET_UNAVAILABLE on a write is maybe-sent too", ne instanceof SubmitInFlightError && ne.code === "WALLET_UNAVAILABLE" && ne.retryable === false);
+  const early = new WalletConnection(mockProvider({ revealClaim: () => Promise.resolve({ ok: true, result: { ok: false, code: "SEAL_NOT_MINED", error: "the commit is not mined yet" } }) }));
+  const se = await grab(() => early.revealClaim("0xseal"));
+  ok("revealClaim before the commit mines: SEAL_NOT_MINED is retryable with its code", se instanceof CairnError && se.code === "SEAL_NOT_MINED" && se.retryable === true);
   // honest path: connect and getAddress sign nothing, so the same answer stays a plain retryable refusal
   const reads = new WalletConnection(mockProvider({ connect: () => Promise.resolve(gone), getAddress: () => Promise.resolve(gone) }));
   const ce = await grab(() => reads.connect());

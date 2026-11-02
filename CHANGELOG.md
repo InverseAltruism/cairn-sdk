@@ -41,6 +41,10 @@
   `WALLET_TIMEOUT` (no txid; message `the wallet did not respond to <method> within <ms>ms; the request may still
   be open in the wallet and be sent if approved, so check the chain before sending it again`) instead of a
   `CairnError` with code `UNKNOWN`. Read calls keep the old timeout error.
+- Three wallet codes keep their code instead of reading `UNKNOWN`: `SEAL_NOT_MINED` (wallet 0.2.74+, `revealClaim`
+  before the sealed commit is mined) is now retryable, as the wallet's contract says; `RESERVATION_DENIED` and
+  `RPC_BLOCK_MISMATCH` (wallet 0.2.99+, the V28 reservation lane) are final. Every code in the wallet 0.3.1
+  contract is now classified, except `RESERVATION_UNCONFIRMED`, which never reaches a page.
 
 ## 0.8.1
 
