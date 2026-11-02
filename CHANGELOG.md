@@ -45,6 +45,10 @@
   before the sealed commit is mined) is now retryable, as the wallet's contract says; `RESERVATION_DENIED` and
   `RPC_BLOCK_MISMATCH` (wallet 0.2.99+, the V28 reservation lane) are final. Every code in the wallet 0.3.1
   contract is now classified, except `RESERVATION_UNCONFIRMED`, which never reaches a page.
+- `cairn.chain.send` (the key-backed signer) throws a `SubmitInFlightError` (code `SUBMIT_MAYBE_INFLIGHT`, the
+  signed `txid`, the transport error as `cause`) when the submit request fails after signing, for example a proxy
+  502 that can follow the node taking the transaction. Before, the raw transport error escaped without the txid,
+  so a caller could not check whether the transaction landed before sending again.
 
 ## 0.8.1
 

@@ -78,6 +78,7 @@ import { CsdClient, verifyInputValues } from "@inversealtruism/csd-client";
 import { LightClient } from "@inversealtruism/csd-light";
 import { buildSendVerified, type Utxo, type BuildResult } from "@inversealtruism/csd-tx";
 import { addrFromPriv } from "@inversealtruism/csd-crypto";
+import { SubmitInFlightError } from "./errors.js";
 import type { FetchLike } from "./http.js";
 
 export interface ChainOptions {
@@ -122,7 +123,8 @@ export class Chain {
    * chain (`verifyInputValues` recomputes each source tx's txid, so a lying RPC can't under-report) and
    * computes change from the VERIFIED total — closing the UTXO-VALUE-1 implicit-fee-burn. Fail-closed:
    * if any source can't be verified it signs nothing. Prefer this over the pure `buildSend`. Pass
-   * `broadcast:false` to get the signed tx back without submitting.
+   * `broadcast:false` to get the signed tx back without submitting. A submit request that fails after signing
+   * throws a `SubmitInFlightError` carrying the signed `txid`: the node may have taken it, so check before resending.
    */
   async send(p: { priv: string; outputs: { to: string; value: number }[]; fee: number; maxFee?: number; broadcast?: boolean }): Promise<BuildResult & { submitResult?: import("@inversealtruism/csd-client").RpcSubmit }> {
     const from = addrFromPriv(p.priv);
@@ -132,7 +134,11 @@ export class Chain {
       verify: (inputs) => verifyInputValues(this.client, inputs),
     });
     if (!built.ok || p.broadcast === false) return built;
-    const submitResult = await this.client.submit(built.nodeJson);
+    let submitResult: import("@inversealtruism/csd-client").RpcSubmit;
+    try { submitResult = await this.client.submit(built.nodeJson); }
+    catch (e) {
+      throw new SubmitInFlightError(`the submit request failed after signing (${(e as Error)?.message ?? e}); the node may have taken the transaction, so check ${built.txid} before sending again`, "SUBMIT_MAYBE_INFLIGHT", built.txid, e);
+    }
     // CAIRNSDK-VP-4: reflect the node's accept/reject in the top-level `ok`. The node returns {ok:false} at
     // HTTP 200 on rejection (fee floor / double-spend / malformed) WITH a populated txid; without this a
     // caller doing `if (r.ok) use(r.txid)` would read a build-level ok + a computed txid for a REJECTED tx.
