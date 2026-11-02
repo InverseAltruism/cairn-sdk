@@ -6,6 +6,17 @@ title = "Cairn / CSD repos — gitleaks config"
 [extend]
 useDefault = true
 
+# 64 hex digits (optional 0x) assigned to a name containing priv, secret or seed, with an optional type annotation
+# (`const PRIV: string =`, `let priv_key: &str =`, `priv :=`). The default rules miss `PRIV = "0x.."`, `{ priv: "0x.." }`
+# (csd-crypto's keygen() name) and `Environment=MM_PRIV=..`. Not `key`: fixtures name 64-hex hashes "key" (cairnx
+# test/fixtures), and the default generic-api-key rule covers *_KEY= forms.
+[[rules]]
+id = "named-hex-private-key"
+description = "64 hex digits assigned to a name containing priv, secret or seed"
+regex = '''(?i)[a-z0-9_.-]*(?:priv|secret|seed)[a-z0-9_.-]*['"]?(?:[ \t]*:[ \t]*[a-z0-9_&<>\[\] ]{1,40}?)?[ \t]*(?:=>|:=|[:=])[ \t]*['"`]?(?:0x)?([0-9a-f]{64})\b'''
+secretGroup = 1
+keywords = ["priv", "secret", "seed"]
+
 [allowlist]
 description = "Public on-chain data, conformance test vectors, vendored libs, and doc placeholders — NOT secrets"
 regexTarget = "secret"
@@ -13,7 +24,7 @@ regexes = [
   '''^0x[0-9a-fA-F]{40}$''',        # 20-byte addresses / scriptPubkey hashes (a private key is 32 bytes / 64 hex)
   '''0x<[A-Za-z0-9_]+>''',          # documentation placeholders: 0x<key>, 0x<addr>
   '''0x[.…]{1,3}''',           # 0x... / 0x… placeholder
-  '''^(user|USER):(pass|PASS)''',   # README "postgres://user:pass@..." connection-string placeholder
+  '''^(user|USER):(pass|PASS)$''',  # README "postgres://user:pass@..." connection-string placeholder
 ]
 paths = [
   '''(^|/)lib/forge-std/''',        # vendored Foundry standard library (ships a public Infura demo key)

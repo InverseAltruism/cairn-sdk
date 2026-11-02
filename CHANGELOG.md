@@ -59,6 +59,9 @@
 - Docs: `verifyInclusion(txid)` proves that `txid` is a node of a PoW-verified block's merkle tree. An inner node
   or a block's merkle root folds as well (the tree has no leaf and node separation), so the guide and the README
   now say to hash a transaction body you hold instead of calling the check trust-minimized for any id.
+- Repository only (not in the package): the secret scan's `.gitleaks.toml` is csd-sdk's, which adds a rule for 64
+  hex digits assigned to a name containing priv, secret or seed and anchors the `user:pass` allowlist row at both
+  ends. The default rules missed `PRIV = "0x.."`, `{ priv: "0x.." }` and `Environment=MM_PRIV=..`.
 
 ## 0.8.1
 

@@ -17,8 +17,9 @@ through:** a missing tool never blocks your workflow.
 
 - ✅ Inspects only the staged diff; **never edits, deletes, or rewrites files**.
 - ✅ Blocks the commit on a finding, with a clear message.
-- ✅ Uses `.gitleaks.toml` (repo root), which extends gitleaks' default rules and
-  allowlists this project's public on-chain data (addresses/scriptPubkeys), conformance
+- ✅ Uses `.gitleaks.toml` (repo root), which extends gitleaks' default rules with one rule for 64 hex
+  digits assigned to a name containing priv, secret or seed (`PRIV = "0x.."`, `{ priv: "0x.." }`,
+  `Environment=MM_PRIV=..`), and allowlists this project's public on-chain data (addresses/scriptPubkeys), conformance
   test vectors, vendored `lib/forge-std`, and documentation placeholders, verified to
   produce **zero false positives** across the repo's full history.
 
