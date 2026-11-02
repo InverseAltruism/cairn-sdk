@@ -69,5 +69,24 @@ console.log("Chain.send:");
   ok("the failed submit was sent once (no retry of a POST)", submits(seen) === 1);
 }
 
+console.log("the verified propose and attest builders on the /chain subpath:");
+{
+  const chainSubpath = await import("../src/chain.js") as Record<string, unknown>;
+  type Build = (p: Record<string, unknown>) => Promise<{ ok: boolean; change?: number; fee?: number; error?: string }>;
+  const propose = chainSubpath.buildProposeVerified as Build | undefined;
+  const attest = chainSubpath.buildAttestVerified as Build | undefined;
+  ok("/chain exports buildProposeVerified and buildAttestVerified", typeof propose === "function" && typeof attest === "function");
+  if (propose && attest) {
+    // The RPC under-reports the 100 CSD coin as 2 CSD: change must come from the value the source tx commits.
+    const { chain } = rpc(200_000_000, accepted);
+    const utxos = [{ txid: SRC_ID, vout: 0, value: 200_000_000, confirmations: 10 }];
+    const verify = (inputs: { txid: string; vout: number }[]) => (chainSubpath.verifyInputValues as (c: unknown, i: unknown) => Promise<unknown>)(chain.client, inputs);
+    const p = await propose({ domain: "example:v1", payloadHash: "0x" + "11".repeat(32), uri: "{}", expiresEpoch: 5000, fee: 25_000_000, utxos, priv: PRIV, verify });
+    ok("buildProposeVerified over an under-reported coin: change from the committed value, fee as asked", p.ok === true && p.change === REAL - 25_000_000 && p.fee === 25_000_000);
+    const a = await attest({ proposalId: "0x" + "22".repeat(32), score: 1, confidence: 1, fee: 5_000_000, utxos, priv: PRIV, verify });
+    ok("buildAttestVerified over an under-reported coin: change from the committed value, fee as asked", a.ok === true && a.change === REAL - 5_000_000 && a.fee === 5_000_000);
+  }
+}
+
 console.log(`\nchain-send: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

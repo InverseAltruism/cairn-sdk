@@ -1,5 +1,5 @@
-// node-signer — a server/bot CairnProvider backed by a raw private key, built on the
-// SDK's own chain primitives (buildPropose/buildAttest/buildSend + the node RPC proxy).
+// node-signer: a server/bot CairnProvider backed by a raw private key, built on the SDK's
+// own chain primitives (the input-verified propose, attest and send builders + the node RPC proxy).
 //
 // This is the BACKEND counterpart to the browser wallet: a dApp in the browser uses
 // cairn.connect() (window.cairn, user-approved); a bot/server uses makeKeyWallet() to
@@ -9,7 +9,7 @@
 // SECURITY: this holds a private key in process — only for keys you own (treasury bots,
 // CI, indexers), never for end users. End users always sign in their wallet.
 // chain primitives live under the /chain subpath (tree-shakeable away from browser dApps)
-import { buildPropose, buildAttest, buildSendVerified, verifyInputValues, addrFromPriv } from "../dist/chain.js";
+import { buildProposeVerified, buildAttestVerified, buildSendVerified, verifyInputValues, addrFromPriv } from "../dist/chain.js";
 
 /**
  * Build a CairnProvider that signs with `priv` and submits through `cairn.chain`.
@@ -21,6 +21,7 @@ import { buildPropose, buildAttest, buildSendVerified, verifyInputValues, addrFr
 export function makeKeyWallet(priv, cairn) {
   const addr = addrFromPriv(priv);
 
+  const verify = (inputs) => verifyInputValues(cairn.chain.client, inputs);
   async function spendable() {
     const r = await cairn.chain.utxos(addr);
     return (r.utxos || []).map((u) => ({ txid: u.txid, vout: u.vout, value: u.value, confirmations: u.confirmations, coinbase: u.coinbase }));
@@ -37,16 +38,14 @@ export function makeKeyWallet(priv, cairn) {
     version: "node-signer/1",
     async connect() { return { ok: true, result: { addr } }; },
     async getAddress() { return { ok: true, result: { addr } }; },
-    async propose(p) { return submit(buildPropose({ ...p, utxos: await spendable(), priv }), "propose"); },
-    async attest(p) { return submit(buildAttest({ ...p, utxos: await spendable(), priv }), "attest"); },
+    // Every builder here verifies each selected input's real value from its source tx (verifyInputValues),
+    // computes change from the verified total and fails closed, so an RPC that under-reports a coin cannot make
+    // the surplus burn as an implicit fee. Never the bare buildPropose, buildAttest or buildSend here.
+    async propose(p) { return submit(await buildProposeVerified({ ...p, utxos: await spendable(), priv, verify }), "propose"); },
+    async attest(p) { return submit(await buildAttestVerified({ ...p, utxos: await spendable(), priv, verify }), "attest"); },
     async send(p) {
       const outputs = Array.isArray(p.outputs) ? p.outputs : [{ to: p.to, value: p.amount }];
-      // VP-2: use the VERIFIED builder — recomputes each selected input's real value from its source tx
-      // (verifyInputValues), computes change from the verified total, and fails closed. A backend signer
-      // copying this template against an untrusted RPC therefore can't be tricked into burning the surplus
-      // as an implicit fee (the UTXO-VALUE-1 class). Never the bare buildSend here.
-      const build = await buildSendVerified({ outputs, fee: p.fee ?? 1_000_000, utxos: await spendable(), priv, verify: (inputs) => verifyInputValues(cairn.chain.client, inputs) });
-      return submit(build, "send");
+      return submit(await buildSendVerified({ outputs, fee: p.fee ?? 1_000_000, utxos: await spendable(), priv, verify }), "send");
     },
     async signIn() { return { ok: false, error: "signIn is not implemented in the node-signer" }; },
     async sealClaim() { return { ok: false, error: "sealClaim is not implemented in the node-signer" }; },

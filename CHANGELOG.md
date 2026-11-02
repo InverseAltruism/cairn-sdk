@@ -49,6 +49,10 @@
   signed `txid`, the transport error as `cause`) when the submit request fails after signing, for example a proxy
   502 that can follow the node taking the transaction. Before, the raw transport error escaped without the txid,
   so a caller could not check whether the transaction landed before sending again.
+- The `/chain` subpath also re-exports csd-tx's `buildProposeVerified` and `buildAttestVerified`, and
+  `examples/node-signer.mjs` builds proposes and attests with them. With the bare `buildPropose`/`buildAttest` the
+  example computed change from the RPC's reported coin values, so an RPC that under-reports a coin made the
+  surplus burn as fee (a 100 CSD coin reported as 0.30 CSD burned 99.70 CSD on a propose).
 
 ## 0.8.1
 

@@ -31,6 +31,8 @@ export {
   buildSendVerified,
   buildPropose,
   buildAttest,
+  buildProposeVerified,
+  buildAttestVerified,
 } from "@inversealtruism/csd-tx";
 export type { Utxo, Selection, Signed, BuildResult, InputVerifier } from "@inversealtruism/csd-tx";
 
