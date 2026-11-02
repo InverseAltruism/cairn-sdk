@@ -92,7 +92,7 @@ export interface ChainOptions {
 
 /**
  * Convenience handle over a CSD node RPC. `client` is the full typed RPC client;
- * `light()` lazily builds a verifying light client over the same endpoint.
+ * `light()` lazily builds an unseeded light client over the same endpoint.
  */
 export class Chain {
   readonly client: CsdClient;
@@ -147,7 +147,8 @@ export class Chain {
     return { ...built, ok: built.ok && submitResult.ok !== false, submitResult };
   }
 
-  /** A verifying light client over the same RPC (built once, reused). */
+  /** A light client over the same RPC (built once, reused), with no checkpoint and no batch header provider: it proves
+   *  nothing until seeded. The facade's seeded client backs `cairn.index.verifyInclusion` and `verifyOfferForFill`. */
   light(): LightClient {
     if (!this._light) {
       this._light = new LightClient({ client: this.client });

@@ -53,6 +53,9 @@
   `examples/node-signer.mjs` builds proposes and attests with them. With the bare `buildPropose`/`buildAttest` the
   example computed change from the RPC's reported coin values, so an RPC that under-reports a coin made the
   surplus burn as fee (a 100 CSD coin reported as 0.30 CSD burned 99.70 CSD on a propose).
+- Docs: `cairn.chain.light()` is described as what it is, a light client with no checkpoint and no batch header
+  source that proves nothing until seeded (a sync from it reads one block per height through the RPC), and the
+  README points at the facade's seeded path instead of calling it a verifying light client.
 
 ## 0.8.1
 

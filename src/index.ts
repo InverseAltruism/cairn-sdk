@@ -2,7 +2,7 @@
 //
 // One cohesive `Cairn` object that composes everything we built on CSD:
 //   cairn.wallet   : connect the Cairn Wallet, sign things (clear-signed approvals)
-//   cairn.chain    : node RPC + tx builders + verifying light client
+//   cairn.chain    : node RPC + tx builders + light client primitives
 //   cairn.index    : the L2 explorer/indexer: REST + merkle proofs + live SSE/WS
 //   cairn.content  : self-certifying content (fetched and verified against its hash)
 //   cairn.names    : .csd names + CairnX market reads

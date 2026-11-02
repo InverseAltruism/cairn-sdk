@@ -5,7 +5,7 @@ The **Compute Substrate dApp kit:** one cohesive toolkit for building apps on CS
 | | |
 |---|---|
 | `cairn.wallet` | Connect the **Cairn Wallet**, sign things (clear-signed approvals). The key never leaves the extension. |
-| `cairn.chain` | Node RPC + transaction builders + a verifying **light client** (re-exports the `csd-*` primitives). |
+| `cairn.chain` | Node RPC + transaction builders + the **light client** primitives (re-exports the `csd-*` primitives). |
 | `cairn.index` | The L2 **explorer/indexer**: REST + merkle proofs + live SSE/WS feeds. |
 | `cairn.content` | **Self-certifying content:** hash for an on-chain Propose, fetch with client-side verification. |
 | `cairn.names` | **.csd names + CairnX reads:** name resolution, reverse/primary lookup, tokens, offers, bids, canonical state. |
@@ -62,7 +62,7 @@ try {
 
 **`cairn.content`:** `prepare(obj)`/`put(obj)` → `{ payloadHash, canonical, bytes }`; `get(hash)` / `getBytes(hash)` (fetch **and verify** `sha256(bytes) === hash`, throws `ContentVerificationError` on tamper); `hash(obj)`.
 
-**`cairn.chain`:** `tip()`, `utxos(addr)`, `submit(nodeJsonTx)`, `.client` (full `CsdClient`), `.light()` (verifying light client). The package also re-exports the primitives under the `/chain` subpath: `buildSendVerified/buildProposeVerified/buildAttestVerified` (they check each input's value against its source transaction; use them over the bare `buildSend/buildPropose/buildAttest` with any RPC you do not run), `signTx`, `keygen`, `payloadHash`, `verifyMerkleProof`, `LightClient`, etc.
+**`cairn.chain`:** `tip()`, `utxos(addr)`, `submit(nodeJsonTx)`, `.client` (full `CsdClient`), `.light()` (a `LightClient` over the same RPC with no checkpoint and no batch header source: it proves nothing until seeded, and a sync from it reads one block per height through the RPC; for verified reads use `cairn.index.verifyInclusion()` and `cairn.verifyOfferForFill()`, which run the facade's light client seeded from `DEFAULT_SPV_CHECKPOINT`, or build your own `new LightClient({ client, checkpoints, headersBatchProvider })` from a pinned checkpoint). The package also re-exports the primitives under the `/chain` subpath: `buildSendVerified/buildProposeVerified/buildAttestVerified` (they check each input's value against its source transaction; use them over the bare `buildSend/buildPropose/buildAttest` with any RPC you do not run), `signTx`, `keygen`, `payloadHash`, `verifyMerkleProof`, `LightClient`, etc.
 
 Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{connect,indexer,content,chain,controller,react}`.
 
