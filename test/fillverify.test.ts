@@ -637,13 +637,15 @@ console.log("\nP75-5 fill-surface guards:");
   // fill handle advances the cache to the node tip. The real facade and the real LightClient run; headers above the
   // fixture are synthetic, so only their PoW check is replaced (the fixture's real headers keep it).
   {
-    const GAP = 300, OFFER_H = TIP + GAP;
+    const GAP = 300, OFFER_H = TIP + GAP, NEAR_H = TIP + 100;
     const tx = proposeTx(SELLER_KEY, rec, 16);
+    // An offer within csd-light's own 256-block on-demand sync of the cached tip.
+    const near = proposeTx(SELLER_KEY, rec, 25);
     const synth = new Map<number, Row>();
     let prevHash = ROWS[ROWS.length - 1]!.hash;
     for (let h = TIP + 1; h <= OFFER_H; h++) {
       const hash = "0x" + h.toString(16).padStart(64, "0");
-      const merkle = h === OFFER_H ? merkleRoot([tx.id]) : "0x" + "00".repeat(32);
+      const merkle = h === OFFER_H ? merkleRoot([tx.id]) : h === NEAR_H ? merkleRoot([near.id]) : "0x" + "00".repeat(32);
       synth.set(h, { height: h, header: { version: 1, prev: prevHash, merkle, time: 1791507021 + (h - TIP) * 120, bits: 453910147, nonce: 0 }, hash });
       prevHash = hash;
     }
@@ -652,12 +654,15 @@ console.log("\nP75-5 fill-surface guards:");
     const facade = async (prewarmTip: number | null) => {
       const seen: string[] = [];
       let tipNow: number | null = prewarmTip;
+      // Delays every /api/headers answer after the seed, so two concurrent checks' syncs overlap.
+      let headerDelayMs = 0;
       const j = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json" } });
       const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: (async (input: RequestInfo | URL) => {
         const url = String(input);
         seen.push(url);
         const m = url.match(/\/api\/headers\/(\d+)\/(\d+)$/);
         if (m) {
+          if (headerDelayMs) await new Promise((r) => setTimeout(r, headerDelayMs));
           const rows = Array.from({ length: Number(m[2]) }, (_, i) => rowAt(Number(m[1]) + i));
           return rows.every(Boolean) ? j({ ok: true, headers: rows }) : j({ error: "beyond tip" }, 503);
         }
@@ -666,6 +671,8 @@ console.log("\nP75-5 fill-surface guards:");
         if (t && t[1] === tx.id) return j({ ok: true, height: OFFER_H, tx: tx.json });
         if (t && prevoutOf.has(t[1]!)) return j({ ok: true, tx: prevoutOf.get(t[1]!) });
         if (url.endsWith(`/api/rpc/block/height/${OFFER_H}`)) return j({ ok: true, txs: [tx.json] });
+        if (t && t[1] === near.id) return j({ ok: true, height: NEAR_H, tx: near.json });
+        if (url.endsWith(`/api/rpc/block/height/${NEAR_H}`)) return j({ ok: true, txs: [near.json] });
         return new Response("not found", { status: 404 });
       }) as unknown as typeof fetch });
       const lc = await (cairn as unknown as { seededSpvLight(): Promise<Record<string, unknown>> }).seededSpvLight();
@@ -674,7 +681,7 @@ console.log("\nP75-5 fill-surface guards:");
         height <= TIP ? realVerify(height, header, window, parent, claimedHash) : { height, hash: claimedHash, header, chainwork: (parent?.chainwork ?? 0n) + 1n };
       const cachedTip = (lc.baseHeight as number) + (lc.chain as unknown[]).length - 1;
       tipNow = OFFER_H;
-      return { cairn, seen, cachedTip };
+      return { cairn, seen, cachedTip, slowHeaders: (ms: number) => { headerDelayMs = ms; } };
     };
     const headersFrom = (seen: string[], above: number) => seen.filter((u) => { const m = u.match(/\/api\/headers\/(\d+)\//); return !!m && Number(m[1]) > above; });
     const tipReads = (seen: string[]) => seen.filter((u) => /\/api\/rpc\/tip$/.test(u)).length;
@@ -695,6 +702,42 @@ console.log("\nP75-5 fill-surface guards:");
         await ok("[gap>256 honest] the next check on the now-fresh cache reads no tip and syncs nothing (the near-tip re-check only)", () =>
           r2.ok === true && tipReads(second) === 0 && headersFrom(second, OFFER_H - 1).length === 1 && headersFrom(second, OFFER_H - 1)[0]!.endsWith(`/api/headers/${OFFER_H}/1`));
       }
+    }
+
+    // Concurrent checks on one stale instance share the header sync. csd-light ingests strictly in order, so a second
+    // sync overlapping the first failed "out-of-order ingest", which read as a reorg and reseeded from the checkpoint.
+    const seedReads = (seen: string[]) => seen.filter((u) => u.endsWith(`/api/headers/${BASE}/46`)).length;
+    // Every height above the cached tip is fetched at most once.
+    const fetchedOnce = (seen: string[], above: number) => {
+      const n = new Map<number, number>();
+      for (const u of headersFrom(seen, above)) {
+        const [, from, count] = u.match(/\/api\/headers\/(\d+)\/(\d+)$/)!.map(Number);
+        for (let h = from!; h < from! + count!; h++) n.set(h, (n.get(h) ?? 0) + 1);
+      }
+      return [...n.values()].every((c) => c === 1);
+    };
+    {
+      const { cairn, seen, cachedTip, slowHeaders } = await facade(TIP);
+      slowHeaders(20);
+      const before = seen.length;
+      const rs = await Promise.all([cairn.verifyOfferForFill(tx.id), cairn.verifyOfferForFill(tx.id)]);
+      const during = seen.slice(before);
+      await ok(`[gap>256, concurrent] two checks of an offer ${GAP} blocks above the cached tip both verify`, () =>
+        rs.every((r) => r.ok === true && r.trust === "verified" && r.blockHeight === OFFER_H));
+      await ok("[gap>256, concurrent] one header sync for both and no checkpoint reseed", () =>
+        headersFrom(during, cachedTip).length === 1 && fetchedOnce(during, cachedTip) && seedReads(during) === 0);
+    }
+    {
+      // One offer inside csd-light's on-demand gap (it syncs itself) and one past it (the fill handle syncs).
+      const { cairn, seen, cachedTip, slowHeaders } = await facade(TIP);
+      slowHeaders(20);
+      const before = seen.length;
+      const [rn, rf] = await Promise.all([cairn.verifyOfferForFill(near.id), cairn.verifyOfferForFill(tx.id)]);
+      const during = seen.slice(before);
+      await ok("[concurrent, mixed gaps] offers 100 and 300 blocks above the cached tip both verify", () =>
+        rn.ok === true && rn.blockHeight === NEAR_H && rf.ok === true && rf.blockHeight === OFFER_H);
+      await ok("[concurrent, mixed gaps] csd-light's own sync and the fill handle's never fetch a height twice; no reseed", () =>
+        fetchedOnce(during, cachedTip) && seedReads(during) === 0);
     }
   }
 }

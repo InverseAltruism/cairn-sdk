@@ -32,6 +32,7 @@ Everything defaults to the hosted public bases at https://cairn-substrate.com: R
 
 - `index.ts`: Cairn facade, CairnConfig, DEFAULT_SPV_CHECKPOINT (height and hash are in the source), and the lazy PoW-verified header wiring into the indexer via `seededSpvLight`.
   - Header sync runs forward from the checkpoint to the tip through a batch header provider over the cairn server's /api/headers: a few batched requests, never a per-height flood, fail-soft to on-demand sync.
+  - The facade's light client (`SpvLightClient`) runs one `sync` at a time, csd-light's own on-demand sync included: csd-light refuses an overlapping sync as out of order, which would read as a reorg and reseed (`test/fillverify.test.ts` and `test/spv-fault-tolerance.test.ts`, the concurrent cases).
   - The per-attempt timeout is deliberately above the server's 10 s route deadline.
   - Cross-origin reach of that provider depends on the cairn server's CORS mount on /api/headers.
   - The checkpoint is picked in cairn (`bump-swapguard-cp.mjs`) and copied here in the same cycle; it is never a unilateral SDK edit.

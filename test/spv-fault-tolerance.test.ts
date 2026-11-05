@@ -168,5 +168,16 @@ console.log("P75-5 SPV fault tolerance (MF-14 seed + MF-03 reseed):");
   ok("C3: the returned check is NOT wedged on the structural (reorg) error", !/broken prev link/.test(r.reason ?? ""));
 }
 
+// C4: two concurrent reads of a block above the cached tip share one forward sync. csd-light ingests strictly in
+// order, so a second sync overlapping the first failed "out-of-order ingest", which read as a reorg and reseeded.
+// tip==115403 so the seed's tip-advance is a no-op and both reads must sync to 115411.
+{
+  const seen: string[] = [];
+  const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: mkStub({ tip: 115403, seen }) });
+  const [a, b] = await Promise.all([cairn.index.verifyInclusion(M), cairn.index.verifyInclusion(M)]);
+  ok("C4: two concurrent reads above the cached tip both reach verified-inclusion", a.trustLevel === "verified-inclusion" && b.trustLevel === "verified-inclusion");
+  ok("C4: one forward sync (115404/8) and one seed, no reseed", seen.filter((u) => /\/api\/headers\/115404\//.test(u)).length === 1 && seedCount(seen) === 1);
+}
+
 console.log(`\nspv-fault-tolerance: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

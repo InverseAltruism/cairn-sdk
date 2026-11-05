@@ -77,7 +77,8 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
 - **A long-lived instance:** the header cache advances on demand. When a transaction sits more than 256
   blocks above it (a page open for hours, or a header pre-warm that failed), `verifyInclusion` and
   `verifyOfferForFill` sync the cache forward first through `/api/headers` (512 headers a request), so
-  the first check after a long idle takes a few requests longer; later checks add none.
+  the first check after a long idle takes a few requests longer; later checks add none. Concurrent checks on
+  one `Cairn` instance share that sync.
 
 **Filling an offer (F13, diligent-dApp pre-verify):** `fillOffer` is resolver-trusted at this SDK layer:
 the SDK does NOT SPV-verify the `outputs` you hand the wallet, so a lying resolver could redirect the

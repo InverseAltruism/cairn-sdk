@@ -9,6 +9,12 @@
   failed). csd-light syncs on demand only within 256 blocks; past that the fill check now reads the node tip once,
   syncs the header cache to it through `/api/headers` (512 headers a request), and asks again. That is the only
   added cost, paid once per such gap; a check on a fresh cache adds no request.
+- Concurrent `cairn.index.verifyInclusion` and `cairn.verifyOfferForFill` calls on one `Cairn` instance share the
+  header sync: the facade's light client runs one `sync` at a time, and a call that finds one in flight waits for
+  it and then syncs only what is still missing. Before, csd-light refused the second of two overlapping syncs
+  (`out-of-order ingest`), which read as a reorg and reseeded the header cache from the checkpoint (one
+  `/api/headers` request per 512 headers up to the tip), once per extra concurrent call, for example a page that
+  checks several offers with `Promise.all` after an idle spell.
 - The near-tip reorg re-check of `cairn.verifyOfferForFill` also runs when the node serves the containing height as
   a JSON string, and a containing height that is not an integer answers `trust: "unverified"`.
 - `preverifyOffer` and `cairn.verifyOfferForFill` take optional `me` (the address that signs the fill), `tip` (the

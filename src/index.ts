@@ -14,7 +14,7 @@
 //   await cairn.connect();                       // prompts the wallet once
 
 import { Http, readCapped, retryAfterMs, RetryWaitBudget, type FetchLike } from "./http.js";
-import { Chain, LightClient, type BlockHeader, type InclusionResult } from "./chain.js";
+import { Chain, LightClient, type BlockHeader, type InclusionResult, type VerifiedHeader } from "./chain.js";
 import { IndexerClient } from "./indexer.js";
 import { ContentClient } from "./content.js";
 import { NamesClient } from "./names.js";
@@ -110,6 +110,22 @@ const spvTipOf = (lc: LightClient): number => lc.baseHeight + lc.chain.length - 
 // up to that gap (which bounds what one lying /tx height can make it fetch) and asks the caller to sync.
 const SPV_BEYOND_TIP = /^tx at \d+ is \d+ blocks beyond tip; sync\(\d+\) first$/;
 
+// csd-light ingests headers strictly in order, so a sync() that overlaps another on the same client fails with
+// "out-of-order ingest", which withSpvReseed reads as a reorg and answers with a reseed from the checkpoint. The
+// facade's client runs one sync at a time: a later call waits for the one in flight (and shares its failure), then
+// syncs only what is still missing from the tip that sync reached. Overriding sync() also covers the on-demand sync
+// csd-light's verifyTxInclusion runs within 256 blocks, which calls this.sync().
+class SpvLightClient extends LightClient {
+  private syncInFlight: Promise<VerifiedHeader> | null = null;
+
+  override async sync(to: number, from?: number): Promise<VerifiedHeader> {
+    while (this.syncInFlight) await this.syncInFlight;
+    const run = super.sync(to, from);
+    this.syncInFlight = run;
+    try { return await run; }
+    finally { if (this.syncInFlight === run) this.syncInFlight = null; }
+  }
+}
 
 export class Cairn {
   readonly config: CairnConfig;
@@ -226,7 +242,7 @@ export class Cairn {
     // W12: pass a BATCH header provider (checkpoint..tip in a few batched requests, each header re-verified
     // so it carries ZERO trust). Fixing the sync WITHOUT this converts a fast wrong answer into a
     // multi-thousand-request flood, so the provider is MANDATORY, not an optimization.
-    const lc = new LightClient({
+    const lc = new SpvLightClient({
       client: this.chain.client,
       checkpoints: { [this._spvCp.height]: this._spvCp.hash },
       headersBatchProvider: (from, count) => this.fetchHeadersBatch(from, count),
