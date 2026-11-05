@@ -514,7 +514,8 @@ console.log("\nP75-5 fill-surface guards:");
   });
 }
 
-// The proven expiry rides on every verified result: expiresAt is the first height CairnX treats the offer as expired.
+// The proven expiry rides on every result that carries the proven terms: expiresAt is the first height CairnX treats
+// the offer as expired.
 {
   const rec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER } };
   const far = proposeTx(SELLER_KEY, rec, 23);
@@ -523,6 +524,12 @@ console.log("\nP75-5 fill-surface guards:");
     const r = await preverifyOffer({ light: mockLight(far.json, far.phash), client: mockClient, offerId: far.id });
     const r2 = await preverifyOffer({ light: mockLight(edge.json, edge.phash), client: mockClient, offerId: edge.id });
     return r.ok === true && r.expiresEpoch === 9_000_000 && r.expiresAt === 45_060 && r2.ok === true && r2.expiresEpoch === 1333 && r2.expiresAt === 40_020;
+  });
+  await ok("[expiry] a refusal after the binds keeps the terms and the expiry; a creation-rule refusal carries neither", async () => {
+    const lie = await preverifyOffer({ light: mockLight(far.json, far.phash), client: mockClient, offerId: far.id, servedOffer: servedFor({ id: far.id, seller: ATTACKER }) });
+    const rejected = await preverifyOffer({ light: mockLight(far.json, far.phash, 33_000), client: mockClient, offerId: far.id });
+    return lie.ok === false && lie.terms !== undefined && lie.expiresAt === 45_060
+      && rejected.ok === false && /CairnX rejects this offer/.test(rejected.reason ?? "") && rejected.terms === undefined && rejected.expiresAt === undefined;
   });
 }
 

@@ -36,8 +36,10 @@
   `ok: true`, and with `pay` the reason was `this pay would not deliver against the proven offer (not-open) - ...`.
 - On a token-priced offer, `plannedOutputs` with a positive CSD leg is refused (`the offer is token-priced, so a
   fill moves no CSD: ...`); before, it answered `ok: true, planBound: false`.
-- Every verified result carries the proven expiry: `expiresEpoch` and `expiresAt` (cairnx-core
-  `offerExpiryHeightOf`, the first height at which CairnX treats the offer as expired).
+- Every result that carries the proven `terms` also carries the proven expiry: `expiresEpoch` and `expiresAt`
+  (cairnx-core `offerExpiryHeightOf`, the first height at which CairnX treats the offer as expired). A refusal
+  under the creation rules (`CairnX rejects this offer (...)`) carries neither: CairnX does not admit the record as
+  an offer, and the expiry can be the rule it broke.
 - `WALLET_UNAVAILABLE` on a write method (`send`, `fillOffer`, `propose`, `attest`, `sealClaim`, `revealClaim`)
   now throws a `SubmitInFlightError` (`maybeSent: true`, `retryable: false`, the txid when the wallet gave one)
   instead of a retryable `CairnError`: the wallet's content script sends that code when the page lost its reply,
