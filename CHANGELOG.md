@@ -26,6 +26,13 @@
   `me` without `tip` or `pay` answers `ok: false` ("invalid fill inputs: ..."), as does the endorsement without a
   served offer. Without these inputs nothing new is refused by them, and `ok` still says only that the record
   is proven.
+- Not judged yet (recorded 2026-11-05): `me` and `tip` do not refuse a fill of an offer that expires too soon.
+  cairnx-core's `fillEndorsement` does not check expiry, and the rule, `offerFillTooLate(expiresAt, tip)`, is new
+  in cairnx-core 0.2.4, while this release keeps the 0.2.3 pin; a local copy would give the rule a second home.
+  The re-pin to 0.2.4 adds `offerFillTooLate(expiresAt, tip)` to `judgeFill`, with a test. Until then compare the
+  result's `expiresAt` with your tip: CairnX's client policy refuses a fill once `expiresAt - 1 < tip + 4`
+  (cairnx-core `FILL_TIP_MARGIN`), and for an offer anchored before V22 whose expiry the v2.1 cap shortened, a late
+  fill can still be mined, paying and delivering nothing.
 - With `pay`, the result carries `sized` (`true` when `outputPlan` holds the proven outputs for that pay).
   A partially fillable offer stays unsized, but with a served offer carrying its `paid` and `delivered` a pay
   that cairnx-core's `previewFill` says delivers nothing (below the minimum, or zero tokens) is refused: `this pay
