@@ -57,7 +57,8 @@
   twice. On `connect` and `getAddress` it stays retryable.
 - A write method that outlasts the connection timeout now rejects with a `SubmitInFlightError` of the new code
   `WALLET_TIMEOUT` (no txid; message `the wallet did not respond to <method> within <ms>ms; the request may still
-  be open in the wallet and be sent if approved, so check the chain before sending it again`) instead of a
+  be open in the wallet and be sent if approved, so reject it in the wallet and check the chain before sending it
+  again`: while the old request is open, a resend opens a second one, and approving both sends twice) instead of a
   `CairnError` with code `UNKNOWN`. Read calls keep the old timeout error.
 - Three wallet codes keep their code instead of reading `UNKNOWN`: `SEAL_NOT_MINED` (wallet 0.2.74+, `revealClaim`
   before the sealed commit is mined) is now retryable, as the wallet's contract says; `RESERVATION_DENIED` and

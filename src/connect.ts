@@ -313,7 +313,8 @@ export class WalletConnection {
 
   // B7c: race a provider call against the per-call timeout. On timeout, throw a fail-closed error
   // (retryable:false). A write's request stays open in the wallet and may still be approved and sent, so its
-  // timeout is a maybe-sent SubmitInFlightError (WALLET_TIMEOUT, no txid). The genuine wallet resolves quickly
+  // timeout is a maybe-sent SubmitInFlightError (WALLET_TIMEOUT, no txid); while that request stays open, a resend
+  // opens a second one, and approving both sends twice. The genuine wallet resolves quickly
   // once the user acts; this only fires on a truly hung/absent response.
   private call<T>(op: () => Promise<T> | T, label: string, write = false): Promise<T> {
     const ms = this._timeoutMs;
@@ -324,7 +325,7 @@ export class WalletConnection {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(write
-        ? new SubmitInFlightError(`the wallet did not respond to ${label} within ${ms}ms; the request may still be open in the wallet and be sent if approved, so check the chain before sending it again`, "WALLET_TIMEOUT")
+        ? new SubmitInFlightError(`the wallet did not respond to ${label} within ${ms}ms; the request may still be open in the wallet and be sent if approved, so reject it in the wallet and check the chain before sending it again`, "WALLET_TIMEOUT")
         : new CairnError(`the wallet did not respond to ${label} within ${ms}ms`, { retryable: false })), ms);
     });
     return Promise.race([invoke(), timeout]).finally(() => clearTimeout(timer)) as Promise<T>;

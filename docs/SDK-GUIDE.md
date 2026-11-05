@@ -197,7 +197,9 @@ outlasted the connection timeout; see below), `UNKNOWN`.
 > blindly. `WALLET_UNAVAILABLE` on a write means the page lost the wallet's reply, which can happen after the
 > wallet submitted the approved transaction. A write that outlasts the connection timeout (10 minutes by
 > default; `new WalletConnection(provider, { timeoutMs })`) rejects the same way with code `WALLET_TIMEOUT` and
-> no txid, since the request may still be open in the wallet and be sent if the user approves it. The key-backed
+> no txid, since the request may still be open in the wallet and be sent if the user approves it: have the user
+> reject it in the wallet before you send again: checking the chain alone leaves it open, and approving it and a
+> resend sends twice. The key-backed
 > `cairn.chain.send` throws the same error (code `SUBMIT_MAYBE_INFLIGHT`) when its submit request fails after
 > signing, carrying the signed transaction as `nodeJson`: once the chain shows it did not land, resend it with
 > `cairn.chain.submit(e.nodeJson)` (the same coins under the same txid, so it cannot pay twice) rather than a new

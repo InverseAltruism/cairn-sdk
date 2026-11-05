@@ -309,6 +309,9 @@ console.log("=== a write the wallet may have submitted: WALLET_UNAVAILABLE and t
   ok("a timed-out write is maybe-sent: SubmitInFlightError code WALLET_TIMEOUT, no txid, retryable false",
     te instanceof SubmitInFlightError && te.code === "WALLET_TIMEOUT" && te.maybeSent === true && te.txid === undefined && te.retryable === false
     && /did not respond to fillOffer/.test(te.shortMessage));
+  // Checking the chain alone leaves the old approval window able to send a second payment after a resend.
+  ok("the timed-out write tells the user to reject the still-open wallet request before sending again",
+    te instanceof SubmitInFlightError && /reject it in the wallet/.test(te.shortMessage) && /before sending it again/.test(te.shortMessage));
   const hungRead = new WalletConnection(mockProvider({ getAddress: never }), { timeoutMs: 20 });
   const tr = await grab(() => hungRead.getAddress());
   ok("a timed-out getAddress stays a plain non-retryable CairnError (it sends nothing)",
