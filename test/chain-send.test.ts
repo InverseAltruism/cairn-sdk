@@ -1,7 +1,7 @@
 // Chain.send, the SDK's key-backed signer, over a stub node RPC: the input values it signs against are the ones
-// the chain commits (a source tx whose txid is the outpoint), the node's verdict reaches `ok`, and a submit
-// request that fails after signing keeps the signed txid. Offline.
-import { Chain, SubmitInFlightError } from "../src/index.js";
+// the chain commits (a source tx whose txid is the outpoint), the node's verdict reaches `ok`, a submit request that
+// fails after signing keeps the signed txid, and a 4xx refusal is final. Offline.
+import { CairnError, Chain, SubmitInFlightError } from "../src/index.js";
 import { addrFromPriv, txid, rpcTxToTx } from "../src/chain.js";
 
 let pass = 0, fail = 0;
@@ -68,6 +68,17 @@ console.log("Chain.send:");
     e instanceof SubmitInFlightError && e.code === "SUBMIT_MAYBE_INFLIGHT" && e.maybeSent === true && e.retryable === false
     && typeof signed.txid === "string" && e.txid === signed.txid && /HTTP 502/.test(e.shortMessage));
   ok("the failed submit was sent once (no retry of a POST)", submits(seen) === 1);
+}
+{
+  // A 4xx answer is a refusal before the node took anything: a proxy's 400 or 413 body cap (a send with many inputs)
+  // reaches no node, and every resend of the same transaction meets the same cap. Final, never "may be in flight".
+  const refusals = await Promise.all([400, 413].map(async (status) => {
+    const { chain, seen } = rpc(REAL, () => new Response("request entity too large", { status }));
+    return { status, e: await grab(() => send(chain)), sent: submits(seen) };
+  }));
+  ok("a submit answered HTTP 400 or 413 is a final SUBMIT_REJECTED CairnError naming the status, not SubmitInFlightError",
+    refusals.every(({ status, e, sent }) => e instanceof CairnError && !(e instanceof SubmitInFlightError) && e.code === "SUBMIT_REJECTED"
+      && e.retryable === false && e.shortMessage.includes(`HTTP ${status}`) && !/may have taken/.test(e.shortMessage) && sent === 1));
 }
 {
   // The error carries the signed transaction, so a caller can resend the identical one (same coins, same txid)

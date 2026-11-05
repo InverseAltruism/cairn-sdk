@@ -80,7 +80,7 @@ import { CsdClient, verifyInputValues } from "@inversealtruism/csd-client";
 import { LightClient } from "@inversealtruism/csd-light";
 import { buildSendVerified, type Utxo, type BuildResult } from "@inversealtruism/csd-tx";
 import { addrFromPriv } from "@inversealtruism/csd-crypto";
-import { SubmitInFlightError } from "./errors.js";
+import { CairnError, SubmitInFlightError } from "./errors.js";
 import type { FetchLike } from "./http.js";
 
 export interface ChainOptions {
@@ -127,7 +127,9 @@ export class Chain {
    * if any source can't be verified it signs nothing. Prefer this over the pure `buildSend`. Pass
    * `broadcast:false` to get the signed tx back without submitting. A submit request that fails after signing
    * throws a `SubmitInFlightError` carrying the signed `txid` and `nodeJson`: the node may have taken it, so check
-   * before resending, and resend that `nodeJson` with `submit` rather than a new send.
+   * before resending, and resend that `nodeJson` with `submit` rather than a new send. A 4xx answer (a proxy's
+   * body cap or rate limit, or the node refusing the request) broadcast nothing and throws a final `CairnError`
+   * with code `SUBMIT_REJECTED`.
    */
   async send(p: { priv: string; outputs: { to: string; value: number }[]; fee: number; maxFee?: number; broadcast?: boolean }): Promise<BuildResult & { submitResult?: import("@inversealtruism/csd-client").RpcSubmit }> {
     const from = addrFromPriv(p.priv);
@@ -140,7 +142,12 @@ export class Chain {
     let submitResult: import("@inversealtruism/csd-client").RpcSubmit;
     try { submitResult = await this.client.submit(built.nodeJson); }
     catch (e) {
-      throw new SubmitInFlightError(`the submit request failed after signing (${(e as Error)?.message ?? e}); the node may have taken the transaction, so check ${built.txid} before sending again`, "SUBMIT_MAYBE_INFLIGHT", built.txid, e, built.nodeJson);
+      const what = (e as Error)?.message ?? String(e);
+      // csd-client marks a 4xx answer terminal: a proxy's body cap or rate limit, or the node refusing the request
+      // before its handler runs. No answer, a timeout or a 5xx can follow the node taking the transaction.
+      if ((e as { terminal?: unknown })?.terminal === true)
+        throw new CairnError(`the submit request was refused (${what}), so nothing was broadcast; a 400 or 413 from a proxy is usually its request body cap (a transaction with many inputs), a 429 its rate limit`, { code: "SUBMIT_REJECTED", cause: e });
+      throw new SubmitInFlightError(`the submit request failed after signing (${what}); the node may have taken the transaction, so check ${built.txid} before sending again`, "SUBMIT_MAYBE_INFLIGHT", built.txid, e, built.nodeJson);
     }
     // CAIRNSDK-VP-4: reflect the node's accept/reject in the top-level `ok`. The node returns {ok:false} at
     // HTTP 200 on rejection (fee floor / double-spend / malformed) WITH a populated txid; without this a

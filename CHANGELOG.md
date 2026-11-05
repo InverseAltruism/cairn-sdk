@@ -61,7 +61,10 @@
   transport error escaped without the txid, so a caller could not check whether the transaction landed before
   sending again. `cairn.chain.submit(e.nodeJson)` resends the identical transaction (the same coins under the same
   txid, so it cannot pay twice), where a new send may select other coins. `SubmitInFlightError` gains the
-  optional `nodeJson` field for this; the wallet's in-flight errors do not carry it.
+  optional `nodeJson` field for this; the wallet's in-flight errors do not carry it. A 4xx answer is not in
+  flight: a proxy's 400 or 413 request body cap (a send with many inputs), a 429 rate limit or the node refusing
+  the request broadcast nothing, so it throws a final `CairnError` with code `SUBMIT_REJECTED` (`retryable: false`,
+  the message names the status), as the wallet's contract classifies the same answer.
 - The `/chain` subpath also re-exports csd-tx's `buildProposeVerified` and `buildAttestVerified`, and
   `examples/node-signer.mjs` builds proposes and attests with them. With the bare `buildPropose`/`buildAttest` the
   example computed change from the RPC's reported coin values, so an RPC that under-reports a coin made the
