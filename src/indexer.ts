@@ -41,6 +41,10 @@ const HEX64 = /^0x[0-9a-fA-F]{64}$/;
 const MAX_SSE_BUF = 1024 * 1024; // CAIRNSDK-DESER-1: cap the SSE inter-frame buffer (untrusted source → OOM)
 // csd-indexer's /address/:a/utxo page size (its UTXO_PAGE): a page of exactly this many rows may have a next one.
 const UTXO_PAGE = 1000;
+// The most pages addressUtxo reads: 100,000 rows, the LIMIT csd-indexer applied before it paged. Without it an
+// address with a million outputs, or an indexer whose pages never shorten, costs every reader one request per page
+// and holds every row in memory.
+const UTXO_MAX_PAGES = 100;
 const UTXO_CURSOR = /^\d{1,16}:0x[0-9a-fA-F]{64}:\d{1,10}$/;
 // The cursor csd-indexer takes for the page after `row`: <block_height>:<txid>:<vout>.
 function utxoCursor(row: unknown): string | null {
@@ -145,7 +149,8 @@ export class IndexerClient {
   }
 
   /** Every unspent output of an address. The indexer answers in pages of at most 1,000 rows; this follows its
-   *  `?after=` cursor until a short page. An indexer that predates paging answers the whole set at once. */
+   *  `?after=` cursor until a short page, reading at most 100 pages: when the 100th is full (100,000 or more
+   *  outputs) it throws HttpError instead. An indexer that predates paging answers the whole set at once. */
   async addressUtxo(a: string): Promise<unknown[]> {
     const path = `/address/${encodeURIComponent(a)}/utxo`;
     const first = await this.http.getJson<unknown[]>(path);
@@ -153,7 +158,9 @@ export class IndexerClient {
     const out = [...first];
     let page: unknown[] = first;
     let prev: string | null = null;
-    while (page.length === UTXO_PAGE) {
+    for (let pages = 1; page.length === UTXO_PAGE; pages++) {
+      if (pages === UTXO_MAX_PAGES)
+        throw new HttpError(200, this.http.url(path), `too many unspent outputs: addressUtxo reads at most ${UTXO_MAX_PAGES} pages of ${UTXO_PAGE} rows, and page ${UTXO_MAX_PAGES} is full`);
       const after = utxoCursor(page[UTXO_PAGE - 1]);
       if (!after) throw new HttpError(200, this.http.url(path), "malformed response: a utxo row has no block_height, txid and vout to page from");
       if (prev !== null && !cursorAfter(after, prev)) throw new HttpError(200, this.http.url(path, { after }), "malformed response: the utxo pages do not advance");

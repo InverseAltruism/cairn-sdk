@@ -119,6 +119,34 @@ console.log("indexer address reads:");
     const e = await grab(() => cairn.index.addressUtxo(A));
     ok("pages that stop advancing throw HttpError instead of looping", e instanceof HttpError && /do not advance/.test(String((e as Error).message)) && calls.length === 3);
   }
+  // The walk stops at 100 pages (100,000 rows, the LIMIT the indexer applied before it paged). Rows here sit one per
+  // block height, so a page's cursor is its last row's height.
+  const one = (h: number) => ({ txid: "0x" + "cd".repeat(32), vout: 0, value: 1, status: { confirmed: true, block_height: h } });
+  const pagesUpTo = (total: number) => {
+    let n = 0;
+    const fetch: typeof globalThis.fetch = (async (input: RequestInfo | URL) => {
+      n++;
+      const after = new URL(urlOf(input)).searchParams.get("after");
+      const from = after === null ? 0 : Number(after.split(":")[0]) + 1;
+      // 150 requests end the walk of a client without the cap, so that run fails instead of exhausting the heap.
+      const end = n > 150 ? from : Math.min(from + 1000, total);
+      return jsonRes(Array.from({ length: Math.max(0, end - from) }, (_, i) => one(from + i)));
+    }) as unknown as typeof globalThis.fetch;
+    return { cairn: new Cairn({ baseUrls: { cairn: "https://x.test" }, fetch }), requests: () => n };
+  };
+  {
+    // An indexer whose pages are always full and advancing (a hostile one, or an address with a million outputs).
+    const { cairn, requests } = pagesUpTo(Number.MAX_SAFE_INTEGER);
+    const e = await grab(() => cairn.index.addressUtxo(A));
+    ok("pages that never shorten stop at the 100-page cap: HttpError naming the cap after 100 requests",
+      e instanceof HttpError && /at most 100 pages of 1000 rows, and page 100 is full/.test(String((e as Error).message)) && requests() === 100);
+  }
+  {
+    const { cairn, requests } = pagesUpTo(99_999);
+    const got = await cairn.index.addressUtxo(A) as ReturnType<typeof one>[];
+    ok("happy: 99,999 unspent outputs (100 pages, the last one short) are all returned in order",
+      got.length === 99_999 && got.every((r, i) => r.status.block_height === i) && requests() === 100);
+  }
 }
 
 console.log(`\nindexer-address-reads: ${pass} passed, ${fail} failed`);

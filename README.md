@@ -56,7 +56,7 @@ try {
 
 ## API by namespace
 
-**`cairn.index`:** `tipHeight()`, `block()/blockTxids()`, `tx()/txStatus()/txMerkleProof()`, `address()/addressTxs()/addressUtxo()` (every unspent output, read in pages of 1,000), `domains()/domainProposals(domain)`, `proposal()/attestations()`, `reputation()`, **`verifyInclusion(txid)`** (proves `txid` is a node of a PoW-verified block's merkle tree; an inner node or a block's root folds too, so hash the transaction body you hold to get the id, see the guide), `streamAll()/streamBlocks()/streamDomain()` (SSE), `subscribe()` (WS).
+**`cairn.index`:** `tipHeight()`, `block()/blockTxids()`, `tx()/txStatus()/txMerkleProof()`, `address()/addressTxs()/addressUtxo()` (every unspent output, read in pages of 1,000 up to 100 pages; a full 100th page throws `HttpError`), `domains()/domainProposals(domain)`, `proposal()/attestations()`, `reputation()`, **`verifyInclusion(txid)`** (proves `txid` is a node of a PoW-verified block's merkle tree; an inner node or a block's root folds too, so hash the transaction body you hold to get the id, see the guide), `streamAll()/streamBlocks()/streamDomain()` (SSE), `subscribe()` (WS).
 
 **`cairn.names`:** `resolve(name)` (display-path name to address), `name(name)`/`nameHistory(name)`, `primary(addr)` (reverse lookup)/`namesOf(addr)`, `names()`, `tokens()/token(ticker)`, `offers()`/`bids()` (open rows by default; pass `{ status }` for another status, or `{ status: "all" }` for every row), `state()` (the canonical CairnX state). Reads go through the public `/trade/api/cairnx/*` proxy; for payment-grade name resolution verify through the wallet or a replaying resolver, not a bare read (see `src/names.ts` header).
 

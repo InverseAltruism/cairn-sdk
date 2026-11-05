@@ -53,6 +53,9 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
 - **RPC-trusted (display only):** balances / UTXO sets / history / prices. CSD headers carry no UTXO
   commitment, so non-spend can't be proven from headers, so `LightClient.balance()` is tagged
   `rpc-trusted` and never hides that. Verify what matters; treat balances as a hint.
+  `cairn.index.addressUtxo(addr)` reads an address's unspent outputs from the indexer in pages of 1,000 and
+  stops at 100 pages: when the 100th page is full (100,000 or more outputs, or an indexer whose pages never
+  end) it throws `HttpError` (`too many unspent outputs: ...`) instead of reading on.
 - **Indexer = untrusted derived view:** the `IndexerClient` re-folds Merkle proofs
   (`verifyInclusion`). `verifyInclusion()` folds the proof and checks its root against a header from
   `headerMerkleAt`. What it proves is that a 32-byte value is a node of that block's merkle tree, not that
