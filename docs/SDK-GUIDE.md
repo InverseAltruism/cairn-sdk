@@ -119,7 +119,10 @@ optionally `opts.fillTargetId` (the proposal id your attest will target), to run
 `fillEndorsement` over the served state after the binds. The result then carries `endorsement` (`{ verdict,
 reason }`) and `fillTarget` (the id the attest must target at that tip: the offer id, or the fclaim txid
 while a live V28 reservation routes the offer). A `refused` verdict answers `ok: false`; `not-endorsable` (a
-token-priced want, whose delivery depends on your token balance) is not a refusal. Every result that carries
+token-priced want, whose delivery depends on your token balance) is not a refusal. The claim fields the
+endorsement reads (`claimedBy`, `claimUntilHeight`, `claimTxid`) are served by the resolver too, like `paid`, and
+`fillTarget` is derived from them: a resolver that serves `claimedBy` as your address turns `refused` into
+`endorsed` and `ok: true`, so rely on the Cairn Wallet's own fill preflight for the claim as well. Every result that carries
 the proven `terms` also carries the proven expiry: `expiresEpoch` and `expiresAt`, the first block height at
 which CairnX treats the offer as expired. A fill must be mined below `expiresAt`, so compare it with your tip.
 
