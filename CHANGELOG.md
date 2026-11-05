@@ -52,9 +52,12 @@
   `RPC_BLOCK_MISMATCH` (wallet 0.2.99+, the V28 reservation lane) are final. Every code in the wallet 0.3.1
   contract is now classified, except `RESERVATION_UNCONFIRMED`, which never reaches a page.
 - `cairn.chain.send` (the key-backed signer) throws a `SubmitInFlightError` (code `SUBMIT_MAYBE_INFLIGHT`, the
-  signed `txid`, the transport error as `cause`) when the submit request fails after signing, for example a proxy
-  502 that can follow the node taking the transaction. Before, the raw transport error escaped without the txid,
-  so a caller could not check whether the transaction landed before sending again.
+  signed `txid`, the signed transaction as `nodeJson`, the transport error as `cause`) when the submit request
+  fails after signing, for example a proxy 502 that can follow the node taking the transaction. Before, the raw
+  transport error escaped without the txid, so a caller could not check whether the transaction landed before
+  sending again. `cairn.chain.submit(e.nodeJson)` resends the identical transaction (the same coins under the same
+  txid, so it cannot pay twice), where a new send may select other coins. `SubmitInFlightError` gains the
+  optional `nodeJson` field for this; the wallet's in-flight errors do not carry it.
 - The `/chain` subpath also re-exports csd-tx's `buildProposeVerified` and `buildAttestVerified`, and
   `examples/node-signer.mjs` builds proposes and attests with them. With the bare `buildPropose`/`buildAttest` the
   example computed change from the RPC's reported coin values, so an RPC that under-reports a coin made the

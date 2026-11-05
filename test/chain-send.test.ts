@@ -18,16 +18,17 @@ const SRC_ID = txid(rpcTxToTx(src as unknown as Parameters<typeof rpcTxToTx>[0])
 // reported: the value the RPC's /utxos claims; submit: what POST /tx/submit answers.
 function rpc(reported: number, submit: () => Response) {
   const seen: string[] = [];
+  const posted: string[] = [];   // the bodies of POST /tx/submit
   const j = (o: unknown) => new Response(JSON.stringify(o), { status: 200, headers: { "content-type": "application/json" } });
   const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     seen.push(`${init?.method ?? "GET"} ${url}`);
     if (url.includes(`/utxos/${FROM}`)) return j({ utxos: [{ txid: SRC_ID, vout: 0, value: reported, confirmations: 10 }], confirmed_balance: reported });
     if (url.endsWith(`/tx/${SRC_ID}`)) return j({ ok: true, height: 100, tx: src });
-    if (url.endsWith("/tx/submit")) return submit();
+    if (url.endsWith("/tx/submit")) { posted.push(String(init?.body)); return submit(); }
     return new Response("not found", { status: 404 });
   }) as unknown as typeof globalThis.fetch;
-  return { chain: new Chain({ rpcUrl: "https://rpc.test/api/rpc", fetch }), seen };
+  return { chain: new Chain({ rpcUrl: "https://rpc.test/api/rpc", fetch }), seen, posted };
 }
 const accepted = () => new Response(JSON.stringify({ ok: true, txid: "x" }), { status: 200, headers: { "content-type": "application/json" } });
 const send = (chain: Chain) => chain.send({ priv: PRIV, outputs: [{ to: TO, value: 100_000_000 }], fee: 1_000_000 });
@@ -67,6 +68,19 @@ console.log("Chain.send:");
     e instanceof SubmitInFlightError && e.code === "SUBMIT_MAYBE_INFLIGHT" && e.maybeSent === true && e.retryable === false
     && typeof signed.txid === "string" && e.txid === signed.txid && /HTTP 502/.test(e.shortMessage));
   ok("the failed submit was sent once (no retry of a POST)", submits(seen) === 1);
+}
+{
+  // The error carries the signed transaction, so a caller can resend the identical one (same coins, same txid)
+  // instead of building a new one that may select other coins.
+  let n = 0;
+  const { chain, posted } = rpc(REAL, () => (++n === 1 ? new Response("bad gateway", { status: 502 }) : accepted()));
+  const signed = await chain.send({ priv: PRIV, outputs: [{ to: TO, value: 100_000_000 }], fee: 1_000_000, broadcast: false });
+  const e = await grab(() => send(chain)) as SubmitInFlightError;
+  const resent = e instanceof SubmitInFlightError && e.nodeJson !== undefined ? await chain.submit(e.nodeJson) : undefined;
+  ok("a submit that throws after signing carries the signed transaction (nodeJson), equal to the broadcast:false build",
+    e instanceof SubmitInFlightError && JSON.stringify(e.nodeJson) === JSON.stringify(signed.nodeJson));
+  ok("chain.submit(e.nodeJson) resends the byte-identical body the failed submit posted",
+    resent?.ok === true && posted.length === 2 && posted[1] === posted[0] && JSON.stringify(JSON.parse(posted[0]!).tx) === JSON.stringify(signed.nodeJson));
 }
 
 console.log("the verified propose and attest builders on the /chain subpath:");

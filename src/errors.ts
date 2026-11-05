@@ -4,6 +4,8 @@
 // carries a stable `code`, a `shortMessage`, an optional `docsPath`, the SDK `version`, and `.walk()`
 // to inspect the cause chain.
 
+import type { NodeTxJson } from "@inversealtruism/csd-tx";
+
 /** Stable machine-readable error codes (branch on these, not the message text). */
 export type CairnErrorCode =
   | "NOT_INSTALLED"
@@ -190,11 +192,16 @@ export class ContentVerificationError extends CairnError {
 export class SubmitInFlightError extends CairnError {
   /** The locally-computed consensus txid to reconcile against the chain (undefined when it is not known). */
   readonly txid?: string;
+  /** The signed transaction, set only when `Chain.send` threw this (a wallet write keeps it in the wallet).
+   *  `chain.submit(nodeJson)` resends it unchanged: the same coins under the same txid, so it cannot pay twice,
+   *  where a new send may select other coins. */
+  readonly nodeJson?: NodeTxJson;
   /** Always true: the tx MAY be in the mempool. Reconcile via `txid` or the balance; never blind-retry. */
   readonly maybeSent = true;
-  constructor(message: string, code: "SUBMIT_MAYBE_INFLIGHT" | "SUBMIT_DUPLICATE" | "WALLET_UNAVAILABLE" | "WALLET_TIMEOUT", txid?: string, cause?: unknown) {
+  constructor(message: string, code: "SUBMIT_MAYBE_INFLIGHT" | "SUBMIT_DUPLICATE" | "WALLET_UNAVAILABLE" | "WALLET_TIMEOUT", txid?: string, cause?: unknown, nodeJson?: NodeTxJson) {
     super(message, { code, docsPath: "/errors#submit-inflight", retryable: false, cause });
     this.txid = txid;
+    this.nodeJson = nodeJson;
   }
 }
 

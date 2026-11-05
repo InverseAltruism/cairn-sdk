@@ -126,7 +126,8 @@ export class Chain {
    * computes change from the VERIFIED total — closing the UTXO-VALUE-1 implicit-fee-burn. Fail-closed:
    * if any source can't be verified it signs nothing. Prefer this over the pure `buildSend`. Pass
    * `broadcast:false` to get the signed tx back without submitting. A submit request that fails after signing
-   * throws a `SubmitInFlightError` carrying the signed `txid`: the node may have taken it, so check before resending.
+   * throws a `SubmitInFlightError` carrying the signed `txid` and `nodeJson`: the node may have taken it, so check
+   * before resending, and resend that `nodeJson` with `submit` rather than a new send.
    */
   async send(p: { priv: string; outputs: { to: string; value: number }[]; fee: number; maxFee?: number; broadcast?: boolean }): Promise<BuildResult & { submitResult?: import("@inversealtruism/csd-client").RpcSubmit }> {
     const from = addrFromPriv(p.priv);
@@ -139,7 +140,7 @@ export class Chain {
     let submitResult: import("@inversealtruism/csd-client").RpcSubmit;
     try { submitResult = await this.client.submit(built.nodeJson); }
     catch (e) {
-      throw new SubmitInFlightError(`the submit request failed after signing (${(e as Error)?.message ?? e}); the node may have taken the transaction, so check ${built.txid} before sending again`, "SUBMIT_MAYBE_INFLIGHT", built.txid, e);
+      throw new SubmitInFlightError(`the submit request failed after signing (${(e as Error)?.message ?? e}); the node may have taken the transaction, so check ${built.txid} before sending again`, "SUBMIT_MAYBE_INFLIGHT", built.txid, e, built.nodeJson);
     }
     // CAIRNSDK-VP-4: reflect the node's accept/reject in the top-level `ok`. The node returns {ok:false} at
     // HTTP 200 on rejection (fee floor / double-spend / malformed) WITH a populated txid; without this a
