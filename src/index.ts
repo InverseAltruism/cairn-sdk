@@ -372,7 +372,11 @@ export class Cairn {
         const haveTo = spvTipOf(lc);
         let r = await lc.verifyTxInclusion(txidHex);
         if (r.trustLevel === "rpc-trusted" && SPV_BEYOND_TIP.test(r.reason ?? "")) {
-          const tipHeight = Number((await this.chain.tip()).height);
+          // A failed tip read says nothing about the cached headers, so it must not reach withSpvReseed's
+          // structural branch: answer csd-light's rpc-trusted verdict, which preverifyOffer reports as transient.
+          let tipHeight: number;
+          try { tipHeight = Number((await this.chain.tip()).height); }
+          catch (e) { return { ...r, reason: `${r.reason} (the node tip read failed: ${(e as Error)?.message ?? e})` }; }
           if (Number.isSafeInteger(tipHeight) && tipHeight > spvTipOf(lc)) await lc.sync(tipHeight);
           r = await lc.verifyTxInclusion(txidHex);
         }

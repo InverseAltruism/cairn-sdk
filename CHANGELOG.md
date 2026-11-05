@@ -8,7 +8,8 @@
   above the SDK's cached header tip (an instance alive for about 8.5 hours or more, or one whose header pre-warm
   failed). csd-light syncs on demand only within 256 blocks; past that the fill check now reads the node tip once,
   syncs the header cache to it through `/api/headers` (512 headers a request), and asks again. That is the only
-  added cost, paid once per such gap; a check on a fresh cache adds no request.
+  added cost, paid once per such gap; a check on a fresh cache adds no request. A tip read that fails (a 403 or
+  any other error) answers `transient` and keeps the header cache instead of reseeding it.
 - Concurrent `cairn.index.verifyInclusion` and `cairn.verifyOfferForFill` calls on one `Cairn` instance share the
   header sync: the facade's light client runs one `sync` at a time, and a call that finds one in flight waits for
   it and then syncs only what is still missing. Before, csd-light refused the second of two overlapping syncs

@@ -667,6 +667,8 @@ console.log("\nP75-5 fill-surface guards:");
       let tipNow: number | null = prewarmTip;
       // Delays every /api/headers answer after the seed, so two concurrent checks' syncs overlap.
       let headerDelayMs = 0;
+      // Once set, /api/rpc/tip answers this HTTP status instead of the height.
+      let tipStatus = 0;
       const j = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json" } });
       const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: (async (input: RequestInfo | URL) => {
         const url = String(input);
@@ -677,7 +679,7 @@ console.log("\nP75-5 fill-surface guards:");
           const rows = Array.from({ length: Number(m[2]) }, (_, i) => rowAt(Number(m[1]) + i));
           return rows.every(Boolean) ? j({ ok: true, headers: rows }) : j({ error: "beyond tip" }, 503);
         }
-        if (/\/api\/rpc\/tip$/.test(url)) return tipNow === null ? new Response("bad gateway", { status: 502 }) : j({ height: tipNow });
+        if (/\/api\/rpc\/tip$/.test(url)) return tipStatus ? new Response("forbidden", { status: tipStatus }) : tipNow === null ? new Response("bad gateway", { status: 502 }) : j({ height: tipNow });
         const t = url.match(/\/api\/rpc\/tx\/(0x[0-9a-f]{64})$/);
         if (t && t[1] === tx.id) return j({ ok: true, height: OFFER_H, tx: tx.json });
         if (t && prevoutOf.has(t[1]!)) return j({ ok: true, tx: prevoutOf.get(t[1]!) });
@@ -692,7 +694,7 @@ console.log("\nP75-5 fill-surface guards:");
         height <= TIP ? realVerify(height, header, window, parent, claimedHash) : { height, hash: claimedHash, header, chainwork: (parent?.chainwork ?? 0n) + 1n };
       const cachedTip = (lc.baseHeight as number) + (lc.chain as unknown[]).length - 1;
       tipNow = OFFER_H;
-      return { cairn, seen, cachedTip, slowHeaders: (ms: number) => { headerDelayMs = ms; } };
+      return { cairn, seen, cachedTip, slowHeaders: (ms: number) => { headerDelayMs = ms; }, failTip: (status: number) => { tipStatus = status; } };
     };
     const headersFrom = (seen: string[], above: number) => seen.filter((u) => { const m = u.match(/\/api\/headers\/(\d+)\//); return !!m && Number(m[1]) > above; });
     const tipReads = (seen: string[]) => seen.filter((u) => /\/api\/rpc\/tip$/.test(u)).length;
@@ -749,6 +751,17 @@ console.log("\nP75-5 fill-surface guards:");
         rn.ok === true && rn.blockHeight === NEAR_H && rf.ok === true && rf.blockHeight === OFFER_H);
       await ok("[concurrent, mixed gaps] csd-light's own sync and the fill handle's never fetch a height twice; no reseed", () =>
         fetchedOnce(during, cachedTip) && seedReads(during) === 0);
+    }
+    {
+      // The fill handle's node tip read answers 403, which the SPV split does not count as transient. The tip read
+      // says nothing about the cached headers, so the check answers transient on the kept cache.
+      const { cairn, seen, failTip } = await facade(TIP);
+      failTip(403);
+      const before = seen.length;
+      const r = await cairn.verifyOfferForFill(tx.id);
+      const during = seen.slice(before);
+      await ok("[gap>256, tip 403] a failed node tip read answers transient, one tip read and no checkpoint reseed", () =>
+        r.ok === false && r.transient === true && tipReads(during) === 1 && seedReads(during) === 0);
     }
   }
 }
