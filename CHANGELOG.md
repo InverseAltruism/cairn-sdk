@@ -52,7 +52,9 @@
 - Three wallet codes keep their code instead of reading `UNKNOWN`: `SEAL_NOT_MINED` (wallet 0.2.74+, `revealClaim`
   before the sealed commit is mined) is now retryable, as the wallet's contract says; `RESERVATION_DENIED` and
   `RPC_BLOCK_MISMATCH` (wallet 0.2.99+, the V28 reservation lane) are final. Every code in the wallet 0.3.1
-  contract is now classified, except `RESERVATION_UNCONFIRMED`, which never reaches a page.
+  contract is now classified, except `RESERVATION_UNCONFIRMED`, which never reaches a page; two keep the SDK's
+  code rather than the wallet's, as before: `UNKNOWN_KIND` throws `UnsupportedMethodError` (`UNSUPPORTED_METHOD`)
+  and `APPROVAL_CLOSED` throws `UserRejectedError` (`USER_REJECTED`), both final.
 - `cairn.chain.send` (the key-backed signer) throws a `SubmitInFlightError` (code `SUBMIT_MAYBE_INFLIGHT`, the
   signed `txid`, the signed transaction as `nodeJson`, the transport error as `cause`) when the submit request
   fails after signing, for example a proxy 502 that can follow the node taking the transaction. Before, the raw

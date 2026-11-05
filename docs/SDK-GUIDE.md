@@ -183,9 +183,10 @@ a 2xx body whose shape is wrong, such as a names list read that is not an array)
 outlasted the connection timeout; see below), `UNKNOWN`.
 
 > **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the
-> source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error and
-> classify every code listed there as of wallet 0.3.1 except `RESERVATION_UNCONFIRMED`, which the wallet returns
-> to its approval window only: retryable (`VERIFY_UNAVAILABLE`, `OFFER_UNKNOWN`, `REVIEW_REQUIRED`,
+> source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error (except
+> `UNKNOWN_KIND`, which throws `UnsupportedMethodError` with `UNSUPPORTED_METHOD`, and `APPROVAL_CLOSED`, which
+> throws `UserRejectedError` with `USER_REJECTED`) and classify every code listed there as of wallet 0.3.1 except
+> `RESERVATION_UNCONFIRMED`, which the wallet returns to its approval window only: retryable (`VERIFY_UNAVAILABLE`, `OFFER_UNKNOWN`, `REVIEW_REQUIRED`,
 > `SEAL_NOT_MINED`, and `WALLET_UNAVAILABLE` on `connect` and `getAddress`: nothing was sent), in flight
 > (`SUBMIT_MAYBE_INFLIGHT`, `SUBMIT_DUPLICATE`, and `WALLET_UNAVAILABLE` on a write method: `send`,
 > `fillOffer`, `propose`, `attest`, `sealClaim`, `revealClaim`), and final (every other code, including
