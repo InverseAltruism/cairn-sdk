@@ -472,6 +472,10 @@ console.log("\nP75-5 fill-surface guards:");
     const r = await run(bound, { servedOffer: servedFor({ id: bound.id, taker: ATTACKER }), me: BUYER, tip: H + 10 });
     return r.ok === false && r.trust === "verified" && /CairnX would refuse this fill \(taker-bound offer - not bound to you\)/.test(r.reason ?? "") && r.endorsement?.verdict === "refused";
   });
+  await ok("[taker] the refused fill carries no plan to build (sized false, no outputPlan), as a served non-open status", async () => {
+    const r = await run(bound, { servedOffer: servedFor({ id: bound.id, taker: ATTACKER }), me: BUYER, tip: H + 10 });
+    return r.ok === false && r.sized === false && r.outputPlan === undefined && /the fill is refused/.test(r.planReason ?? "");
+  });
   await ok("[taker honest] the bound taker itself is endorsed, the plan sized and the target the offer id", async () => {
     const r = await run(bound, { servedOffer: servedFor({ id: bound.id, taker: ATTACKER }), me: ATTACKER, tip: H + 10 });
     return r.ok === true && r.endorsement?.verdict === "endorsed" && r.fillTarget === bound.id && r.sized === true && Array.isArray(r.outputPlan);

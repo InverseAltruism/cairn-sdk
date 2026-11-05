@@ -118,7 +118,8 @@ address that signs the fill) and `opts.tip` (the chain tip height you sign at) t
 optionally `opts.fillTargetId` (the proposal id your attest will target), to run cairnx-core's
 `fillEndorsement` over the served state after the binds. The result then carries `endorsement` (`{ verdict,
 reason }`) and `fillTarget` (the id the attest must target at that tip: the offer id, or the fclaim txid
-while a live V28 reservation routes the offer). A `refused` verdict answers `ok: false`; `not-endorsable` (a
+while a live V28 reservation routes the offer). A `refused` verdict answers `ok: false` with no `outputPlan`
+(`sized: false`), as a served status other than `open` does; `not-endorsable` (a
 token-priced want, whose delivery depends on your token balance) is not a refusal. The claim fields the
 endorsement reads (`claimedBy`, `claimUntilHeight`, `claimTxid`) are served by the resolver too, like `paid`, and
 `fillTarget` is derived from them: a resolver that serves `claimedBy` as your address turns `refused` into

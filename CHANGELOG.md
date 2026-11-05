@@ -21,8 +21,9 @@
   chain tip height) and `fillTargetId` (the proposal id the attest targets). With `me`, `tip` and `pay` they run
   cairnx-core's `fillEndorsement` over the served state after the binds: an offer bound to another taker, an open
   CSD offer the caller holds no live claim or reservation on, or an attest target the offer's routing rejects
-  answers `ok: false` with `CairnX would refuse this fill (<reason>) - do not sign it`. The result then carries
-  `endorsement` (`{ verdict, reason }`) and `fillTarget`. A token-priced want is `not-endorsable`, never refused.
+  answers `ok: false` with `CairnX would refuse this fill (<reason>) - do not sign it` and no `outputPlan`
+  (`sized: false`), as a served status other than `open` does. The result then carries `endorsement` (`{ verdict,
+  reason }`) and `fillTarget`. A token-priced want is `not-endorsable`, never refused.
   `me` without `tip` or `pay` answers `ok: false` ("invalid fill inputs: ..."), as does the endorsement without a
   served offer. Without these inputs nothing new is refused by them, and `ok` still says only that the record
   is proven.

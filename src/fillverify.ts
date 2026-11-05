@@ -66,7 +66,8 @@ export interface OfferFillCheck {
   expiresAt?: number;
   /** B7b (REBIND W3/M1): the PROVEN CSD outputs to build for `pay` (a WHOLE fill of a non-partial offer),
    *  sized from the merkle-proven offer by the single-sourced `fillOutputPlan`. Present only when `pay` was
-   *  passed, the served offer carried a `status` and the offer could be sized. Build EXACTLY these; never the
+   *  passed, the served offer carried a `status`, the offer could be sized and the fill is not refused (a served
+   *  non-open status or a refused endorsement drops it). Build EXACTLY these; never the
    *  resolver-served outputs a lying resolver could redirect. A partial (min-bearing) offer is left unsized
    *  (its running paid/delivered is not provable at this corroboration layer; the wallet's fill-SPV is the
    *  payment-grade sizer). Liveness is never proven here: the plan is sized only for the status the resolver
@@ -254,12 +255,14 @@ function judgeFill(
     if (typeof status !== "string") j.refusal ??= "the fill endorsement needs the resolver's offer object (its status, claim and progress) - pass servedOffer";
     else if (rec.min !== undefined && !progress) j.refusal ??= "the served offer is missing paid or delivered (a partial offer's progress) - pass the resolver's full offer object";
     else {
+      // A refused fill keeps no plan to build, as a status refusal sizes none.
+      const unplan = () => { delete j.outputPlan; j.planBound = false; j.planReason = "the fill is refused, so no output plan was sized"; };
       try {
         const e = fillEndorsement(state, f.me, f.pay, f.tip, f.fillTargetId !== undefined ? { fillTargetId: f.fillTargetId } : undefined);
         j.endorsement = { verdict: e.verdict, reason: e.reason };
         j.fillTarget = fillTargetOf(state, f.tip);
-        if (e.verdict === "refused") j.refusal ??= `CairnX would refuse this fill (${e.reason}) - do not sign it`;
-      } catch (e) { j.refusal ??= `couldn't judge the fill against the offer (${err(e)}) - refusing`; }
+        if (e.verdict === "refused") { j.refusal ??= `CairnX would refuse this fill (${e.reason}) - do not sign it`; unplan(); }
+      } catch (e) { j.refusal ??= `couldn't judge the fill against the offer (${err(e)}) - refusing`; unplan(); }
     }
   }
   return j;
