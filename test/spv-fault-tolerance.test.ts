@@ -179,5 +179,23 @@ console.log("P75-5 SPV fault tolerance (MF-14 seed + MF-03 reseed):");
   ok("C4: one forward sync (115404/8) and one seed, no reseed", seen.filter((u) => /\/api\/headers\/115404\//.test(u)).length === 1 && seedCount(seen) === 1);
 }
 
+// C5: two concurrent reads share one forward sync, so a structural break in it (a broken prev link at 115404, once)
+// reaches both; they share one reseed instead of each reseeding from the checkpoint.
+{
+  const seen: string[] = [];
+  let fwd = 0;
+  const onHeaders = (from: number, count: number): Response | undefined => {
+    if (from !== 115404 || ++fwd > 1) return undefined;
+    const bad = cloneRows(sliceRows(from, count));
+    bad[0]!.header.prev = "0x" + "00".repeat(32);
+    bad[0]!.hash = headerHash(bad[0]!.header);
+    return jsonRes({ ok: true, headers: bad });
+  };
+  const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: mkStub({ tip: 115403, seen, onHeaders }) });
+  const [a, b] = await Promise.all([cairn.index.verifyInclusion(M), cairn.index.verifyInclusion(M)]);
+  ok("C5: two concurrent reads over one structural break both reach verified-inclusion", a.trustLevel === "verified-inclusion" && b.trustLevel === "verified-inclusion");
+  ok("C5: one shared reseed - seed count (115358/46) == 2", seedCount(seen) === 2);
+}
+
 console.log(`\nspv-fault-tolerance: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

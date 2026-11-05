@@ -143,6 +143,9 @@ export class Cairn {
   // syncFromCheckpoint calls onto the same client (the loser would hit "seedTrusted must be called on a
   // fresh client"). Cleared when the seed settles; a failure leaves no cached state, so the next call retries.
   private _spvSeedInflight: Promise<LightClient> | null = null;
+  // The in-flight reseed of withSpvReseed, shared by callers whose structural failures overlap. Cleared when it
+  // settles; each caller still commits the fresh client only after its own retry succeeds.
+  private _spvReseedInflight: Promise<LightClient> | null = null;
   private readonly _spvCp: { height: number; hash: string };
   // W12: the cairn base the SPV header-batch provider fetches /api/headers from (same base the rest of the SDK uses).
   private readonly _cairnBase: string;
@@ -211,13 +214,15 @@ export class Cairn {
   // (rate limit / gateway / timeout / non-dense / CF 200-HTML) keeps the cache and rethrows: wiping
   // on those turns one /api/headers 429 into a reseed storm (DOS-HDR-3). A second structural
   // failure propagates fail-closed; there is no loop. recheckCachedHeader feeds this path: a near-tip
-  // cached header that the served chain no longer carries is a structural failure.
+  // cached header that the served chain no longer carries is a structural failure. Callers whose failures overlap
+  // (waiters on one shared sync) share one reseed.
   private async withSpvReseed<T>(op: (lc: LightClient) => Promise<T>): Promise<T> {
     const lc = await this.seededSpvLight();
     try { return await op(lc); }
     catch (e) {
       if (spvIsTransient(e)) throw e;
-      const fresh = await this.seedFreshSpvLight();
+      this._spvReseedInflight ??= this.seedFreshSpvLight().finally(() => { this._spvReseedInflight = null; });
+      const fresh = await this._spvReseedInflight;
       const out = await op(fresh);
       this._spvLight = fresh;
       return out;
