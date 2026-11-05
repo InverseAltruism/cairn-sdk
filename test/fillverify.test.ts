@@ -512,6 +512,13 @@ console.log("\nP75-5 fill-surface guards:");
     const b = await preverifyOffer({ light, client: mockClient, offerId: open.id, me: BUYER, tip: H });
     return [a, b].every((x) => x.ok === false && /invalid fill inputs/.test(x.reason ?? "")) && reads === 0;
   });
+  await ok("[inputs] a `me` that is not a 0x address (with tip and pay) is refused as invalid before any chain read", async () => {
+    let reads = 0;
+    const light = { async verifyTxInclusion() { reads++; return mockLight(open.json, open.phash).verifyTxInclusion(""); } };
+    const bad = await Promise.all([BUYER.slice(0, -1), BUYER.slice(2), "alice.csd"].map((me) =>
+      preverifyOffer({ light, client: mockClient, offerId: open.id, servedOffer: servedFor({ id: open.id }), pay: "500000000", me, tip: H + 10 })));
+    return bad.every((x) => x.ok === false && /invalid fill inputs/.test(x.reason ?? "")) && reads === 0;
+  });
   await ok("[inputs] me and tip without the served offer are refused (the endorsement needs its status and claim)", async () => {
     const r = await run(open, { me: BUYER, tip: H + 10 });
     return r.ok === false && /needs the resolver's offer object/.test(r.reason ?? "");
