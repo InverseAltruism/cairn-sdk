@@ -1,5 +1,5 @@
 // Minimal typed fetch wrapper shared by the HTTP clients. Pluggable `fetch` so
-// the SDK runs unchanged in the browser, Node 18+, and MV3 service workers.
+// the SDK runs unchanged in the browser, Node 22+, and MV3 service workers.
 
 import { HttpError } from "./errors.js";
 

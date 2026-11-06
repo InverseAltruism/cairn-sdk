@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.2
 
 ### Changed
 
@@ -25,17 +25,20 @@
   CSD offer the caller holds no live claim or reservation on, or an attest target the offer's routing rejects
   answers `ok: false` with `CairnX would refuse this fill (<reason>) - do not sign it` and no `outputPlan`
   (`sized: false`), as a served status other than `open` does. The result then carries `endorsement` (`{ verdict,
-  reason }`) and `fillTarget`. A token-priced want is `not-endorsable`, never refused.
+  reason }`) and `fillTarget`. A token-priced want is `not-endorsable`, never refused. The claim fields the
+  endorsement reads (`claimedBy`, `claimUntilHeight`, `claimTxid`) are resolver-served, like `paid`: a resolver
+  that serves `claimedBy` as the caller turns `refused` into `endorsed`.
   `me` without `tip` or `pay` answers `ok: false` ("invalid fill inputs: ..."), as does the endorsement without a
   served offer. Without these inputs nothing new is refused by them, and `ok` still says only that the record
   is proven.
-- Not judged yet (recorded 2026-11-05): `me` and `tip` do not refuse a fill of an offer that expires too soon.
-  cairnx-core's `fillEndorsement` does not check expiry, and the rule, `offerFillTooLate(expiresAt, tip)`, is new
-  in cairnx-core 0.2.4, while this release keeps the 0.2.3 pin; a local copy would give the rule a second home.
-  The re-pin to 0.2.4 adds `offerFillTooLate(expiresAt, tip)` to `judgeFill`, with a test. Until then compare the
-  result's `expiresAt` with your tip: CairnX's client policy refuses a fill once `expiresAt - 1 < tip + 4`
-  (cairnx-core `FILL_TIP_MARGIN`), and for an offer anchored before V22 whose expiry the v2.1 cap shortened, a late
-  fill can still be mined, paying and delivering nothing.
+- With `me` and `tip`, a fill too close to the offer's expiry is refused: cairnx-core 0.2.4's
+  `offerFillTooLate(expiresAt, tip)` is true once the offer's last live block (`expiresAt - 1`) is fewer than
+  `FILL_TIP_MARGIN` (4) blocks above `tip`, and the result answers `ok: false` with no `outputPlan` (`sized: false`)
+  and `the offer's last live block <h> leaves less than the 4-block cushion above tip <tip>, so the fill is too close
+  to the offer's expiry - do not sign it`. `fillEndorsement` does not check expiry. A fill not mined by that block is
+  refused by the node; for an offer anchored before V22 whose expiry the v2.1 cap shortened, the resolver expires the
+  offer while the node still mines its attests, so a late fill there pays and delivers nothing. Without `me` and
+  `tip` nothing new is refused; compare `expiresAt` with your tip.
 - With `pay`, the result carries `sized` (`true` when `outputPlan` holds the proven outputs for that pay).
   A partially fillable offer stays unsized, but with a served offer carrying its `paid` and `delivered` a pay
   that cairnx-core's `previewFill` says delivers nothing (below the minimum, or zero tokens) is refused: `this pay
@@ -86,6 +89,9 @@
 - Docs: `verifyInclusion(txid)` proves that `txid` is a node of a PoW-verified block's merkle tree. An inner node
   or a block's merkle root folds as well (the tree has no leaf and node separation), so the guide and the README
   now say to hash a transaction body you hold instead of calling the check trust-minimized for any id.
+- Docs: the type declarations no longer say that `/api/headers` serves no CORS header and is out of reach of a
+  cross-origin dApp; the cairn server mounts its public CORS on that route. The 0.8.1 entry no longer says the two
+  activation gates are unchecked: cairnx-core 0.2.3, which 0.8.1 pins, refuses both.
 - `cairn.index.addressUtxo(addr)` follows the indexer's pages: csd-indexer's `/address/:a/utxo` now answers at most
   1,000 rows in (height, txid, vout) order with `?after=<height>:<txid>:<vout>` for the next page, and the method
   reads pages until a short one, so it returns every unspent output (one request per 1,000 rows) up to 100 pages,
@@ -95,9 +101,33 @@
   predates paging answers the whole set in one request, as before. Pages that do not advance throw `HttpError`
   (`malformed response: the utxo pages do not advance`) instead of looping. Against an indexer that pages, 0.8.1
   and earlier return the first 1,000 rows only.
+- `package.json` declares `engines.node` `>=22`; the source comments said Node 18+. csd-client reads a u64
+  exactly only where JSON.parse hands a reviver the source text, which Node 22 does. On a runtime without it, one
+  integer at or above 2^53 in a block makes every transaction in that block unverifiable through the SDK, so
+  `cairn.verifyOfferForFill` answers `transient` on every retry for an honest offer in that block. An install on
+  Node 18 or 20 warns under npm (`EBADENGINE`), installs silently under pnpm, and fails under `engine-strict` or
+  yarn classic.
 - Repository only (not in the package): the secret scan's `.gitleaks.toml` is csd-sdk's, which adds a rule for 64
   hex digits assigned to a name containing priv, secret or seed and anchors the `user:pass` allowlist row at both
-  ends. The default rules missed `PRIV = "0x.."`, `{ priv: "0x.." }` and `Environment=MM_PRIV=..`.
+  ends. The default rules missed `PRIV = "0x.."`, `{ priv: "0x.." }` and `Environment=MM_PRIV=..`. CI runs on
+  `ubuntu-24.04` instead of `ubuntu-latest`.
+- Tests: the whole-fill `outputPlan`'s amounts are pinned leg by leg, a payto-less offer served with another
+  `want.payto` is refused, `verifyInclusion`'s fold refusal is pinned with a header source, a malformed `me` is
+  refused before any chain read, `test/dep-pins.test.mjs` fails once the pinned cairnx-core exports
+  `offerFillTooLate` while `judgeFill` does not call it, and `test/runtime-floor.test.mjs` pins the `engines` floor.
+
+### Dependencies
+
+- Re-pinned to the csd-sdk window of 2026-11-06: cairnx-core 0.2.3 to 0.2.4, csd-crypto 0.1.20 to 0.1.21, csd-tx
+  0.1.23 to 0.1.24, and the dev dependency csd-siwc 0.1.21 to 0.1.22. csd-client 0.1.20, csd-codec 0.1.18 and
+  csd-light 0.1.26 stay. No dependency added; the tree keeps one csd-codec and one csd-crypto.
+- csd-crypto 0.1.21's `verifyDigest`, re-exported from `/chain`, reads the 64 signature bytes as compact r || s only,
+  the node's rule: a node-valid compact signature whose bytes are also DER-shaped now verifies, and a 64-byte DER
+  signature, which the node refuses, no longer does. `preverifyOffer`'s author bind (`authorOf`) follows, so an offer
+  whose signature has such bytes is proven instead of answering that its author couldn't be proven yet. Signatures
+  from `signDigest` verify as before.
+- cairnx-core 0.2.4 adds `offerFillTooLate` (above); its `resolve()`, canonical state and `verifyFillSpv` verdicts
+  are byte-identical to 0.2.3. csd-tx 0.1.24 changes no source; it pins csd-crypto 0.1.21.
 
 ## 0.8.1
 
@@ -109,11 +139,8 @@
 - `preverifyOffer` and `cairn.verifyOfferForFill` refuse an offer under each creation rule cairnx-core 0.2.2's
   `provenOfferRefusal` covers, over the merkle-proven Propose: the settlement domain, the v1.2 shape gate, the
   v1.3 ban on open CSD-priced offers, a treasury payee, an expiry outside the safe range or past at the anchor,
-  and the v2.1 duration cap (the give's backing is chain state and stays resolver-trusted). Two record-only
-  activation gates are not in that function yet and so not checked here: an offer anchored before CairnX
-  activation (29,860) and a name-give offer before v1.1 (29,960); a resolver serves neither, and both join
-  `provenOfferRefusal` in the next cairnx-core release. Before, they checked only the
-  domain, a treasury payee and the expiry, and reported `ok: true, trust: "verified"` for an offer the resolver
+  and the v2.1 duration cap (the give's backing is chain state and stays resolver-trusted). Before, they checked
+  only the domain, a treasury payee and the expiry, and reported `ok: true, trust: "verified"` for an offer the resolver
   rejects under the v1.2 shape gate, the v1.3 ban on open CSD-priced offers (anchored from 31,100 to below
   34,000) or the v2.1 duration cap (40,100 to below 41,300), so a fill would have paid for nothing. Every such
   refusal now reads `CairnX rejects this offer (<the resolver's note>) - a fill would move CSD for nothing`, with

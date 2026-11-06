@@ -30,8 +30,8 @@ import { txid, payloadHash } from "@inversealtruism/csd-codec";
 import { authorOf } from "@inversealtruism/csd-crypto";
 import {
   parseRecord, feeBpsAt, bindOfferTerms, provenOfferTerms, provenOfferRefusal, fillOutputPlan, isTokenWant,
-  fillEndorsement, fillIsSafe, requiredFillOutputs, previewFill, offerExpiryHeightOf, fillTargetId as fillTargetOf,
-  type MintedProvenOfferTerms, type OfferState,
+  fillEndorsement, fillIsSafe, requiredFillOutputs, previewFill, offerExpiryHeightOf, offerFillTooLate, FILL_TIP_MARGIN,
+  fillTargetId as fillTargetOf, type MintedProvenOfferTerms, type OfferState,
 } from "@inversealtruism/cairnx-core";
 import type { InclusionResult } from "@inversealtruism/csd-light";
 
@@ -46,8 +46,8 @@ export type { ProvenOfferTerms, MintedProvenOfferTerms } from "@inversealtruism/
  *  proven mismatch). `payto`/`seller`/`terms` are populated whenever they could be merkle-derived. */
 export interface OfferFillCheck {
   /** `true`: the offer record is proven and no check refused. Without `me` and `tip` it does not say the offer
-   *  is fillable by you now (it may be bound to another taker, or held by someone else's live claim or
-   *  reservation), and with `sized: false` it does not size your fill. Compare `expiresAt` with your tip. */
+   *  is fillable by you now (it may be bound to another taker, held by someone else's live claim or
+   *  reservation, or too close to its expiry), and with `sized: false` it does not size your fill. */
   ok: boolean;
   /** "verified" = merkle-proven inclusion + on-chain author; "proof-consistent" = a proof that folds but the
    *  header could not be PoW-verified (indexer-trusted); "unverified" = could not prove. */
@@ -62,16 +62,17 @@ export interface OfferFillCheck {
   /** The proven Propose's `expires_epoch`. */
   expiresEpoch?: number;
   /** The first block height at which CairnX treats the offer as expired (cairnx-core `offerExpiryHeightOf` over the
-   *  proven expiry and anchor). A fill must be mined below it; compare it with the tip you sign at. */
+   *  proven expiry and anchor). A fill must be mined below it; with `me` and `tip` a fill with less than
+   *  cairnx-core's `FILL_TIP_MARGIN` blocks of cushion is refused, without them compare it with your tip. */
   expiresAt?: number;
   /** B7b (REBIND W3/M1): the PROVEN CSD outputs to build for `pay` (a WHOLE fill of a non-partial offer),
    *  sized from the merkle-proven offer by the single-sourced `fillOutputPlan`. Present only when `pay` was
-   *  passed, the served offer carried a `status`, the offer could be sized, and neither the served status nor the
-   *  endorsement refuses the fill (other refusals keep the proven plan; branch on `ok`). Build EXACTLY these; never the
-   *  resolver-served outputs a lying resolver could redirect. A partial (min-bearing) offer is left unsized
-   *  (its running paid/delivered is not provable at this corroboration layer; the wallet's fill-SPV is the
-   *  payment-grade sizer). Liveness is never proven here: the plan is sized only for the status the resolver
-   *  served, so an offer with no served status gets no plan. */
+   *  passed, the served offer carried a `status`, the offer could be sized, and neither the served status, the
+   *  endorsement nor the expiry cushion refuses the fill (other refusals keep the proven plan; branch on `ok`).
+   *  Build EXACTLY these; never the resolver-served outputs a lying resolver could redirect. A partial
+   *  (min-bearing) offer is left unsized (its running paid/delivered is not provable at this corroboration layer;
+   *  the wallet's fill-SPV is the payment-grade sizer). Liveness is never proven here: the plan is sized only
+   *  for the status the resolver served, so an offer with no served status gets no plan. */
   outputPlan?: { to: string; value: bigint }[];
   /** Present when `pay` was passed: `true` when `outputPlan` holds the proven outputs for this pay, `false` when
    *  the fill could not be sized from proven data (`planReason` says why). `ok: true` with `sized: false` is a
@@ -192,10 +193,11 @@ interface FillJudgement {
 
 // Judges a fill of the proven offer. The state is the proven record (terms, height, author, payto, expiry) plus the
 // served running state; every rule applied to it is cairnx-core's. A whole fill is sized from proven terms; a
-// partial offer is only checked for deliverability, from its served progress; `me` and `tip` add fillEndorsement.
+// partial offer is only checked for deliverability, from its served progress; `me` and `tip` add fillEndorsement and
+// offerFillTooLate.
 function judgeFill(
   rec: Parameters<typeof provenOfferTerms>[0],
-  proven: { id: string; seller: string; payto: string; terms: MintedProvenOfferTerms; expiresEpoch: number },
+  proven: { id: string; seller: string; payto: string; terms: MintedProvenOfferTerms; expiresEpoch: number; expiresAt: number },
   served: ServedRunning | undefined,
   f: FillInputs,
 ): FillJudgement {
@@ -252,11 +254,15 @@ function judgeFill(
     }
   }
   if (f.me !== undefined && f.tip !== undefined && has(f.pay)) {
+    // A refused fill keeps no plan to build, as a status refusal sizes none.
+    const unplan = () => { delete j.outputPlan; j.planBound = false; j.planReason = "the fill is refused, so no output plan was sized"; };
+    if (offerFillTooLate(proven.expiresAt, f.tip)) {
+      j.refusal ??= `the offer's last live block ${proven.expiresAt - 1} leaves less than the ${FILL_TIP_MARGIN}-block cushion above tip ${f.tip}, so the fill is too close to the offer's expiry - do not sign it`;
+      unplan();
+    }
     if (typeof status !== "string") j.refusal ??= "the fill endorsement needs the resolver's offer object (its status, claim and progress) - pass servedOffer";
     else if (rec.min !== undefined && !progress) j.refusal ??= "the served offer is missing paid or delivered (a partial offer's progress) - pass the resolver's full offer object";
     else {
-      // A refused fill keeps no plan to build, as a status refusal sizes none.
-      const unplan = () => { delete j.outputPlan; j.planBound = false; j.planReason = "the fill is refused, so no output plan was sized"; };
       try {
         const e = fillEndorsement(state, f.me, f.pay, f.tip, f.fillTargetId !== undefined ? { fillTargetId: f.fillTargetId } : undefined);
         j.endorsement = { verdict: e.verdict, reason: e.reason };
@@ -293,7 +299,8 @@ export async function preverifyOffer(opts: {
   plannedOutputs?: Record<string, bigint | string | number>;
   /** Your address, the one that signs the fill. With `tip` (and `pay`), the result carries cairnx-core's
    *  `fillEndorsement` over the served state: a taker bound to another address, an open CSD offer you hold no
-   *  live claim or reservation on, or an attest target the offer's routing rejects is refused. */
+   *  live claim or reservation on, or an attest target the offer's routing rejects is refused, and so is a fill
+   *  that cairnx-core's `offerFillTooLate` says is too close to the offer's expiry. */
   me?: string;
   /** The chain tip height you sign at (for example `(await cairn.chain.tip()).height`). Goes with `me`. */
   tip?: number;
@@ -352,7 +359,7 @@ export async function preverifyOffer(opts: {
   const expiresEpoch = Number(ee);
   const expiresAt = offerExpiryHeightOf(expiresEpoch, blockHeight);
 
-  const j = judgeFill(offerRec, { id, seller, payto, terms, expiresEpoch }, opts.servedOffer as ServedRunning | undefined, fill);
+  const j = judgeFill(offerRec, { id, seller, payto, terms, expiresEpoch, expiresAt }, opts.servedOffer as ServedRunning | undefined, fill);
   const planFields = {
     ...(j.outputPlan ? { outputPlan: j.outputPlan } : {}),
     ...(has(opts.pay) ? { sized: j.outputPlan !== undefined } : {}),

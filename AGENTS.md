@@ -50,8 +50,8 @@ docs/SDK-GUIDE.md (third-party guide incl. the verifies-vs-trusts section), exam
 Deps and the fill-verify surface:
 
 - Every dependency, dev dependencies included, is exact-pinned in `package.json`, the single source for every version and pin (csd-siwc is a devDependency). `test/dep-pins.test.mjs` checks every pin against `pnpm-lock.yaml`.
-- `src/fillverify.ts` imports `feeBpsAt`, `bindOfferTerms`, `provenOfferTerms`, `provenOfferRefusal` (the resolver's creation rules for a proven offer, both activation gates included), `previewFill`, `fillEndorsement`, `fillTargetId` and `offerExpiryHeightOf` from cairnx-core, with no local copies. The ProvenOfferTerms interface and producer are single-sourced and corpus-equivalence-pinned by `test/proven-terms-corpus.test.ts`.
-- `preverifyOffer` judges a fill over the proven record plus the served running state (status, a partial offer's paid and delivered, the claim or reservation). A served status other than open refuses; a partial offer is never sized, but a pay `previewFill` says delivers nothing refuses; `me` and `tip` add `fillEndorsement`. Without them `ok` is a verdict on the record, not on the caller's fill.
+- `src/fillverify.ts` imports `feeBpsAt`, `bindOfferTerms`, `provenOfferTerms`, `provenOfferRefusal` (the resolver's creation rules for a proven offer, both activation gates included), `previewFill`, `fillEndorsement`, `fillTargetId`, `offerExpiryHeightOf` and `offerFillTooLate` from cairnx-core, with no local copies. The ProvenOfferTerms interface and producer are single-sourced and corpus-equivalence-pinned by `test/proven-terms-corpus.test.ts`.
+- `preverifyOffer` judges a fill over the proven record plus the served running state (status, a partial offer's paid and delivered, the claim or reservation). A served status other than open refuses; a partial offer is never sized, but a pay `previewFill` says delivers nothing refuses; `me` and `tip` add `fillEndorsement` and `offerFillTooLate`. Without them `ok` is a verdict on the record, not on the caller's fill.
 - fillverify exports the `preverifyOffer` helper and the throw-on-nested-refusal write wrapper.
 - The give and want-type binds are on: `bindOfferTerms` over the branded `MintedProvenOfferTerms` checks them by default in cairnx-core, and fillverify also passes `{ give: true, wantType: true }`. It binds the give legs, a symmetric want-type refusal and a token want's ticker and amount.
 - `OfferFillCheck.terms` keeps that brand (`test/fillverify-types.test.mjs` type-checks it). The opt-in sums seam runs over the discriminated `fillOutputPlan`.
@@ -93,7 +93,7 @@ pnpm build:example              # esbuild JS API (not the CLI shim; it ELF-error
 
 ## Testing
 
-Three layers (test/e2e/README.md), all against built dist/:
+Three layers (test/e2e/README.md). The unit suites import `src/` through tsx, and `test/spv-transient-parity.test.mjs` also checks the built `dist/` (it fails without one, so build before `pnpm test`); the live read runs the built `dist/`; the wallet connector bundles `src/`:
 
 - Unit (`pnpm test` = `test/run.mjs`, offline): a glob runner that discovers every `test/*.test.{ts,mjs}`, runs all of them even after a failure, applies a per-file timeout, and classifies SKIP instead of miscounting it. `ls test` is the suite list.
 - `test/runner-guards.test.mjs` drives the real runner against throwaway sandboxes, including a 3-file middle-fails fixture: a mid-suite failure still runs the rest and forces a non-zero exit.

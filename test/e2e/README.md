@@ -1,6 +1,6 @@
 # cairn-sdk test suite
 
-Three layers, fastest → most involved. All exercise the **built `dist/`** (run `pnpm build` first) so they test what actually ships.
+Three layers, fastest → most involved. The unit suites import `src/` through tsx, and `test/spv-transient-parity.test.mjs` also checks the built `dist/` (run `pnpm build` first); the live read runs the built `dist/`; the wallet connector bundles `src/`.
 
 | Suite | Command | Cost | What it proves |
 |---|---|---|---|

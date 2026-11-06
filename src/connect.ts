@@ -5,9 +5,10 @@
 // SECURITY MODEL (mirrors how MetaMask actually works — see the wallet's boundary):
 //   • connect()/getAddress() grant ADDRESS VISIBILITY. After the user approves an
 //     origin once, the wallet may answer these silently (per-origin "connected sites").
-//   • Every signing / fund-moving call — signIn, send, propose, attest, sealClaim,
-//     revealClaim — ALWAYS opens the wallet's clear-signing approval window, every
-//     time, regardless of connection state. Connection NEVER auto-approves a signature.
+//   • Every signing / fund-moving call (signIn, signInWithCsd, send, fillOffer, propose,
+//     attest, sealClaim, revealClaim) ALWAYS opens the wallet's clear-signing approval
+//     window, every time, regardless of connection state. Connection NEVER auto-approves
+//     a signature.
 // This module cannot weaken that: it only relays calls to the extension, which owns
 // the keys and the approval flow. The private key is never exposed to the page.
 

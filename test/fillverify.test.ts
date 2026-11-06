@@ -465,8 +465,8 @@ console.log("\nP75-5 fill-surface guards:");
   const open = proposeTx(SELLER_KEY, openRec, 21);
   const tokRec = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { ticker: "BBB", amount: "5", payto: SELLER } };
   const tok = proposeTx(SELLER_KEY, tokRec, 22);
-  const run = (tx: { json: object; phash: string; id: string }, extra: object) =>
-    preverifyOffer({ light: mockLight(tx.json, tx.phash), client: mockClient, offerId: tx.id, pay: "500000000", ...extra });
+  const run = (tx: { json: object; phash: string; id: string }, extra: object, height = H) =>
+    preverifyOffer({ light: mockLight(tx.json, tx.phash, height), client: mockClient, offerId: tx.id, pay: "500000000", ...extra });
 
   await ok("[taker] an offer bound to another taker is REFUSED with me and tip (was ok:true with an outputPlan)", async () => {
     const r = await run(bound, { servedOffer: servedFor({ id: bound.id, taker: ATTACKER }), me: BUYER, tip: H + 10 });
@@ -492,13 +492,16 @@ console.log("\nP75-5 fill-surface guards:");
     const r = await run(open, { servedOffer: servedFor({ id: open.id, claimedBy: BUYER, claimUntilHeight: H + 30 }), me: BUYER, tip: H + 10 });
     return r.ok === true && r.endorsement?.verdict === "endorsed" && r.fillTarget === open.id;
   });
-  const held = servedFor({ id: open.id, claimedBy: BUYER, claimUntilHeight: 60_150, claimTxid: FCLAIM });
+  // Anchored at V22 (41,300), where the raw expiry binds, so the offer is still live at a V28 tip; `open`'s expiry,
+  // capped by v2.1, passed at 45,060.
+  const open22 = proposeTx(SELLER_KEY, openRec, 26);
+  const held = servedFor({ id: open22.id, height: 41_300, claimedBy: BUYER, claimUntilHeight: 60_150, claimTxid: FCLAIM });
   await ok("[V28 reservation] a fill attesting the offer id while my reservation routes it is REFUSED; the target is the fclaim", async () => {
-    const r = await run(open, { servedOffer: held, me: BUYER, tip: 60_100, fillTargetId: open.id });
+    const r = await run(open22, { servedOffer: held, me: BUYER, tip: 60_100, fillTargetId: open22.id }, 41_300);
     return r.ok === false && /fclaim txid, not the offer id/.test(r.reason ?? "") && r.fillTarget === FCLAIM;
   });
   await ok("[V28 reservation honest] attesting the fclaim txid is endorsed", async () => {
-    const r = await run(open, { servedOffer: held, me: BUYER, tip: 60_100, fillTargetId: FCLAIM });
+    const r = await run(open22, { servedOffer: held, me: BUYER, tip: 60_100, fillTargetId: FCLAIM }, 41_300);
     return r.ok === true && r.endorsement?.verdict === "endorsed" && r.fillTarget === FCLAIM;
   });
   await ok("[token] a token-priced want is not-endorsable, never a refusal", async () => {
@@ -541,6 +544,28 @@ console.log("\nP75-5 fill-surface guards:");
     const rejected = await preverifyOffer({ light: mockLight(far.json, far.phash, 33_000), client: mockClient, offerId: far.id });
     return lie.ok === false && lie.terms !== undefined && lie.expiresAt === 45_060
       && rejected.ok === false && /CairnX rejects this offer/.test(rejected.reason ?? "") && rejected.terms === undefined && rejected.expiresAt === undefined;
+  });
+
+  // cairnx-core's offerFillTooLate: refused once the last live block (expiresAt - 1 = 45,059) is fewer than
+  // FILL_TIP_MARGIN (4) blocks above the tip. `far` is anchored below V22 with its expiry shortened by the v2.1 cap,
+  // the case where a late fill still mines and pays for nothing. Everything else here is the endorsed open lane.
+  const BUYER = addrFromPriv(K(0x33)).toLowerCase();
+  const late = (tip: number, extra: object = {}) => preverifyOffer({
+    light: mockLight(far.json, far.phash), client: mockClient, offerId: far.id, pay: "500000000",
+    servedOffer: servedFor({ id: far.id, claimedBy: BUYER, claimUntilHeight: 45_200 }), me: BUYER, tip, ...extra,
+  });
+  await ok("[late fill] at tip 45,056, and past the expiry, the fill is REFUSED with no plan to build", async () => {
+    const rs = await Promise.all([late(45_056), late(45_100)]);
+    return rs.every((r) => r.ok === false && r.trust === "verified" && /too close to the offer's expiry/.test(r.reason ?? "")
+      && r.expiresAt === 45_060 && r.sized === false && r.outputPlan === undefined);
+  });
+  await ok("[late fill honest] at tip 45,055 (4 blocks of cushion) the same fill is endorsed and the plan sized", async () => {
+    const r = await late(45_055);
+    return r.ok === true && r.endorsement?.verdict === "endorsed" && r.sized === true && Array.isArray(r.outputPlan);
+  });
+  await ok("[late fill, no inputs] without me and tip a late offer is not refused (ok:true, expiresAt to compare)", async () => {
+    const r = await preverifyOffer({ light: mockLight(far.json, far.phash), client: mockClient, offerId: far.id, pay: "500000000", servedOffer: servedFor({ id: far.id }) });
+    return r.ok === true && r.expiresAt === 45_060;
   });
 }
 
