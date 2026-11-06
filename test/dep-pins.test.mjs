@@ -77,5 +77,21 @@ ok("a lockfile that resolves another version is an offence", () => {
   assert.ok(pinOffences(pkg, drift).includes("dependencies.@inversealtruism/csd-tx: the lockfile resolves 0.0.1"));
 });
 
+// cairnx-core 0.2.4 adds offerFillTooLate: a late fill of an offer whose expiry the v2.1 cap shortened pays and
+// delivers nothing. 0.2.3, pinned here, has no such export; the re-pin to 0.2.4 must make judgeFill call it.
+export function lateFillCheckMissing(coreExports, fillverifySource) {
+  return coreExports.includes("offerFillTooLate") && !/\bofferFillTooLate\s*\(/.test(fillverifySource);
+}
+const core = await import("@inversealtruism/cairnx-core");
+const fillverifySource = readFileSync(new URL("../src/fillverify.ts", import.meta.url), "utf8");
+ok("once the pinned cairnx-core exports offerFillTooLate, src/fillverify.ts calls it", () => {
+  assert.equal(lateFillCheckMissing(Object.keys(core), fillverifySource), false);
+});
+ok("the late-fill tripwire fires on a core that exports it and a fillverify that does not call it", () => {
+  assert.equal(lateFillCheckMissing(["offerFillTooLate"], "const x = 1;"), true);
+  assert.equal(lateFillCheckMissing(["offerFillTooLate"], "if (offerFillTooLate(expiresAt, tip)) refuse();"), false);
+  assert.equal(lateFillCheckMissing(["fillEndorsement"], "const x = 1;"), false);
+});
+
 console.log(`\ndep-pins: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
