@@ -292,11 +292,7 @@ export class Cairn {
    * data-availability hiccup; back off (honouring Retry-After) a bounded number of times, then THROW so
    * `sync()` fails closed. A non-dense range is rejected terminally (never retried).
    *
-   * B7d / F6 DEPENDENCY: `/api/headers` serves no Access-Control-Allow-Origin today (`corsPublic` is
-   * mounted on `/explorer/api`, `/trade/api` and `/api/rpc`, not here). A SAME-ORIGIN dApp (hosted on the
-   * cairn base) reaches it now; a CROSS-ORIGIN third-party dApp cannot until B7d adds the CORS mount and
-   * restarts the cairn service. This code is correct as written; it becomes reachable cross-origin only
-   * once B7d ships. This is a recorded dependency, not a blocker for authoring/testing.
+   * Cross-origin reach depends on the server's CORS mount on `/api/headers` (the cairn server mounts one).
    */
   private async fetchHeadersBatch(from: number, count: number): Promise<{ header: BlockHeader; hash: string }[]> {
     const g = this.config.fetch ?? (globalThis.fetch as FetchLike | undefined);

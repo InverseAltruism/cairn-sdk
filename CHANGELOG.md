@@ -86,6 +86,9 @@
 - Docs: `verifyInclusion(txid)` proves that `txid` is a node of a PoW-verified block's merkle tree. An inner node
   or a block's merkle root folds as well (the tree has no leaf and node separation), so the guide and the README
   now say to hash a transaction body you hold instead of calling the check trust-minimized for any id.
+- Docs: the type declarations no longer say that `/api/headers` serves no CORS header and is out of reach of a
+  cross-origin dApp; the cairn server mounts its public CORS on that route. The 0.8.1 entry no longer says the two
+  activation gates are unchecked: cairnx-core 0.2.3, which 0.8.1 pins, refuses both.
 - `cairn.index.addressUtxo(addr)` follows the indexer's pages: csd-indexer's `/address/:a/utxo` now answers at most
   1,000 rows in (height, txid, vout) order with `?after=<height>:<txid>:<vout>` for the next page, and the method
   reads pages until a short one, so it returns every unspent output (one request per 1,000 rows) up to 100 pages,
@@ -109,11 +112,8 @@
 - `preverifyOffer` and `cairn.verifyOfferForFill` refuse an offer under each creation rule cairnx-core 0.2.2's
   `provenOfferRefusal` covers, over the merkle-proven Propose: the settlement domain, the v1.2 shape gate, the
   v1.3 ban on open CSD-priced offers, a treasury payee, an expiry outside the safe range or past at the anchor,
-  and the v2.1 duration cap (the give's backing is chain state and stays resolver-trusted). Two record-only
-  activation gates are not in that function yet and so not checked here: an offer anchored before CairnX
-  activation (29,860) and a name-give offer before v1.1 (29,960); a resolver serves neither, and both join
-  `provenOfferRefusal` in the next cairnx-core release. Before, they checked only the
-  domain, a treasury payee and the expiry, and reported `ok: true, trust: "verified"` for an offer the resolver
+  and the v2.1 duration cap (the give's backing is chain state and stays resolver-trusted). Before, they checked
+  only the domain, a treasury payee and the expiry, and reported `ok: true, trust: "verified"` for an offer the resolver
   rejects under the v1.2 shape gate, the v1.3 ban on open CSD-priced offers (anchored from 31,100 to below
   34,000) or the v2.1 duration cap (40,100 to below 41,300), so a fill would have paid for nothing. Every such
   refusal now reads `CairnX rejects this offer (<the resolver's note>) - a fill would move CSD for nothing`, with

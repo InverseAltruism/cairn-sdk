@@ -93,7 +93,7 @@ pnpm build:example              # esbuild JS API (not the CLI shim; it ELF-error
 
 ## Testing
 
-Three layers (test/e2e/README.md), all against built dist/:
+Three layers (test/e2e/README.md). The unit suites import `src/` through tsx, and `test/spv-transient-parity.test.mjs` also checks the built `dist/` (it fails without one, so build before `pnpm test`); the live read runs the built `dist/`; the wallet connector bundles `src/`:
 
 - Unit (`pnpm test` = `test/run.mjs`, offline): a glob runner that discovers every `test/*.test.{ts,mjs}`, runs all of them even after a failure, applies a per-file timeout, and classifies SKIP instead of miscounting it. `ls test` is the suite list.
 - `test/runner-guards.test.mjs` drives the real runner against throwaway sandboxes, including a 3-file middle-fails fixture: a mid-suite failure still runs the rest and forces a non-zero exit.
