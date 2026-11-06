@@ -98,6 +98,10 @@
   predates paging answers the whole set in one request, as before. Pages that do not advance throw `HttpError`
   (`malformed response: the utxo pages do not advance`) instead of looping. Against an indexer that pages, 0.8.1
   and earlier return the first 1,000 rows only.
+- `package.json` declares `engines.node` `>=22`; the source comments said Node 18+. csd-client reads a u64
+  exactly only where JSON.parse hands a reviver the source text, which Node 22 does. On a runtime without it, one
+  integer at or above 2^53 in a block makes every transaction in that block unverifiable through the SDK, so
+  `cairn.verifyOfferForFill` answers `transient` on every retry for an honest offer in that block.
 - Repository only (not in the package): the secret scan's `.gitleaks.toml` is csd-sdk's, which adds a rule for 64
   hex digits assigned to a name containing priv, secret or seed and anchors the `user:pass` allowlist row at both
   ends. The default rules missed `PRIV = "0x.."`, `{ priv: "0x.." }` and `Environment=MM_PRIV=..`.

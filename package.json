@@ -80,6 +80,9 @@
     "tsx": "4.22.4",
     "typescript": "5.9.3"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "sideEffects": false,
   "packageManager": "pnpm@10.32.1",
   "pnpm": {

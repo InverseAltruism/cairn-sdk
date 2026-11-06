@@ -1,7 +1,7 @@
 // IndexerClient — the L2 explorer/indexer: Esplora-style REST + merkle proofs
 // (L0-verifiable) + live SSE/WS feeds with reorg events.
 //
-// Streaming is portable: SSE is parsed over fetch (works in browser, Node 18+,
+// Streaming is portable: SSE is parsed over fetch (works in browser, Node 22+,
 // and MV3 workers) with auto-reconnect; WS uses the global WebSocket if present.
 
 import { verifyMerkleProof } from "@inversealtruism/csd-codec";
