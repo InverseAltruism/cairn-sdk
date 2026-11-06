@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.2
 
 ### Changed
 
@@ -25,7 +25,9 @@
   CSD offer the caller holds no live claim or reservation on, or an attest target the offer's routing rejects
   answers `ok: false` with `CairnX would refuse this fill (<reason>) - do not sign it` and no `outputPlan`
   (`sized: false`), as a served status other than `open` does. The result then carries `endorsement` (`{ verdict,
-  reason }`) and `fillTarget`. A token-priced want is `not-endorsable`, never refused.
+  reason }`) and `fillTarget`. A token-priced want is `not-endorsable`, never refused. The claim fields the
+  endorsement reads (`claimedBy`, `claimUntilHeight`, `claimTxid`) are resolver-served, like `paid`: a resolver
+  that serves `claimedBy` as the caller turns `refused` into `endorsed`.
   `me` without `tip` or `pay` answers `ok: false` ("invalid fill inputs: ..."), as does the endorsement without a
   served offer. Without these inputs nothing new is refused by them, and `ok` still says only that the record
   is proven.
@@ -104,7 +106,12 @@
   `cairn.verifyOfferForFill` answers `transient` on every retry for an honest offer in that block.
 - Repository only (not in the package): the secret scan's `.gitleaks.toml` is csd-sdk's, which adds a rule for 64
   hex digits assigned to a name containing priv, secret or seed and anchors the `user:pass` allowlist row at both
-  ends. The default rules missed `PRIV = "0x.."`, `{ priv: "0x.." }` and `Environment=MM_PRIV=..`.
+  ends. The default rules missed `PRIV = "0x.."`, `{ priv: "0x.." }` and `Environment=MM_PRIV=..`. CI runs on
+  `ubuntu-24.04` instead of `ubuntu-latest`.
+- Tests: the whole-fill `outputPlan`'s amounts are pinned leg by leg, a payto-less offer served with another
+  `want.payto` is refused, `verifyInclusion`'s fold refusal is pinned with a header source, a malformed `me` is
+  refused before any chain read, `test/dep-pins.test.mjs` fails once the pinned cairnx-core exports
+  `offerFillTooLate` while `judgeFill` does not call it, and `test/runtime-floor.test.mjs` pins the `engines` floor.
 
 ## 0.8.1
 
