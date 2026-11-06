@@ -57,12 +57,24 @@ for (const code of ["FILL_UNSAFE", "FILL_WRONG_TARGET", "SOURCE_DIVERGENCE", "VE
   ok(`${code} -> terminal (code preserved, retryable=false)`, e.code === code && e.retryable === false && !(e instanceof SubmitInFlightError));
 }
 // TRANSIENT -> retryable === true.
-for (const code of ["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN", "WALLET_UNAVAILABLE", "REVIEW_REQUIRED"]) {
+for (const code of ["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN", "REVIEW_REQUIRED"]) {
   const e = mapSubmitResultError({ ok: false, code, error: `${code} transient` });
   ok(`${code} -> transient (retryable=true)`, e.code === code && e.retryable === true);
 }
+// Codes the wallet added after 0.2.73 keep their code; SEAL_NOT_MINED is retryable (reveal once the commit mines).
+{
+  const seal = mapSubmitResultError({ ok: false, code: "SEAL_NOT_MINED", error: "the sealed claim's commit is not mined yet" });
+  ok("SEAL_NOT_MINED -> retryable, code kept (was UNKNOWN, final)", seal.code === "SEAL_NOT_MINED" && seal.retryable === true);
+  for (const code of ["RESERVATION_DENIED", "RPC_BLOCK_MISMATCH"]) {
+    const e = mapSubmitResultError({ ok: false, code, error: `${code} refusal` });
+    ok(`${code} -> final, code kept (was UNKNOWN)`, e.code === code && e.retryable === false && !(e instanceof SubmitInFlightError));
+  }
+}
+// WALLET_UNAVAILABLE is transient for a call that sends nothing and in flight on a write.
+ok("mapProviderError: WALLET_UNAVAILABLE (connect, getAddress) -> retryable, not maybe-sent",
+  mapProviderError("x", "WALLET_UNAVAILABLE").retryable === true && !(mapProviderError("x", "WALLET_UNAVAILABLE") instanceof SubmitInFlightError));
 // AMBIGUOUS-INFLIGHT -> SubmitInFlightError that carries the txid; NOT retryable; maybeSent.
-for (const code of ["SUBMIT_MAYBE_INFLIGHT", "SUBMIT_DUPLICATE"]) {
+for (const code of ["SUBMIT_MAYBE_INFLIGHT", "SUBMIT_DUPLICATE", "WALLET_UNAVAILABLE"]) {
   const e = mapSubmitResultError({ ok: false, code, txid: "0xabc", error: `${code} ambiguous` });
   ok(`${code} -> SubmitInFlightError carrying the txid, not retryable`,
     e instanceof SubmitInFlightError && e.code === code && e.txid === "0xabc" && (e as SubmitInFlightError).maybeSent === true && e.retryable === false);

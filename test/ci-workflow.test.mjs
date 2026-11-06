@@ -35,5 +35,11 @@ ok("the secret scan: pinned gitleaks, full history, merge diffs", () => {
   assert.match(ci, /--log-opts="[^"]*--all[^"]*--diff-merges=first-parent[^"]*"/);
 });
 
+ok("every job names its runner image, not a moving -latest one", () => {
+  const images = [...ci.matchAll(/^ {4}runs-on: *(\S+)/gm)].map((m) => m[1]);
+  assert.equal(images.length, 2, `${images.length} jobs`);
+  for (const image of images) assert.doesNotMatch(image, /latest/, image);
+});
+
 console.log(`ci-workflow: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

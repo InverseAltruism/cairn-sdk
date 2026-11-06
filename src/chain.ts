@@ -31,6 +31,8 @@ export {
   buildSendVerified,
   buildPropose,
   buildAttest,
+  buildProposeVerified,
+  buildAttestVerified,
 } from "@inversealtruism/csd-tx";
 export type { Utxo, Selection, Signed, BuildResult, InputVerifier } from "@inversealtruism/csd-tx";
 
@@ -78,6 +80,7 @@ import { CsdClient, verifyInputValues } from "@inversealtruism/csd-client";
 import { LightClient } from "@inversealtruism/csd-light";
 import { buildSendVerified, type Utxo, type BuildResult } from "@inversealtruism/csd-tx";
 import { addrFromPriv } from "@inversealtruism/csd-crypto";
+import { CairnError, SubmitInFlightError } from "./errors.js";
 import type { FetchLike } from "./http.js";
 
 export interface ChainOptions {
@@ -89,7 +92,7 @@ export interface ChainOptions {
 
 /**
  * Convenience handle over a CSD node RPC. `client` is the full typed RPC client;
- * `light()` lazily builds a verifying light client over the same endpoint.
+ * `light()` lazily builds an unseeded light client over the same endpoint.
  */
 export class Chain {
   readonly client: CsdClient;
@@ -122,7 +125,11 @@ export class Chain {
    * chain (`verifyInputValues` recomputes each source tx's txid, so a lying RPC can't under-report) and
    * computes change from the VERIFIED total — closing the UTXO-VALUE-1 implicit-fee-burn. Fail-closed:
    * if any source can't be verified it signs nothing. Prefer this over the pure `buildSend`. Pass
-   * `broadcast:false` to get the signed tx back without submitting.
+   * `broadcast:false` to get the signed tx back without submitting. A submit request that fails after signing
+   * throws a `SubmitInFlightError` carrying the signed `txid` and `nodeJson`: the node may have taken it, so check
+   * before resending, and resend that `nodeJson` with `submit` rather than a new send. A 4xx answer (a proxy's
+   * body cap or rate limit, or the node refusing the request) broadcast nothing and throws a final `CairnError`
+   * with code `SUBMIT_REJECTED`.
    */
   async send(p: { priv: string; outputs: { to: string; value: number }[]; fee: number; maxFee?: number; broadcast?: boolean }): Promise<BuildResult & { submitResult?: import("@inversealtruism/csd-client").RpcSubmit }> {
     const from = addrFromPriv(p.priv);
@@ -132,14 +139,24 @@ export class Chain {
       verify: (inputs) => verifyInputValues(this.client, inputs),
     });
     if (!built.ok || p.broadcast === false) return built;
-    const submitResult = await this.client.submit(built.nodeJson);
+    let submitResult: import("@inversealtruism/csd-client").RpcSubmit;
+    try { submitResult = await this.client.submit(built.nodeJson); }
+    catch (e) {
+      const what = (e as Error)?.message ?? String(e);
+      // csd-client marks a 4xx answer terminal: a proxy's body cap or rate limit, or the node refusing the request
+      // before its handler runs. No answer, a timeout or a 5xx can follow the node taking the transaction.
+      if ((e as { terminal?: unknown })?.terminal === true)
+        throw new CairnError(`the submit request was refused (${what}), so nothing was broadcast; a 400 or 413 from a proxy is usually its request body cap (a transaction with many inputs), a 429 its rate limit`, { code: "SUBMIT_REJECTED", cause: e });
+      throw new SubmitInFlightError(`the submit request failed after signing (${what}); the node may have taken the transaction, so check ${built.txid} before sending again`, "SUBMIT_MAYBE_INFLIGHT", built.txid, e, built.nodeJson);
+    }
     // CAIRNSDK-VP-4: reflect the node's accept/reject in the top-level `ok`. The node returns {ok:false} at
     // HTTP 200 on rejection (fee floor / double-spend / malformed) WITH a populated txid; without this a
     // caller doing `if (r.ok) use(r.txid)` would read a build-level ok + a computed txid for a REJECTED tx.
     return { ...built, ok: built.ok && submitResult.ok !== false, submitResult };
   }
 
-  /** A verifying light client over the same RPC (built once, reused). */
+  /** A light client over the same RPC (built once, reused), with no checkpoint and no batch header provider: it proves
+   *  nothing until seeded. The facade's seeded client backs `cairn.index.verifyInclusion` and `verifyOfferForFill`. */
   light(): LightClient {
     if (!this._light) {
       this._light = new LightClient({ client: this.client });

@@ -16,7 +16,9 @@ const ok = (name, fn) => { try { fn(); pass++; console.log("  ✓", name); } cat
 const root = fileURLToPath(new URL("..", import.meta.url));
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const fixture = JSON.parse(readFileSync(join(root, "test/fixtures/public-surface-0.6.0.json"), "utf8"));
-const pinned = fixture.entries;
+// Names added to an entry since 0.6.0 on purpose; anything else added or missing fails below.
+const ADDED = { chain: ["buildProposeVerified", "buildAttestVerified"] };
+const pinned = Object.fromEntries(Object.entries(fixture.entries).map(([e, names]) => [e, [...names, ...(ADDED[e] ?? [])]]));
 const methods = fixture.indexerClientMethods;
 
 /** Every name the 0.6.0 build exported from the registry entry, plus RegistryClient from the root entry. */
@@ -96,7 +98,7 @@ try {
   });
 
   console.log("honest path (the rest of the 0.6.0 surface):");
-  ok("each entry exports exactly the 0.6.0 names outside the registry surface: none missing, none added", () => {
+  ok("each entry exports exactly the 0.6.0 names outside the registry surface plus ADDED: none missing, none other added", () => {
     assert.deepEqual(Object.keys(pinned).sort(), entries);
     for (const e of entries) assert.deepEqual([...typeExports[e]].sort(), [...pinned[e]].sort(), e);
   });

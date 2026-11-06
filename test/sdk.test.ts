@@ -121,6 +121,12 @@ console.log("=== IndexerClient: merkle inclusion (real fixture) ===");
   const idx4 = new IndexerClient(new Http({ baseUrl: "https://i.com", fetch: proofFetch("0x" + "ab".repeat(32)) }));
   const r4 = await idx4.verifyInclusion(target);
   ok("branch not folding to claimed root → rejected", r4.included === false);
+  // The same lie with a header source that confirms the claimed root: only the fold check stands between it and
+  // verified-inclusion for any txid.
+  const idx4h = new IndexerClient(new Http({ baseUrl: "https://i.com", fetch: proofFetch("0x" + "ab".repeat(32)) }), { headerMerkleAt: async () => "0x" + "ab".repeat(32) });
+  const r4h = await idx4h.verifyInclusion(target);
+  ok("branch not folding to a claimed root the header confirms → not-found, not verified-inclusion",
+    r4h.included === false && r4h.trustLevel === "not-found" && /does not fold/.test(r4h.reason ?? ""));
 
   // (e) M3: a headerMerkleAt that THROWS (e.g. the PoW light client can't verify this height;
   //     below the SPV checkpoint, or unreachable) must DEGRADE to the honest "proof-consistent",

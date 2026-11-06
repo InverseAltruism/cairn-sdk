@@ -6,8 +6,9 @@
 // the pinned SPV checkpoint), binds the record to its on-chain commitment, derives the payment recipient +
 // seller from the offer's on-chain AUTHOR (the funding input's prevout owner, txid-committed, NOT the malleable
 // scriptSig), and, if given the resolver-SERVED offer, binds its fee/rebate/partial terms + recipients to the
-// proven ones. Trust-labeled; fail-CLOSED on a positive mismatch or a partial served offer (an absent served want.payto/seller refuses, naming the field), fail-SOFT (transient) on an unreachable /
-// lagging / below-checkpoint chain view (never a hard decline of an honest offer).
+// proven ones. Trust-labeled; fail-CLOSED on a positive mismatch, a partial served offer (an absent served
+// want.payto/seller refuses, naming the field) or a fill the served state says would move CSD for nothing;
+// transient on an unreachable or lagging chain view; final, naming the anchor, below the SPV checkpoint.
 //
 // It is best-effort corroboration, NOT the payment-grade boundary: the Cairn Wallet's OWN on-device fill-SPV
 // (cairn-wallet 0.2.60+, which fails-closed before signing) is the payment-grade check. Use this to avoid
@@ -29,7 +30,7 @@ import { txid, payloadHash } from "@inversealtruism/csd-codec";
 import { authorOf } from "@inversealtruism/csd-crypto";
 import {
   parseRecord, feeBpsAt, bindOfferTerms, provenOfferTerms, provenOfferRefusal, fillOutputPlan, isTokenWant,
-  fillEndorsement, fillIsSafe, requiredFillOutputs, previewFill,
+  fillEndorsement, fillIsSafe, requiredFillOutputs, previewFill, offerExpiryHeightOf, fillTargetId as fillTargetOf,
   type MintedProvenOfferTerms, type OfferState,
 } from "@inversealtruism/cairnx-core";
 import type { InclusionResult } from "@inversealtruism/csd-light";
@@ -44,6 +45,9 @@ export type { ProvenOfferTerms, MintedProvenOfferTerms } from "@inversealtruism/
 /** The trust-labeled verdict. `ok:false` + `transient:true` = a retryable chain-catching-up soft-fail (NOT a
  *  proven mismatch). `payto`/`seller`/`terms` are populated whenever they could be merkle-derived. */
 export interface OfferFillCheck {
+  /** `true`: the offer record is proven and no check refused. Without `me` and `tip` it does not say the offer
+   *  is fillable by you now (it may be bound to another taker, or held by someone else's live claim or
+   *  reservation), and with `sized: false` it does not size your fill. Compare `expiresAt` with your tip. */
   ok: boolean;
   /** "verified" = merkle-proven inclusion + on-chain author; "proof-consistent" = a proof that folds but the
    *  header could not be PoW-verified (indexer-trusted); "unverified" = could not prove. */
@@ -55,14 +59,30 @@ export interface OfferFillCheck {
   /** Minted by cairnx-core's `provenOfferTerms`, so it can be passed back to `bindOfferTerms` without the opt-out. */
   terms?: MintedProvenOfferTerms;
   blockHeight?: number;
+  /** The proven Propose's `expires_epoch`. */
+  expiresEpoch?: number;
+  /** The first block height at which CairnX treats the offer as expired (cairnx-core `offerExpiryHeightOf` over the
+   *  proven expiry and anchor). A fill must be mined below it; compare it with the tip you sign at. */
+  expiresAt?: number;
   /** B7b (REBIND W3/M1): the PROVEN CSD outputs to build for `pay` (a WHOLE fill of a non-partial offer),
    *  sized from the merkle-proven offer by the single-sourced `fillOutputPlan`. Present only when `pay` was
-   *  passed, the served offer carried a `status` and the offer could be sized. Build EXACTLY these; never the
+   *  passed, the served offer carried a `status`, the offer could be sized, and neither the served status nor the
+   *  endorsement refuses the fill (other refusals keep the proven plan; branch on `ok`). Build EXACTLY these; never the
    *  resolver-served outputs a lying resolver could redirect. A partial (min-bearing) offer is left unsized
    *  (its running paid/delivered is not provable at this corroboration layer; the wallet's fill-SPV is the
    *  payment-grade sizer). Liveness is never proven here: the plan is sized only for the status the resolver
    *  served, so an offer with no served status gets no plan. */
   outputPlan?: { to: string; value: bigint }[];
+  /** Present when `pay` was passed: `true` when `outputPlan` holds the proven outputs for this pay, `false` when
+   *  the fill could not be sized from proven data (`planReason` says why). `ok: true` with `sized: false` is a
+   *  verdict on the offer record, not on this fill. */
+  sized?: boolean;
+  /** Present when `me` and `tip` were passed: cairnx-core's `fillEndorsement` over the served state after the
+   *  binds. "refused" answers `ok: false`; "not-endorsable" (a token-priced want) is not a refusal. */
+  endorsement?: { verdict: "endorsed" | "refused" | "not-endorsable"; reason: string };
+  /** Present with `endorsement`: the proposal id the fill's attest must target at `tip` (cairnx-core
+   *  `fillTargetId`: the offer id, or the fclaim txid while a live reservation routes the offer). */
+  fillTarget?: string;
   /** Present when `plannedOutputs` was passed: `true` when they were bound to `outputPlan` (a mismatch
    *  refuses with `ok: false`), `false` when there was no proven plan to bind them to (`planReason` says why).
    *  `ok: true` with `planBound: false` means your planned outputs were NOT checked. */
@@ -135,13 +155,126 @@ async function provenAuthor(
   return authorOf(provenTx, src.outputs?.[Number(in0.vout)]?.scriptPubkey);
 }
 
+/** The inputs that judge a fill rather than the offer. `me` and `tip` run cairnx-core's `fillEndorsement`. */
+interface FillInputs {
+  pay?: bigint | string | number;
+  plannedOutputs?: Record<string, bigint | string | number>;
+  me?: string;
+  tip?: number;
+  fillTargetId?: string;
+}
+
+const has = <T>(v: T): v is NonNullable<T> => v !== undefined && v !== null;
+
+// Validated at the boundary, before any chain read: `me`, `tip` and `pay` go together.
+function fillInputs(o: FillInputs): FillInputs | string {
+  const base = { pay: o.pay, plannedOutputs: o.plannedOutputs };
+  if (!has(o.me) && !has(o.tip) && !has(o.fillTargetId)) return base;
+  const me = typeof o.me === "string" ? o.me.toLowerCase() : "";
+  const target = has(o.fillTargetId) ? String(o.fillTargetId).toLowerCase() : undefined;
+  if (!ADDR.test(me) || !Number.isSafeInteger(o.tip) || (o.tip as number) < 0 || (target !== undefined && !HASH.test(target)) || !has(o.pay))
+    return "invalid fill inputs: pass me (your 0x address), tip (the chain tip height) and pay together; fillTargetId, when given, is a 0x txid";
+  return { ...base, me, tip: o.tip, fillTargetId: target };
+}
+
+/** What the resolver serves about an offer since it was mined: liveness, a partial offer's progress and the
+ *  current claim or reservation. None of it is provable at this layer. */
+interface ServedRunning { status?: unknown; paid?: unknown; delivered?: unknown; claimedBy?: unknown; claimUntilHeight?: unknown; claimTxid?: unknown }
+
+interface FillJudgement {
+  refusal?: string;
+  outputPlan?: { to: string; value: bigint }[];
+  planReason?: string;
+  planBound: boolean;
+  endorsement?: { verdict: "endorsed" | "refused" | "not-endorsable"; reason: string };
+  fillTarget?: string;
+}
+
+// Judges a fill of the proven offer. The state is the proven record (terms, height, author, payto, expiry) plus the
+// served running state; every rule applied to it is cairnx-core's. A whole fill is sized from proven terms; a
+// partial offer is only checked for deliverability, from its served progress; `me` and `tip` add fillEndorsement.
+function judgeFill(
+  rec: Parameters<typeof provenOfferTerms>[0],
+  proven: { id: string; seller: string; payto: string; terms: MintedProvenOfferTerms; expiresEpoch: number },
+  served: ServedRunning | undefined,
+  f: FillInputs,
+): FillJudgement {
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const status = served?.status;
+  const terms = proven.terms;
+  const state = {
+    id: proven.id, seller: proven.seller, give: rec.give, want: { ...rec.want, payto: proven.payto }, taker: rec.taker,
+    bid: rec.bid, min: rec.min, status, expiresEpoch: proven.expiresEpoch, height: terms.height, feeBps: terms.feeBps,
+    paid: str(served?.paid), delivered: str(served?.delivered), claimedBy: str(served?.claimedBy),
+    claimUntilHeight: typeof served?.claimUntilHeight === "number" ? served.claimUntilHeight : undefined, claimTxid: str(served?.claimTxid),
+  } as OfferState;
+  const j: FillJudgement = { planBound: false };
+  const err = (e: unknown) => (e as Error)?.message ?? String(e);
+  const token = isTokenWant(rec.want);
+  const progress = state.paid !== undefined && state.delivered !== undefined;
+  if (typeof status === "string" && status !== "open")
+    j.refusal = `the resolver serves this offer as ${status}, not open - refusing (CairnX does not apply a fill of it)`;
+  if (token && has(f.plannedOutputs)) {
+    const legs = bindPlannedSums(f.plannedOutputs, []);
+    if (legs) j.refusal ??= `the offer is token-priced, so a fill moves no CSD: ${legs}`;
+  }
+  if (!has(f.pay)) j.planReason = "no `pay` was given, so no output plan was sized";
+  else if (j.refusal) j.planReason = "the fill is refused, so no output plan was sized";
+  else if (token) j.planReason = "the offer is token-priced: the payment is a token transfer, not CSD outputs";
+  else if (rec.min !== undefined) {
+    j.planReason = "the offer is partially fillable: its running paid/delivered is not provable here (the wallet's fill-SPV sizes it)";
+    // The served progress is the trust the status already takes; it can only refuse a pay it says delivers nothing.
+    if (typeof status === "string" && progress) {
+      try {
+        const p = previewFill(state, f.pay);
+        if (!p.deliverable) j.refusal = `this pay would not deliver against the offer's served progress (${p.reason}) - refusing (the CSD would be lost)`;
+      } catch (e) { j.refusal = `couldn't size the fill against the offer (${err(e)}) - refusing`; }
+    }
+  } else if (typeof status !== "string") j.planReason = "no served offer status: liveness is not provable here, so no output plan was sized (pass the resolver's offer object)";
+  else {
+    // A sizer throw over the caller's `pay` refuses: escaping would skip the served-terms binds, swallowing would
+    // return ok:true with the sums bind skipped.
+    try {
+      const plan = fillOutputPlan(state, f.pay);
+      if (plan.kind === "csd-outputs") {
+        j.outputPlan = plan.outputs;
+        if (has(f.plannedOutputs)) {
+          j.refusal = bindPlannedSums(f.plannedOutputs, plan.outputs);
+          j.planBound = true;
+        }
+      } else if (plan.kind === "undeliverable") {
+        j.refusal = `this pay would not deliver against the proven offer (${plan.reason}) - refusing (the CSD would be lost)`;
+      } else {
+        j.planReason = `the proven offer settles without CSD outputs (${plan.kind})`;
+      }
+    } catch (e) {
+      j.refusal = `couldn't size the fill against the proven offer (${err(e)}) - refusing rather than sizing from served fields`;
+    }
+  }
+  if (f.me !== undefined && f.tip !== undefined && has(f.pay)) {
+    if (typeof status !== "string") j.refusal ??= "the fill endorsement needs the resolver's offer object (its status, claim and progress) - pass servedOffer";
+    else if (rec.min !== undefined && !progress) j.refusal ??= "the served offer is missing paid or delivered (a partial offer's progress) - pass the resolver's full offer object";
+    else {
+      // A refused fill keeps no plan to build, as a status refusal sizes none.
+      const unplan = () => { delete j.outputPlan; j.planBound = false; j.planReason = "the fill is refused, so no output plan was sized"; };
+      try {
+        const e = fillEndorsement(state, f.me, f.pay, f.tip, f.fillTargetId !== undefined ? { fillTargetId: f.fillTargetId } : undefined);
+        j.endorsement = { verdict: e.verdict, reason: e.reason };
+        j.fillTarget = fillTargetOf(state, f.tip);
+        if (e.verdict === "refused") { j.refusal ??= `CairnX would refuse this fill (${e.reason}) - do not sign it`; unplan(); }
+      } catch (e) { j.refusal ??= `couldn't judge the fill against the offer (${err(e)}) - refusing`; unplan(); }
+    }
+  }
+  return j;
+}
+
 /**
  * Pre-verify an offer on-chain before building a `fillOffer` payment. `light` is a PoW-verifying light client
  * (its `verifyTxInclusion` surfaces the merkle-proven tx + committed appPayloadHash); `client` reads source txs
  * for the prevout-owner author bind. Pass `servedOffer` (the resolver's offer object) to also bind its
  * payto/seller/terms to the proven values. The FULL object is required: a served offer missing want.payto
  * or seller is refused (P75-5). A token-priced offer's served want.ticker/want.amount are bound verbatim to
- * the record. See the module header for the trust posture.
+ * the record. A served status other than open refuses. See the module header for the trust posture.
  */
 export async function preverifyOffer(opts: {
   light: { verifyTxInclusion(txidHex: string): Promise<InclusionResult> };
@@ -151,15 +284,26 @@ export async function preverifyOffer(opts: {
   /** B7b (REBIND W3/M1): the CSD base units you intend to pay. When given, the result carries `outputPlan`
    *  (the PROVEN CSD outputs to build for a WHOLE fill of a non-partial offer, sized by the single-sourced
    *  `fillOutputPlan`) and, if you also pass `plannedOutputs`, binds them EXACTLY to that proven plan.
-   *  A partial (min-bearing) offer is left unsized here; the wallet's fill-SPV is its payment-grade sizer. */
+   *  A partial (min-bearing) offer is left unsized here (`sized: false`); with the served offer, a pay its
+   *  served progress says delivers nothing (below the minimum) is refused. The wallet's fill-SPV sizes it. */
   pay?: bigint | string | number;
   /** B7b: your planned per-address CSD sums (the outputs you WILL build), bound both ways to `outputPlan`.
    *  Requires `pay`. A missing/low leg is a doomed underpay; an extra/high leg is a W3 overpay or an N26
-   *  smuggled output - both refused. */
+   *  smuggled output - both refused. On a token-priced offer any positive CSD leg is refused. */
   plannedOutputs?: Record<string, bigint | string | number>;
+  /** Your address, the one that signs the fill. With `tip` (and `pay`), the result carries cairnx-core's
+   *  `fillEndorsement` over the served state: a taker bound to another address, an open CSD offer you hold no
+   *  live claim or reservation on, or an attest target the offer's routing rejects is refused. */
+  me?: string;
+  /** The chain tip height you sign at (for example `(await cairn.chain.tip()).height`). Goes with `me`. */
+  tip?: number;
+  /** The proposal id your attest will target: the offer id, or the fclaim txid while your reservation routes it. */
+  fillTargetId?: string;
 }): Promise<OfferFillCheck> {
   const id = String(opts.offerId).toLowerCase();
   if (!HASH.test(id)) return { ok: false, trust: "unverified", reason: "invalid offer id" };
+  const fill = fillInputs(opts);
+  if (typeof fill === "string") return { ok: false, trust: "unverified", reason: fill };
 
   let incl: InclusionResult;
   try { incl = await opts.light.verifyTxInclusion(id); }
@@ -204,60 +348,19 @@ export async function preverifyOffer(opts: {
   // Keeps the BRANDED MintedProvenOfferTerms (no widening annotation): bindOfferTerms with the give and
   // wantType legs on accepts only minted terms, so a hand-built terms object there is a compile error.
   const terms = provenOfferTerms(offerRec, blockHeight);
+  // provenOfferRefusal refused an expiry that is not a safe integer, so this conversion is exact.
+  const expiresEpoch = Number(ee);
+  const expiresAt = offerExpiryHeightOf(expiresEpoch, blockHeight);
 
-  // B7b (REBIND W3/M1) OPT-IN sums seam: when the caller states the `pay` it intends, size the PROVEN CSD
-  // output plan from the merkle-proven offer via the discriminated `fillOutputPlan` (the M1 successor to
-  // requiredFillOutputs), so a diligent dApp builds the PROVEN outputs, never the served ones a lying
-  // resolver could redirect. Scoped to a WHOLE fill of a non-partial (min-less) offer: the running
-  // paid/delivered of a PARTIALLY-fillable offer is not merkle-provable at this corroboration layer (that
-  // is the wallet's fill-SPV, cairn-wallet 0.2.60+), so a partial is LEFT UNSIZED rather than false-refused.
-  // The state fed to the sizer is record-derived (record + merkle-proven height + prevout-bound seller + the
-  // derived payto) EXCEPT liveness, which is NOT provable at this layer: `status` comes from the
-  // resolver-served offer, so the sizer's own status gate refuses a non-open offer, and with no served status
-  // nothing is sized (a plan for an offer of unknown liveness would invite a fill of a dead one).
-  // `expiresEpoch` is likewise unproven; the sizer never reads it, so the 0 is a placeholder, not a claim.
-  let outputPlan: { to: string; value: bigint }[] | undefined;
-  let sumsMismatch: string | undefined;
-  let planReason: string | undefined;
-  let planBound = false;
-  const has = <T>(v: T): v is NonNullable<T> => v !== undefined && v !== null;
-  const servedStatus = (opts.servedOffer as { status?: unknown } | null | undefined)?.status;
-  if (!has(opts.pay)) planReason = "no `pay` was given, so no output plan was sized";
-  else if (isTokenWant(offerRec.want)) planReason = "the offer is token-priced: the payment is a token transfer, not CSD outputs";
-  else if (offerRec.min !== undefined) planReason = "the offer is partially fillable: its running paid/delivered is not provable here (the wallet's fill-SPV sizes it)";
-  else if (typeof servedStatus !== "string") planReason = "no served offer status: liveness is not provable here, so no output plan was sized (pass the resolver's offer object)";
-  else {
-    const provenState = {
-      id, seller, give: offerRec.give, want: { ...offerRec.want, payto }, taker: offerRec.taker, bid: offerRec.bid,
-      status: servedStatus, expiresEpoch: 0, height: blockHeight, feeBps: terms.feeBps,
-    } as OfferState;
-    // P75-5 MF-08 valve: the sizer consumes the caller's `pay` (untrusted) plus record-derived values; a
-    // throw MUST become a refusal. Escaping would reject the whole call before the served-terms binds
-    // below ever ran, and swallowing would fail OPEN to ok:true with the sums bind skipped, so the catch
-    // sets `sumsMismatch` UNCONDITIONALLY.
-    try {
-      const plan = fillOutputPlan(provenState, opts.pay);
-      if (plan.kind === "csd-outputs") {
-        outputPlan = plan.outputs;
-        if (has(opts.plannedOutputs)) {
-          sumsMismatch = bindPlannedSums(opts.plannedOutputs, plan.outputs);
-          planBound = true;
-        }
-      } else if (plan.kind === "undeliverable") {
-        sumsMismatch = `this pay would not deliver against the proven offer (${plan.reason}) - refusing (the CSD would be lost)`;
-      } else {
-        planReason = `the proven offer settles without CSD outputs (${plan.kind})`;
-      }
-    } catch (e) {
-      sumsMismatch = `couldn't size the fill against the proven offer (${(e as Error)?.message ?? e}) - refusing rather than sizing from served fields`;
-    }
-  }
+  const j = judgeFill(offerRec, { id, seller, payto, terms, expiresEpoch }, opts.servedOffer as ServedRunning | undefined, fill);
   const planFields = {
-    ...(outputPlan ? { outputPlan } : {}),
-    ...(has(opts.plannedOutputs) ? { planBound } : {}),
-    ...(!outputPlan && planReason && (has(opts.pay) || has(opts.plannedOutputs)) ? { planReason } : {}),
+    ...(j.outputPlan ? { outputPlan: j.outputPlan } : {}),
+    ...(has(opts.pay) ? { sized: j.outputPlan !== undefined } : {}),
+    ...(has(opts.plannedOutputs) ? { planBound: j.planBound } : {}),
+    ...(!j.outputPlan && j.planReason && (has(opts.pay) || has(opts.plannedOutputs)) ? { planReason: j.planReason } : {}),
+    ...(j.endorsement ? { endorsement: j.endorsement, fillTarget: j.fillTarget } : {}),
   };
-  const base = { payto, seller, terms, blockHeight, ...planFields };
+  const base = { payto, seller, terms, blockHeight, expiresEpoch, expiresAt, ...planFields };
 
   if (opts.servedOffer !== undefined && opts.servedOffer !== null) {
     const so = opts.servedOffer as { want?: { payto?: unknown }; seller?: unknown };
@@ -280,6 +383,6 @@ export async function preverifyOffer(opts: {
     if (bindOfferTerms(opts.servedOffer, terms, { give: true, wantType: true }))
       return { ok: false, trust: "verified", reason: "the served terms don't match the offer's on-chain record (fee, rebate, partial sizing, the give, or the want's type or token price - a lying resolver could mis-size, re-price or re-route the fill, redirecting or burning your payment)", ...base };
   }
-  if (sumsMismatch) return { ok: false, trust: "verified", reason: sumsMismatch, ...base };
+  if (j.refusal) return { ok: false, trust: "verified", reason: j.refusal, ...base };
   return { ok: true, trust: "verified", ...base };
 }

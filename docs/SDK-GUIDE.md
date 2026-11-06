@@ -53,9 +53,15 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
 - **RPC-trusted (display only):** balances / UTXO sets / history / prices. CSD headers carry no UTXO
   commitment, so non-spend can't be proven from headers, so `LightClient.balance()` is tagged
   `rpc-trusted` and never hides that. Verify what matters; treat balances as a hint.
+  `cairn.index.addressUtxo(addr)` reads an address's unspent outputs from the indexer in pages of 1,000 and
+  stops at 100 pages: when the 100th page is full (100,000 or more outputs, or an indexer whose pages never
+  end) it throws `HttpError` (`too many unspent outputs: ...`) instead of reading on.
 - **Indexer = untrusted derived view:** the `IndexerClient` re-folds Merkle proofs
-  (`verifyInclusion`); it's a prover, not an authority. `verifyInclusion()` folds the proof and checks
-  its root against a header from `headerMerkleAt`. The default `Cairn` wiring backs that with a light
+  (`verifyInclusion`). `verifyInclusion()` folds the proof and checks its root against a header from
+  `headerMerkleAt`. What it proves is that a 32-byte value is a node of that block's merkle tree, not that
+  the value is a transaction: the tree has no leaf and node separation, so an inner node or the block's
+  merkle root itself folds as well. Get the id by hashing a transaction body you hold (`txid(tx)` from
+  `…/chain`); an id the indexer or anyone else hands you proves nothing on its own. The default `Cairn` wiring backs that with a light
   client that PoW-verifies headers forward from a pinned checkpoint (`DEFAULT_SPV_CHECKPOINT`; pass
   `spvCheckpoint` in the config to keep a different anchor). `included` is `true` only with
   `trustLevel: "verified-inclusion"` (the proof root matched a PoW-verified header). When no header can
@@ -68,11 +74,16 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
   with the header the base serves at that height, so a block orphaned by a reorg stops counting. The
   hosted base edge-caches rows at or below its tip minus 6, so against cairn-substrate.com this catches
   reorgs of up to 6 blocks; a self-hosted base without that cache gets the full 12.
+- **A long-lived instance:** the header cache advances on demand. When a transaction sits more than 256
+  blocks above it (a page open for hours, or a header pre-warm that failed), `verifyInclusion` and
+  `verifyOfferForFill` sync the cache forward first through `/api/headers` (512 headers a request), so
+  the first check after a long idle takes a few requests longer; later checks add none. Concurrent checks on
+  one `Cairn` instance share that sync.
 
 **Filling an offer (F13, diligent-dApp pre-verify):** `fillOffer` is resolver-trusted at this SDK layer:
 the SDK does NOT SPV-verify the `outputs` you hand the wallet, so a lying resolver could redirect the
 payment. Before you build those `outputs`, corroborate the offer on-chain with
-`await cairn.verifyOfferForFill(offerId, servedOffer, { pay, plannedOutputs })`. It merkle-proves the offer's
+`await cairn.verifyOfferForFill(offerId, servedOffer, { pay, plannedOutputs, me, tip })`. It merkle-proves the offer's
 Propose into the PoW-verified header chain (from the pinned SPV checkpoint), binds the record to its on-chain
 commitment, derives the payment recipient + seller from the offer's on-chain author (the funding input's
 prevout owner, accepted only when the Propose body carries that owner's signature, which the merkle root does
@@ -87,16 +98,44 @@ pass the resolver's full offer object or omit `servedOffer`).
 Pass `opts.pay` (the CSD base units you intend to pay) to receive the PROVEN `outputPlan` for a whole fill of
 a non-partial offer, and `opts.plannedOutputs` (your planned per-address sums) to bind them to that plan
 before signing. The plan is sized only when you also pass the resolver's offer object with its `status`:
-liveness is not provable at this layer, so an offer of unknown status gets no plan. When `plannedOutputs`
-could not be bound (no `pay`, a token-priced or partially fillable offer, no served status), the result says
-so with `planBound: false` and a `planReason`; `ok: true` with `planBound: false` means your outputs were not
-checked. It returns a trust-labeled `OfferFillCheck` (`{ ok, trust, payto, seller, terms, reason,
-transient, outputPlan, planBound, planReason }`): fail-closed on a positive mismatch, fail-soft
-(`transient`) on a lagging or below-checkpoint chain view. Build EXACTLY the `outputPlan`, never the resolver-served outputs a lying
+liveness is not provable at this layer, so an offer of unknown status gets no plan, and a served status other
+than `open` is refused whether or not you pass `pay`. With `pay` the result carries `sized`: `true` when
+`outputPlan` holds the proven outputs for that pay, `false` when the fill could not be sized from proven data
+(`planReason` says why). `ok: true` with `sized: false` is a verdict on the offer record, not on your fill.
+A partially fillable (min-bearing) offer is never sized here, because its progress (`paid`, `delivered`) is
+served by the resolver, not proven; with the served offer, a pay that cairnx-core's `previewFill` says delivers
+nothing (below the minimum, or rounded to zero tokens) is refused, since CairnX would keep the CSD. A pay above
+the served remainder is clamped by CairnX and the excess is not returned, and a resolver can serve a wrong
+`paid`, so for a partial fill rely on the Cairn Wallet's own fill preflight, the payment-grade check. When
+`plannedOutputs` could not be bound (no `pay`, a token-priced or partially fillable offer, no served status),
+the result says so with `planBound: false` and a `planReason`; `ok: true` with `planBound: false` means your
+outputs were not checked. On a token-priced offer a fill moves no CSD, so any positive CSD leg in
+`plannedOutputs` is refused.
+
+Without more inputs `ok` says the offer is proven, not that you can fill it now: an offer bound to another
+taker, or held by someone else's live claim or reservation, still answers `ok: true`. Pass `opts.me` (the
+address that signs the fill) and `opts.tip` (the chain tip height you sign at) together with `pay`, and
+optionally `opts.fillTargetId` (the proposal id your attest will target), to run cairnx-core's
+`fillEndorsement` over the served state after the binds. The result then carries `endorsement` (`{ verdict,
+reason }`) and `fillTarget` (the id the attest must target at that tip: the offer id, or the fclaim txid
+while a live V28 reservation routes the offer). A `refused` verdict answers `ok: false` with no `outputPlan`
+(`sized: false`), as a served status other than `open` does; `not-endorsable` (a
+token-priced want, whose delivery depends on your token balance) is not a refusal. The claim fields the
+endorsement reads (`claimedBy`, `claimUntilHeight`, `claimTxid`) are served by the resolver too, like `paid`, and
+`fillTarget` is derived from them: a resolver that serves `claimedBy` as your address turns `refused` into
+`endorsed` and `ok: true`, so rely on the Cairn Wallet's own fill preflight for the claim as well. Every result that carries
+the proven `terms` also carries the proven expiry: `expiresEpoch` and `expiresAt`, the first block height at
+which CairnX treats the offer as expired. A fill must be mined below `expiresAt`, so compare it with your tip.
+
+It returns a trust-labeled `OfferFillCheck` (`{ ok, trust, payto, seller, terms, reason, transient,
+blockHeight, expiresEpoch, expiresAt, outputPlan, sized, planBound, planReason, endorsement, fillTarget }`):
+fail-closed on a positive mismatch; `transient` on a lagging chain view, where a retry can help; final, with a
+reason naming the anchor, for an offer mined below the SPV checkpoint (pass an older `spvCheckpoint` to
+verify it). Build EXACTLY the `outputPlan`, never the resolver-served outputs a lying
 resolver could redirect. This is best-effort corroboration, not the payment-grade boundary (the Cairn
 Wallet's own on-device fill-SPV in 0.2.60+ is what fails-closed before signing), but a dApp settling real
 value should clear it first. The standalone `preverifyOffer({ light, client, offerId, servedOffer, pay,
-plannedOutputs })` takes an injected light client + tx reader for custom wiring; `bindOfferTerms` / `feeBpsAt`
+plannedOutputs, me, tip, fillTargetId })` takes an injected light client + tx reader for custom wiring; `bindOfferTerms` / `feeBpsAt`
 are the pure term-bind primitives, re-exported from the pinned cairnx-core (single-sourced; the former local
 copies were retired when the pin began exporting them). `bindOfferTerms(servedOffer, terms)` also checks the
 offer's give and want type by default, so `terms` must come from `provenOfferTerms` or from the result's
@@ -141,16 +180,31 @@ catch (e) {
 
 Codes: `NOT_INSTALLED`, `USER_REJECTED`, `WALLET_LOCKED`, `UNSUPPORTED_METHOD`, `HTTP_ERROR` (also
 a 2xx body whose shape is wrong, such as a names list read that is not an array), `CONTENT_VERIFICATION`,
-`CONTENT_NOT_JSON` (`content.get()` on verified bytes that are not JSON), `UNKNOWN`.
+`CONTENT_NOT_JSON` (`content.get()` on verified bytes that are not JSON), `WALLET_TIMEOUT` (a write method
+outlasted the connection timeout; see below), `UNKNOWN`.
 
 > **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the
-> source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error and
-> classify every code listed there as of wallet 0.2.73: retryable (`VERIFY_UNAVAILABLE`, `OFFER_UNKNOWN`,
-> `WALLET_UNAVAILABLE`, `REVIEW_REQUIRED`: nothing was signed), in flight (`SUBMIT_MAYBE_INFLIGHT`,
-> `SUBMIT_DUPLICATE`: a `SubmitInFlightError` carrying the txid to reconcile, never retry blindly), and
-> final (every other code, including `OFFER_SOURCE_CONFLICT`, `FILL_LEGACY_SUNSET`, `VERIFY_HORIZON` and
-> `VERIFY_UNREPRESENTABLE`; `retryable: false`). A code the SDK does not know yet still throws, as a final
-> error with the wallet's message.
+> source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error (except
+> `UNKNOWN_KIND`, which throws `UnsupportedMethodError` with `UNSUPPORTED_METHOD`, and `APPROVAL_CLOSED`, which
+> throws `UserRejectedError` with `USER_REJECTED`) and classify every code listed there as of wallet 0.3.1 except
+> `RESERVATION_UNCONFIRMED`, which the wallet returns to its approval window only: retryable (`VERIFY_UNAVAILABLE`, `OFFER_UNKNOWN`, `REVIEW_REQUIRED`,
+> `SEAL_NOT_MINED`, and `WALLET_UNAVAILABLE` on `connect` and `getAddress`: nothing was sent), in flight
+> (`SUBMIT_MAYBE_INFLIGHT`, `SUBMIT_DUPLICATE`, and `WALLET_UNAVAILABLE` on a write method: `send`,
+> `fillOffer`, `propose`, `attest`, `sealClaim`, `revealClaim`), and final (every other code, including
+> `OFFER_SOURCE_CONFLICT`, `FILL_LEGACY_SUNSET`, `VERIFY_HORIZON`, `VERIFY_UNREPRESENTABLE`,
+> `RESERVATION_DENIED` and `RPC_BLOCK_MISMATCH`; `retryable: false`). An in-flight error is a `SubmitInFlightError` (`maybeSent: true`, `retryable: false`)
+> carrying the txid when the wallet knows it: check the chain or the balance before you send again, never retry
+> blindly. `WALLET_UNAVAILABLE` on a write means the page lost the wallet's reply, which can happen after the
+> wallet submitted the approved transaction. A write that outlasts the connection timeout (10 minutes by
+> default; `new WalletConnection(provider, { timeoutMs })`) rejects the same way with code `WALLET_TIMEOUT` and
+> no txid, since the request may still be open in the wallet and be sent if the user approves it. Have the user
+> reject it in the wallet before you send again: checking the chain alone leaves it open, and approving it and a
+> resend sends twice. The key-backed `cairn.chain.send` throws the same error (code `SUBMIT_MAYBE_INFLIGHT`) when its submit request fails after
+> signing, carrying the signed transaction as `nodeJson`: once the chain shows it did not land, resend it with
+> `cairn.chain.submit(e.nodeJson)` (the same coins under the same txid, so it cannot pay twice) rather than a new
+> send, which may select other coins. A 4xx answer to that submit (a proxy's 400 or 413 request body cap, a 429
+> rate limit) broadcast nothing and throws a final `CairnError` with code `SUBMIT_REJECTED` instead. A code the
+> SDK does not know yet still throws, as a final error with the wallet's message.
 
 ## Versioning & dependency hygiene
 

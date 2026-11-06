@@ -267,6 +267,57 @@ console.log("=== connector: F14 nested SubmitResult refusal contract ===");
   ok("F14: propose also throws on a nested BAD_REQUEST refusal", pe instanceof CairnError && pe.code === "BAD_REQUEST" && pe.retryable === false);
 }
 
+console.log("=== a write the wallet may have submitted: WALLET_UNAVAILABLE and the timeout ===");
+{
+  const grab = async (fn: () => Promise<unknown>): Promise<unknown> => { try { return await fn(); } catch (e) { return e; } };
+  // The content script's answer when its channel to the service worker closed, which can happen after the submit.
+  const gone = { ok: false as const, error: "the wallet is unavailable - it may have reloaded; refresh this page to reconnect", code: "WALLET_UNAVAILABLE" };
+  const writes: [string, (w: WalletConnection) => Promise<unknown>][] = [
+    ["send", (w) => w.send({ to: "0xd", amount: 1 })],
+    ["fillOffer", (w) => w.fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 1 }] })],
+    ["propose", (w) => w.propose({ domain: "d", payloadHash: "0x", uri: "u", expiresEpoch: 1, fee: 1 })],
+    ["attest", (w) => w.attest({ proposalId: "p", score: 1, confidence: 1, fee: 1 })],
+    ["sealClaim", (w) => w.sealClaim({ claim: "c" })],
+    ["revealClaim", (w) => w.revealClaim("0xseal")],
+  ];
+  for (const [name, call] of writes) {
+    let calls = 0;
+    const w = new WalletConnection(mockProvider({ [name]: () => { calls++; return Promise.resolve(gone); } } as Partial<CairnProvider>));
+    // a dApp that retries while `retryable` says so
+    let e = await grab(() => call(w));
+    while (e instanceof CairnError && e.retryable && calls < 3) e = await grab(() => call(w));
+    ok(`${name}: WALLET_UNAVAILABLE is maybe-sent (SubmitInFlightError, retryable false, no txid), so a retrying dApp asks once`,
+      e instanceof SubmitInFlightError && e.code === "WALLET_UNAVAILABLE" && e.retryable === false && e.maybeSent === true && e.txid === undefined && calls === 1);
+  }
+  const nested = new WalletConnection(mockProvider({ send: () => Promise.resolve({ ok: true, result: { ok: false, code: "WALLET_UNAVAILABLE", error: "unavailable" } }) }));
+  const ne = await grab(() => nested.send({ to: "0xd", amount: 1 }));
+  ok("a nested WALLET_UNAVAILABLE on a write is maybe-sent too", ne instanceof SubmitInFlightError && ne.code === "WALLET_UNAVAILABLE" && ne.retryable === false);
+  const early = new WalletConnection(mockProvider({ revealClaim: () => Promise.resolve({ ok: true, result: { ok: false, code: "SEAL_NOT_MINED", error: "the commit is not mined yet" } }) }));
+  const se = await grab(() => early.revealClaim("0xseal"));
+  ok("revealClaim before the commit mines: SEAL_NOT_MINED is retryable with its code", se instanceof CairnError && se.code === "SEAL_NOT_MINED" && se.retryable === true);
+  // honest path: connect and getAddress sign nothing, so the same answer stays a plain retryable refusal
+  const reads = new WalletConnection(mockProvider({ connect: () => Promise.resolve(gone), getAddress: () => Promise.resolve(gone) }));
+  const ce = await grab(() => reads.connect());
+  const ge = await grab(() => reads.getAddress());
+  ok("connect and getAddress: WALLET_UNAVAILABLE stays retryable (not maybe-sent)",
+    [ce, ge].every((x) => x instanceof CairnError && !(x instanceof SubmitInFlightError) && x.code === "WALLET_UNAVAILABLE" && x.retryable === true));
+
+  // A write still pending when the connection timeout fires may be approved and sent later by the wallet.
+  const never = () => new Promise<never>(() => { /* never settles: a wallet that does not answer */ });
+  const hung = new WalletConnection(mockProvider({ fillOffer: never }), { timeoutMs: 20 });
+  const te = await grab(() => hung.fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 1 }] }));
+  ok("a timed-out write is maybe-sent: SubmitInFlightError code WALLET_TIMEOUT, no txid, retryable false",
+    te instanceof SubmitInFlightError && te.code === "WALLET_TIMEOUT" && te.maybeSent === true && te.txid === undefined && te.retryable === false
+    && /did not respond to fillOffer/.test(te.shortMessage));
+  // Checking the chain alone leaves the old approval window able to send a second payment after a resend.
+  ok("the timed-out write tells the user to reject the still-open wallet request before sending again",
+    te instanceof SubmitInFlightError && /reject it in the wallet/.test(te.shortMessage) && /before sending it again/.test(te.shortMessage));
+  const hungRead = new WalletConnection(mockProvider({ getAddress: never }), { timeoutMs: 20 });
+  const tr = await grab(() => hungRead.getAddress());
+  ok("a timed-out getAddress stays a plain non-retryable CairnError (it sends nothing)",
+    tr instanceof CairnError && !(tr instanceof SubmitInFlightError) && tr.retryable === false);
+}
+
 console.log("=== B7c: per-call provider timeout ===");
 {
   installWindow();

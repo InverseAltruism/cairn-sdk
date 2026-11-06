@@ -14,9 +14,11 @@
 import {
   CairnError,
   NotInstalledError,
+  SubmitInFlightError,
   UnsupportedMethodError,
   mapProviderError,
   mapSubmitResultError,
+  mapWriteProviderError,
 } from "./errors.js";
 
 // B7c (REBIND, cairn-sdk LOW): the default per-call provider timeout. GENEROUS (10 minutes) on purpose -
@@ -269,7 +271,8 @@ function unwrap<T>(reply: ProviderReply<T>): T {
 
 /**
  * Unwrap a WRITE (tx) reply. Two layers refuse here (F14):
- *   1. the OUTER envelope (`{ ok:false }`) — user rejection / wallet locked / unsupported — via `unwrap`, and
+ *   1. the OUTER envelope (`{ ok:false }`: user rejection, wallet locked, unsupported) via mapWriteProviderError,
+ *      which classifies as `unwrap` does except that `WALLET_UNAVAILABLE` is maybe-sent, and
  *   2. the NESTED `SubmitResult` (`result.ok === false`) — a fund-safety / validation refusal the wallet
  *      returns INSIDE an outer-ok reply. Left un-inspected this RESOLVES with `{ ok:false, txid:undefined }`,
  *      so a dApp doing `const { txid } = await fillOffer(...); markPaid(txid)` would mark a REFUSED fill paid.
@@ -278,7 +281,8 @@ function unwrap<T>(reply: ProviderReply<T>): T {
  * `{ ok:true, txid }` (or a legacy result with no `ok` field) resolves normally.
  */
 function unwrapWrite(reply: ProviderReply<TxResult>): TxResult {
-  const result = unwrap(reply);
+  if (!reply || !reply.ok) throw mapWriteProviderError(reply?.error ?? "Unknown wallet error", reply?.code);
+  const result = reply.result;
   if (result && typeof result === "object" && (result as TxResult).ok === false) {
     throw mapSubmitResultError(result as TxResult);
   }
@@ -307,10 +311,12 @@ export class WalletConnection {
     this._timeoutMs = opts.timeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
   }
 
-  // B7c: race a provider call against the per-call timeout. On timeout, throw a fail-closed CairnError
-  // (retryable:false: a write may already have reached the wallet, so never invite a blind auto-retry). The
-  // genuine wallet resolves quickly once the user acts; this only fires on a truly hung/absent response.
-  private call<T>(op: () => Promise<T> | T, label: string): Promise<T> {
+  // B7c: race a provider call against the per-call timeout. On timeout, throw a fail-closed error
+  // (retryable:false). A write's request stays open in the wallet and may still be approved and sent, so its
+  // timeout is a maybe-sent SubmitInFlightError (WALLET_TIMEOUT, no txid); while that request stays open, a resend
+  // opens a second one, and approving both sends twice. The genuine wallet resolves quickly
+  // once the user acts; this only fires on a truly hung/absent response.
+  private call<T>(op: () => Promise<T> | T, label: string, write = false): Promise<T> {
     const ms = this._timeoutMs;
     // MF-15: a synchronously-throwing (non-conformant/spoofed) provider must REJECT, never escape the
     // documented promise contract as a sync throw.
@@ -318,7 +324,9 @@ export class WalletConnection {
     if (!Number.isFinite(ms) || ms <= 0) return invoke();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new CairnError(`the wallet did not respond to ${label} within ${ms}ms`, { retryable: false })), ms);
+      timer = setTimeout(() => reject(write
+        ? new SubmitInFlightError(`the wallet did not respond to ${label} within ${ms}ms; the request may still be open in the wallet and be sent if approved, so reject it in the wallet and check the chain before sending it again`, "WALLET_TIMEOUT")
+        : new CairnError(`the wallet did not respond to ${label} within ${ms}ms`, { retryable: false })), ms);
     });
     return Promise.race([invoke(), timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
   }
@@ -399,7 +407,7 @@ export class WalletConnection {
       return Promise.reject(new UnsupportedMethodError("this wallet predates fillOffer() — ask the user to update the Cairn Wallet"));
     }
     this.adviseFillSpvCapability();
-    return this.call(() => this.provider.fillOffer!(params), "fillOffer").then(unwrapWrite);
+    return this.call(() => this.provider.fillOffer!(params), "fillOffer", true).then(unwrapWrite);
   }
 
   // P75-5 MF-10: ONE capability advisory per connection. The wallet's on-device fill-SPV (0.2.60+) is the
@@ -454,22 +462,22 @@ export class WalletConnection {
 
   /** Send CSD (always prompts with clear-signing; wallet picks inputs + returns change to itself). */
   send(params: SendParams): Promise<TxResult> {
-    return this.call(() => this.provider.send(params), "send").then(unwrapWrite);
+    return this.call(() => this.provider.send(params), "send", true).then(unwrapWrite);
   }
 
   /** Low-level Propose (always prompts). The caller computes the payload hash, uri and expiry epoch. */
   propose(params: ProposeParams): Promise<TxResult> {
-    return this.call(() => this.provider.propose(params), "propose").then(unwrapWrite);
+    return this.call(() => this.provider.propose(params), "propose", true).then(unwrapWrite);
   }
 
   /** Attest/support a proposal (always prompts). */
   attest(params: AttestParams): Promise<TxResult> {
-    return this.call(() => this.provider.attest(params), "attest").then(unwrapWrite);
+    return this.call(() => this.provider.attest(params), "attest", true).then(unwrapWrite);
   }
 
   /** Seal a commit-reveal claim (always prompts; salt stays inside the wallet). */
   sealClaim(params: SealClaimParams): Promise<TxResult> {
-    return this.call(() => this.provider.sealClaim(params), "sealClaim").then(unwrapWrite);
+    return this.call(() => this.provider.sealClaim(params), "sealClaim", true).then(unwrapWrite);
   }
 
   /** Reveal a previously sealed claim by its sealing txid (always prompts). */
@@ -477,7 +485,7 @@ export class WalletConnection {
     if (typeof txid !== "string" || !txid) {
       return Promise.reject(new UnsupportedMethodError("revealClaim requires the sealing txid"));
     }
-    return this.call(() => this.provider.revealClaim(txid), "revealClaim").then(unwrapWrite);
+    return this.call(() => this.provider.revealClaim(txid), "revealClaim", true).then(unwrapWrite);
   }
 }
 

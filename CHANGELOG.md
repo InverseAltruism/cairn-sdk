@@ -2,6 +2,103 @@
 
 ## Unreleased
 
+### Changed
+
+- `cairn.verifyOfferForFill` no longer answers `transient` on every call for an offer mined more than 256 blocks
+  above the SDK's cached header tip (an instance alive for about 8.5 hours or more, or one whose header pre-warm
+  failed). csd-light syncs on demand only within 256 blocks; past that the fill check now reads the node tip once,
+  syncs the header cache to it through `/api/headers` (512 headers a request), and asks again. That is the only
+  added cost, paid once per such gap; a check on a fresh cache adds no request. A tip read that fails (a 403 or
+  any other error) answers `transient` and keeps the header cache instead of reseeding it.
+- Concurrent `cairn.index.verifyInclusion` and `cairn.verifyOfferForFill` calls on one `Cairn` instance share the
+  header sync: the facade's light client runs one `sync` at a time, and a call that finds one in flight waits for
+  it and then syncs only what is still missing. Before, csd-light refused the second of two overlapping syncs
+  (`out-of-order ingest`), which read as a reorg and reseeded the header cache from the checkpoint (one
+  `/api/headers` request per 512 headers up to the tip), once per extra concurrent call, for example a page that
+  checks several offers with `Promise.all` after an idle spell. Concurrent calls that meet one structural fault
+  (a reorg or a bad header in the shared sync) also share one reseed instead of reseeding once each.
+- The near-tip reorg re-check of `cairn.verifyOfferForFill` also runs when the node serves the containing height as
+  a JSON string, and a containing height that is not an integer answers `trust: "unverified"`.
+- `preverifyOffer` and `cairn.verifyOfferForFill` take optional `me` (the address that signs the fill), `tip` (the
+  chain tip height) and `fillTargetId` (the proposal id the attest targets). With `me`, `tip` and `pay` they run
+  cairnx-core's `fillEndorsement` over the served state after the binds: an offer bound to another taker, an open
+  CSD offer the caller holds no live claim or reservation on, or an attest target the offer's routing rejects
+  answers `ok: false` with `CairnX would refuse this fill (<reason>) - do not sign it` and no `outputPlan`
+  (`sized: false`), as a served status other than `open` does. The result then carries `endorsement` (`{ verdict,
+  reason }`) and `fillTarget`. A token-priced want is `not-endorsable`, never refused.
+  `me` without `tip` or `pay` answers `ok: false` ("invalid fill inputs: ..."), as does the endorsement without a
+  served offer. Without these inputs nothing new is refused by them, and `ok` still says only that the record
+  is proven.
+- Not judged yet (recorded 2026-11-05): `me` and `tip` do not refuse a fill of an offer that expires too soon.
+  cairnx-core's `fillEndorsement` does not check expiry, and the rule, `offerFillTooLate(expiresAt, tip)`, is new
+  in cairnx-core 0.2.4, while this release keeps the 0.2.3 pin; a local copy would give the rule a second home.
+  The re-pin to 0.2.4 adds `offerFillTooLate(expiresAt, tip)` to `judgeFill`, with a test. Until then compare the
+  result's `expiresAt` with your tip: CairnX's client policy refuses a fill once `expiresAt - 1 < tip + 4`
+  (cairnx-core `FILL_TIP_MARGIN`), and for an offer anchored before V22 whose expiry the v2.1 cap shortened, a late
+  fill can still be mined, paying and delivering nothing.
+- With `pay`, the result carries `sized` (`true` when `outputPlan` holds the proven outputs for that pay).
+  A partially fillable offer stays unsized, but with a served offer carrying its `paid` and `delivered` a pay
+  that cairnx-core's `previewFill` says delivers nothing (below the minimum, or zero tokens) is refused: `this pay
+  would not deliver against the offer's served progress (<reason>) - refusing (the CSD would be lost)`. Before,
+  such a pay answered `ok: true, trust: "verified"`, and CairnX keeps the CSD of that fill.
+- A served offer status other than `open` is refused whether or not `pay` is given: `the resolver serves this offer
+  as <status>, not open - refusing (CairnX does not apply a fill of it)`. Before, without `pay` it answered
+  `ok: true`, and with `pay` the reason was `this pay would not deliver against the proven offer (not-open) - ...`.
+- On a token-priced offer, `plannedOutputs` with a positive CSD leg is refused (`the offer is token-priced, so a
+  fill moves no CSD: ...`); before, it answered `ok: true, planBound: false`.
+- Every result that carries the proven `terms` also carries the proven expiry: `expiresEpoch` and `expiresAt`
+  (cairnx-core `offerExpiryHeightOf`, the first height at which CairnX treats the offer as expired). A refusal
+  under the creation rules (`CairnX rejects this offer (...)`) carries neither: CairnX does not admit the record as
+  an offer, and the expiry can be the rule it broke.
+- `WALLET_UNAVAILABLE` on a write method (`send`, `fillOffer`, `propose`, `attest`, `sealClaim`, `revealClaim`)
+  now throws a `SubmitInFlightError` (`maybeSent: true`, `retryable: false`, the txid when the wallet gave one)
+  instead of a retryable `CairnError`: the wallet's content script sends that code when the page lost its reply,
+  which can happen after the wallet submitted the approved transaction, so retrying could ask the user to pay
+  twice. On `connect` and `getAddress` it stays retryable.
+- A write method that outlasts the connection timeout now rejects with a `SubmitInFlightError` of the new code
+  `WALLET_TIMEOUT` (no txid; message `the wallet did not respond to <method> within <ms>ms; the request may still
+  be open in the wallet and be sent if approved, so reject it in the wallet and check the chain before sending it
+  again`: while the old request is open, a resend opens a second one, and approving both sends twice) instead of a
+  `CairnError` with code `UNKNOWN`. Read calls keep the old timeout error.
+- Three wallet codes keep their code instead of reading `UNKNOWN`: `SEAL_NOT_MINED` (wallet 0.2.74+, `revealClaim`
+  before the sealed commit is mined) is now retryable, as the wallet's contract says; `RESERVATION_DENIED` and
+  `RPC_BLOCK_MISMATCH` (wallet 0.2.99+, the V28 reservation lane) are final. Every code in the wallet 0.3.1
+  contract is now classified, except `RESERVATION_UNCONFIRMED`, which never reaches a page; two keep the SDK's
+  code rather than the wallet's, as before: `UNKNOWN_KIND` throws `UnsupportedMethodError` (`UNSUPPORTED_METHOD`)
+  and `APPROVAL_CLOSED` throws `UserRejectedError` (`USER_REJECTED`), both final.
+- `cairn.chain.send` (the key-backed signer) throws a `SubmitInFlightError` (code `SUBMIT_MAYBE_INFLIGHT`, the
+  signed `txid`, the signed transaction as `nodeJson`, the transport error as `cause`) when the submit request
+  fails after signing, for example a proxy 502 that can follow the node taking the transaction. Before, the raw
+  transport error escaped without the txid, so a caller could not check whether the transaction landed before
+  sending again. `cairn.chain.submit(e.nodeJson)` resends the identical transaction (the same coins under the same
+  txid, so it cannot pay twice), where a new send may select other coins. `SubmitInFlightError` gains the
+  optional `nodeJson` field for this; the wallet's in-flight errors do not carry it. A 4xx answer is not in
+  flight: a proxy's 400 or 413 request body cap (a send with many inputs), a 429 rate limit or the node refusing
+  the request broadcast nothing, so it throws a final `CairnError` with code `SUBMIT_REJECTED` (`retryable: false`,
+  the message names the status), as the wallet's contract classifies the same answer.
+- The `/chain` subpath also re-exports csd-tx's `buildProposeVerified` and `buildAttestVerified`, and
+  `examples/node-signer.mjs` builds proposes and attests with them. With the bare `buildPropose`/`buildAttest` the
+  example computed change from the RPC's reported coin values, so an RPC that under-reports a coin made the
+  surplus burn as fee (a 100 CSD coin reported as 0.30 CSD burned 99.70 CSD on a propose).
+- Docs: `cairn.chain.light()` is described as what it is, a light client with no checkpoint and no batch header
+  source that proves nothing until seeded (a sync from it reads one block per height through the RPC), and the
+  README points at the facade's seeded path instead of calling it a verifying light client.
+- Docs: `verifyInclusion(txid)` proves that `txid` is a node of a PoW-verified block's merkle tree. An inner node
+  or a block's merkle root folds as well (the tree has no leaf and node separation), so the guide and the README
+  now say to hash a transaction body you hold instead of calling the check trust-minimized for any id.
+- `cairn.index.addressUtxo(addr)` follows the indexer's pages: csd-indexer's `/address/:a/utxo` now answers at most
+  1,000 rows in (height, txid, vout) order with `?after=<height>:<txid>:<vout>` for the next page, and the method
+  reads pages until a short one, so it returns every unspent output (one request per 1,000 rows) up to 100 pages,
+  the 100,000 rows the indexer served before it paged. When the 100th page is full (an address with 100,000 or
+  more unspent outputs, or an indexer whose pages never shorten) it throws `HttpError` (`too many unspent outputs:
+  addressUtxo reads at most 100 pages of 1000 rows, and page 100 is full`) instead of reading on. An indexer that
+  predates paging answers the whole set in one request, as before. Pages that do not advance throw `HttpError`
+  (`malformed response: the utxo pages do not advance`) instead of looping. Against an indexer that pages, 0.8.1
+  and earlier return the first 1,000 rows only.
+- Repository only (not in the package): the secret scan's `.gitleaks.toml` is csd-sdk's, which adds a rule for 64
+  hex digits assigned to a name containing priv, secret or seed and anchors the `user:pass` allowlist row at both
+  ends. The default rules missed `PRIV = "0x.."`, `{ priv: "0x.." }` and `Environment=MM_PRIV=..`.
+
 ## 0.8.1
 
 ### Changed

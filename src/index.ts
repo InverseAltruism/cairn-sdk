@@ -2,7 +2,7 @@
 //
 // One cohesive `Cairn` object that composes everything we built on CSD:
 //   cairn.wallet   : connect the Cairn Wallet, sign things (clear-signed approvals)
-//   cairn.chain    : node RPC + tx builders + verifying light client
+//   cairn.chain    : node RPC + tx builders + light client primitives
 //   cairn.index    : the L2 explorer/indexer: REST + merkle proofs + live SSE/WS
 //   cairn.content  : self-certifying content (fetched and verified against its hash)
 //   cairn.names    : .csd names + CairnX market reads
@@ -14,7 +14,7 @@
 //   await cairn.connect();                       // prompts the wallet once
 
 import { Http, readCapped, retryAfterMs, RetryWaitBudget, type FetchLike } from "./http.js";
-import { Chain, LightClient, type BlockHeader } from "./chain.js";
+import { Chain, LightClient, type BlockHeader, type InclusionResult, type VerifiedHeader } from "./chain.js";
 import { IndexerClient } from "./indexer.js";
 import { ContentClient } from "./content.js";
 import { NamesClient } from "./names.js";
@@ -106,7 +106,26 @@ const SPV_RETRY_WAIT_BUDGET_MS = 16_000;
 // blocks; a self-hosted base without that cache gets the full 12.
 const SPV_RECHECK_DEPTH = 12;
 const spvTipOf = (lc: LightClient): number => lc.baseHeight + lc.chain.length - 1;
+// csd-light's verifyTxInclusion answer for a tx more than 256 blocks above the cached tip: it syncs on demand only
+// up to that gap (which bounds what one lying /tx height can make it fetch) and asks the caller to sync.
+const SPV_BEYOND_TIP = /^tx at \d+ is \d+ blocks beyond tip; sync\(\d+\) first$/;
 
+// csd-light ingests headers strictly in order, so a sync() that overlaps another on the same client fails with
+// "out-of-order ingest", which withSpvReseed reads as a reorg and answers with a reseed from the checkpoint. The
+// facade's client runs one sync at a time: a later call waits for the one in flight (and shares its failure), then
+// syncs only what is still missing from the tip that sync reached. Overriding sync() also covers the on-demand sync
+// csd-light's verifyTxInclusion runs within 256 blocks, which calls this.sync().
+class SpvLightClient extends LightClient {
+  private syncInFlight: Promise<VerifiedHeader> | null = null;
+
+  override async sync(to: number, from?: number): Promise<VerifiedHeader> {
+    while (this.syncInFlight) await this.syncInFlight;
+    const run = super.sync(to, from);
+    this.syncInFlight = run;
+    try { return await run; }
+    finally { if (this.syncInFlight === run) this.syncInFlight = null; }
+  }
+}
 
 export class Cairn {
   readonly config: CairnConfig;
@@ -124,6 +143,9 @@ export class Cairn {
   // syncFromCheckpoint calls onto the same client (the loser would hit "seedTrusted must be called on a
   // fresh client"). Cleared when the seed settles; a failure leaves no cached state, so the next call retries.
   private _spvSeedInflight: Promise<LightClient> | null = null;
+  // The in-flight reseed of withSpvReseed, shared by callers whose structural failures overlap. Cleared when it
+  // settles; each caller still commits the fresh client only after its own retry succeeds.
+  private _spvReseedInflight: Promise<LightClient> | null = null;
   private readonly _spvCp: { height: number; hash: string };
   // W12: the cairn base the SPV header-batch provider fetches /api/headers from (same base the rest of the SDK uses).
   private readonly _cairnBase: string;
@@ -192,13 +214,15 @@ export class Cairn {
   // (rate limit / gateway / timeout / non-dense / CF 200-HTML) keeps the cache and rethrows: wiping
   // on those turns one /api/headers 429 into a reseed storm (DOS-HDR-3). A second structural
   // failure propagates fail-closed; there is no loop. recheckCachedHeader feeds this path: a near-tip
-  // cached header that the served chain no longer carries is a structural failure.
+  // cached header that the served chain no longer carries is a structural failure. Callers whose failures overlap
+  // (waiters on one shared sync) share one reseed.
   private async withSpvReseed<T>(op: (lc: LightClient) => Promise<T>): Promise<T> {
     const lc = await this.seededSpvLight();
     try { return await op(lc); }
     catch (e) {
       if (spvIsTransient(e)) throw e;
-      const fresh = await this.seedFreshSpvLight();
+      this._spvReseedInflight ??= this.seedFreshSpvLight().finally(() => { this._spvReseedInflight = null; });
+      const fresh = await this._spvReseedInflight;
       const out = await op(fresh);
       this._spvLight = fresh;
       return out;
@@ -223,7 +247,7 @@ export class Cairn {
     // W12: pass a BATCH header provider (checkpoint..tip in a few batched requests, each header re-verified
     // so it carries ZERO trust). Fixing the sync WITHOUT this converts a fast wrong answer into a
     // multi-thousand-request flood, so the provider is MANDATORY, not an optimization.
-    const lc = new LightClient({
+    const lc = new SpvLightClient({
       client: this.chain.client,
       checkpoints: { [this._spvCp.height]: this._spvCp.hash },
       headersBatchProvider: (from, count) => this.fetchHeadersBatch(from, count),
@@ -232,13 +256,13 @@ export class Cairn {
     // W12: ADVANCE TO THE LIVE TIP after the seed. Before B7c the SDK's SPV only seeded the checkpoint
     // window and never reached tip, so a near-tip offer never merkle-proved and every downstream fill
     // bind was dead (the inertness that hid the SDK's want-type hole; this is why B7c lands AFTER B7b's
-    // binds are on). A transient tip/sync failure must NOT brick the seed: verifyTxInclusion self-syncs
-    // (also batched) to a tx's height on demand, so fall soft and keep the seeded client usable.
+    // binds are on). A transient tip/sync failure must NOT brick the seed: verifiedHeaderMerkleAt and the fill
+    // handle in verifyOfferForFill sync forward (batched) on demand, so fall soft and keep the seeded client usable.
     try {
       const tipHeight = Number((await this.chain.tip()).height);
       const have = spvTipOf(lc);
       if (Number.isFinite(tipHeight) && tipHeight > have) await lc.sync(tipHeight);
-    } catch { /* keep the seeded client; on-demand batched sync covers what this pre-warm missed */ }
+    } catch { /* keep the seeded client; the on-demand syncs cover what this pre-warm missed */ }
     return lc;
   }
 
@@ -324,7 +348,8 @@ export class Cairn {
    * commitment, derives the payment recipient + seller from the offer's on-chain AUTHOR (the funding input's
    * prevout owner, txid-committed, NOT the malleable scriptSig), and, if you pass the resolver-SERVED `offer`
    * object, binds its payto/seller + fee/rebate/partial terms to the proven ones. Returns a TRUST-LABELED result
-   * (fail-closed on a positive mismatch, fail-soft `transient` on a lagging / below-checkpoint chain view).
+   * (fail-closed on a positive mismatch; `transient` on a lagging chain view; final, naming the anchor, for an
+   * offer mined below the SPV checkpoint).
    *
    * This is best-effort corroboration, NOT the payment-grade boundary: the Cairn Wallet's OWN on-device
    * fill-SPV (0.2.60+, fails-closed before signing) is that. A dApp settling real value should still clear this
@@ -332,27 +357,48 @@ export class Cairn {
    *
    * Pass opts.pay (the CSD base units you intend to pay) to receive the PROVEN outputPlan for a whole fill of a
    * non-partial offer, and opts.plannedOutputs to bind your planned per-address sums to it before signing; build
-   * EXACTLY the outputPlan, never resolver-served outputs.
+   * EXACTLY the outputPlan, never resolver-served outputs. Pass opts.me (your address) and opts.tip (the chain tip
+   * height) with pay to have cairnx-core's fillEndorsement judge the fill for you at that tip; without them `ok`
+   * says the offer record is proven, not that you can fill it now.
    */
   async verifyOfferForFill(
     offerId: string,
     servedOffer?: unknown,
-    opts?: { pay?: bigint | string | number; plannedOutputs?: Record<string, bigint | string | number> },
+    opts?: { pay?: bigint | string | number; plannedOutputs?: Record<string, bigint | string | number>; me?: string; tip?: number; fillTargetId?: string },
   ): Promise<OfferFillCheck> {
     // MF-03: the reseed also covers the fill path. preverifyOffer's own catch (fillverify.ts) otherwise
     // eats a structural (reorg) throw and reports transient forever, so we hand it a light handle whose
     // verifyTxInclusion reseeds ONCE on a structural break. Structurally typed, so fillverify.ts is untouched.
     // A verified inclusion answered from a cached near-tip header gets the same reorg re-check as verifyInclusion.
+    // Past csd-light's on-demand gap (a long-lived instance, or a pre-warm that failed) the handle syncs the cache
+    // to the node tip once and asks again; a fresh cache costs no extra request.
     const light = {
-      verifyTxInclusion: (txidHex: string) => this.withSpvReseed(async (lc) => {
+      verifyTxInclusion: (txidHex: string) => this.withSpvReseed(async (lc): Promise<InclusionResult> => {
         const haveTo = spvTipOf(lc);
-        const r = await lc.verifyTxInclusion(txidHex);
-        if (r.trustLevel === "verified-inclusion" && typeof r.blockHeight === "number" && r.blockHeight <= haveTo)
-          await this.recheckCachedHeader(lc, r.blockHeight, haveTo);
-        return r;
+        let r = await lc.verifyTxInclusion(txidHex);
+        if (r.trustLevel === "rpc-trusted" && SPV_BEYOND_TIP.test(r.reason ?? "")) {
+          // A failed tip read says nothing about the cached headers, so it must not reach withSpvReseed's
+          // structural branch: answer csd-light's rpc-trusted verdict, which preverifyOffer reports as transient.
+          let tipHeight: number;
+          try { tipHeight = Number((await this.chain.tip()).height); }
+          catch (e) { return { ...r, reason: `${r.reason} (the node tip read failed: ${(e as Error)?.message ?? e})` }; }
+          if (Number.isSafeInteger(tipHeight) && tipHeight > spvTipOf(lc)) await lc.sync(tipHeight);
+          r = await lc.verifyTxInclusion(txidHex);
+        }
+        if (r.trustLevel !== "verified-inclusion") return r;
+        // The containing height comes from the node's /tx answer; checked once here, so a height served as a
+        // JSON string cannot skip the re-check below.
+        const height = Number(r.blockHeight);
+        if (!Number.isSafeInteger(height))
+          return { trustLevel: "rpc-trusted", included: false, reason: `the node's containing height for this tx is not a block height (${String(r.blockHeight)})` };
+        if (height <= haveTo) await this.recheckCachedHeader(lc, height, haveTo);
+        return { ...r, blockHeight: height };
       }),
     };
-    return preverifyOffer({ light, client: this.chain.client, offerId, servedOffer, pay: opts?.pay, plannedOutputs: opts?.plannedOutputs });
+    return preverifyOffer({
+      light, client: this.chain.client, offerId, servedOffer,
+      pay: opts?.pay, plannedOutputs: opts?.plannedOutputs, me: opts?.me, tip: opts?.tip, fillTargetId: opts?.fillTargetId,
+    });
   }
 
   /**

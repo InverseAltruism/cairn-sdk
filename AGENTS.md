@@ -32,16 +32,17 @@ Everything defaults to the hosted public bases at https://cairn-substrate.com: R
 
 - `index.ts`: Cairn facade, CairnConfig, DEFAULT_SPV_CHECKPOINT (height and hash are in the source), and the lazy PoW-verified header wiring into the indexer via `seededSpvLight`.
   - Header sync runs forward from the checkpoint to the tip through a batch header provider over the cairn server's /api/headers: a few batched requests, never a per-height flood, fail-soft to on-demand sync.
+  - The facade's light client (`SpvLightClient`) runs one `sync` at a time, csd-light's own on-demand sync included: csd-light refuses an overlapping sync as out of order, which would read as a reorg and reseed (`test/fillverify.test.ts` and `test/spv-fault-tolerance.test.ts`, the concurrent cases). Callers whose structural failures overlap share one reseed (C5).
   - The per-attempt timeout is deliberately above the server's 10 s route deadline.
   - Cross-origin reach of that provider depends on the cairn server's CORS mount on /api/headers.
   - The checkpoint is picked in cairn (`bump-swapguard-cp.mjs`) and copied here in the same cycle; it is never a unilateral SDK edit.
   - `test/spv-checkpoint.test.ts` recomputes the anchor's hash from a committed header capture (`test/fixtures/spv-headers-*.json`, PoW and prev-links checked) and fails when the constant is not that block; a moved checkpoint needs a new capture.
   - Verification only runs forward from the anchor, so a moved checkpoint turns reads below it into `proof-consistent` (behaviour described in docs/SDK-GUIDE.md). Every checkpoint move names the affected band in the CHANGELOG.
 - `connect.ts`: CairnProvider typed contract, detectProvider/discoverProviders (csd:announceProvider discovery), WalletConnection (connect/getAddress/signInWithCsd/send/propose/attest/fillOffer/sealClaim/revealClaim/permissions/events).
-- `indexer.ts`: REST + verifyInclusion(txid) with TrustLevel = verified-inclusion | proof-consistent | not-found (+ equivocation flag), SSE-over-fetch with reconnect + 1MiB buffer cap, WS subscribe.
+- `indexer.ts`: REST (addressUtxo follows the indexer's 1,000-row `?after=` pages until a short page, at most 100 pages, then throws HttpError) + verifyInclusion(txid) with TrustLevel = verified-inclusion | proof-consistent | not-found (+ equivocation flag), SSE-over-fetch with reconnect + 1MiB buffer cap, WS subscribe.
 - `content.ts`: prepare/put/hash, verified get/getBytes from the cairn origin, hash format gated against path-walk.
 - `names.ts`: NamesClient over /trade/api/cairnx/*; inputs pre-validated with cairnx-core NAME_RE + RESERVED_NAMES.
-- `chain.ts`: tip/utxos/submit/light(); Chain.send() = key-backed send via buildSendVerified + verifyInputValues (fail-closed).
+- `chain.ts`: tip/utxos/submit/light(); Chain.send() = key-backed send via buildSendVerified + verifyInputValues (fail-closed); a submit that fails after signing throws SubmitInFlightError with the signed txid and the signed tx as `nodeJson`, except a 4xx answer (csd-client's `terminal` flag), which broadcast nothing and throws a final CairnError `SUBMIT_REJECTED` (`test/chain-send.test.ts`).
 - `controller.ts` (framework-agnostic reactive store; spoofed-accountsChanged adoption guard), `react.ts` (createCairnHooks(React), zero react dependency), `errors.ts` (CairnError hierarchy with stable codes; SDK_VERSION manually kept == package.json, test-enforced), `http.ts` (15s timeout, 16MiB streamed byte cap, idempotent-GET-only retries).
 
 docs/SDK-GUIDE.md (third-party guide incl. the verifies-vs-trusts section), examples/ (read-only, wallet-connect, siwc-login, node-signer, hello-csd), scripts/ (esbuild example build + 6 maintainer-run live E2E harnesses: scripts/live-wallet-ui.mjs, scripts/names-e2e.mjs, scripts/names-buy-e2e.mjs, scripts/ux-live-readonly.mjs, scripts/ux-openlane-buy.mjs, scripts/wallet-send-spv-e2e.mjs).
@@ -49,7 +50,8 @@ docs/SDK-GUIDE.md (third-party guide incl. the verifies-vs-trusts section), exam
 Deps and the fill-verify surface:
 
 - Every dependency, dev dependencies included, is exact-pinned in `package.json`, the single source for every version and pin (csd-siwc is a devDependency). `test/dep-pins.test.mjs` checks every pin against `pnpm-lock.yaml`.
-- `src/fillverify.ts` imports `feeBpsAt`, `bindOfferTerms`, `provenOfferTerms` and `provenOfferRefusal` (the resolver's creation rules for a proven offer, except the two activation gates it lacks; CHANGELOG) from cairnx-core, with no local copies. The ProvenOfferTerms interface and producer are single-sourced and corpus-equivalence-pinned by `test/proven-terms-corpus.test.ts`.
+- `src/fillverify.ts` imports `feeBpsAt`, `bindOfferTerms`, `provenOfferTerms`, `provenOfferRefusal` (the resolver's creation rules for a proven offer, both activation gates included), `previewFill`, `fillEndorsement`, `fillTargetId` and `offerExpiryHeightOf` from cairnx-core, with no local copies. The ProvenOfferTerms interface and producer are single-sourced and corpus-equivalence-pinned by `test/proven-terms-corpus.test.ts`.
+- `preverifyOffer` judges a fill over the proven record plus the served running state (status, a partial offer's paid and delivered, the claim or reservation). A served status other than open refuses; a partial offer is never sized, but a pay `previewFill` says delivers nothing refuses; `me` and `tip` add `fillEndorsement`. Without them `ok` is a verdict on the record, not on the caller's fill.
 - fillverify exports the `preverifyOffer` helper and the throw-on-nested-refusal write wrapper.
 - The give and want-type binds are on: `bindOfferTerms` over the branded `MintedProvenOfferTerms` checks them by default in cairnx-core, and fillverify also passes `{ give: true, wantType: true }`. It binds the give legs, a symmetric want-type refusal and a token want's ticker and amount.
 - `OfferFillCheck.terms` keeps that brand (`test/fillverify-types.test.mjs` type-checks it). The opt-in sums seam runs over the discriminated `fillOutputPlan`.
@@ -128,7 +130,7 @@ What verify-tarball checks:
 - SSE through a buffering reverse proxy needs `X-Accel-Buffering: no` from the origin (the hosted proxy sets it); WS subscribe still needs a direct indexer URL because the hosted proxy is REST+SSE only.
 - esbuild CLI shim ELF-errors under pnpm; scripts/build-example.mjs uses the JS API, keep it that way.
 - Audit-ID markers in `src/` comments (M3, H2, CAIRNSDK-*, CONNECT-1 and others) are mapped to the guards they explain in CHANGELOG.md, "Notes moved from AGENTS.md".
-- mapProviderError and the write wrappers classify every code in WALLET-ERROR-CODES.md (the wallet repo's canonical contract) as retryable, in flight or final; add a new wallet code to `src/errors.ts` and `test/errors.test.ts` when the wallet adds one.
+- mapProviderError and the write wrappers classify every code in WALLET-ERROR-CODES.md (the wallet repo's canonical contract; `RESERVATION_UNCONFIRMED` never reaches a page) as retryable, in flight or final; add a new wallet code to `src/errors.ts` and `test/errors.test.ts` when the wallet adds one.
 - Large-tx submits: a reverse proxy with a small body cap on POST /api/rpc/tx/submit answers HTTP 400 before the tx reaches the node (a 64KB cap is hit at roughly 127+ inputs). The cairn server has a scoped 512KB cap on that route.
 - Symptom on a server without that cap: a big Chain.send()/submit 400s with no node-side error. Suspect the proxy body cap on the server you target before blaming the SDK.
 

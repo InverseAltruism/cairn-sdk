@@ -4,6 +4,8 @@
 // carries a stable `code`, a `shortMessage`, an optional `docsPath`, the SDK `version`, and `.walk()`
 // to inspect the cause chain.
 
+import type { NodeTxJson } from "@inversealtruism/csd-tx";
+
 /** Stable machine-readable error codes (branch on these, not the message text). */
 export type CairnErrorCode =
   | "NOT_INSTALLED"
@@ -24,7 +26,8 @@ export type CairnErrorCode =
   // (F14). Through 0.2.53 only the outer envelope carried a code; these ride the inner `result` of send /
   // propose / attest / fillOffer / sealClaim / revealClaim. WALLET-ERROR-CODES.md in the cairn-wallet repo is
   // canonical. Three buckets: DEFINITIVE fund-safety refusals (retryable=false, nothing was sent), TRANSIENT
-  // (retryable=true, nothing was signed), and AMBIGUOUS-INFLIGHT (SubmitInFlightError, carries the txid).
+  // (retryable=true, nothing was sent), and AMBIGUOUS-INFLIGHT (SubmitInFlightError, maybe sent; carries the
+  // txid when the wallet knows it).
   | "GHOST_INPUTS_SKIPPED"
   | "VERIFY_UNAVAILABLE"
   | "VERIFY_TAMPER"
@@ -45,13 +48,19 @@ export type CairnErrorCode =
   | "SUBMIT_MAYBE_INFLIGHT"
   | "SUBMIT_DUPLICATE"
   | "NOTHING_TO_CONSOLIDATE"
-  // wallet 0.2.62+ codes listed in WALLET-ERROR-CODES.md
+  // wallet 0.2.62+ codes listed in WALLET-ERROR-CODES.md (SEAL_NOT_MINED since 0.2.74, RESERVATION_DENIED and
+  // RPC_BLOCK_MISMATCH since 0.2.99)
   | "OFFER_SOURCE_CONFLICT"
   | "FILL_LEGACY_SUNSET"
   | "VERIFY_HORIZON"
   | "VERIFY_UNREPRESENTABLE"
   | "WALLET_UNAVAILABLE"
   | "REVIEW_REQUIRED"
+  | "SEAL_NOT_MINED"
+  | "RESERVATION_DENIED"
+  | "RPC_BLOCK_MISMATCH"
+  // SDK-side: a write method that outlasted the connection timeout (the wallet may still send it)
+  | "WALLET_TIMEOUT"
   | "UNKNOWN";
 
 // Kept in sync with package.json `version` (the build has no JSON import; bump both together). SDK-VERSION-DRIFT:
@@ -169,22 +178,31 @@ export class ContentVerificationError extends CairnError {
 }
 
 /**
- * The wallet SUBMITTED but the outcome is AMBIGUOUS: the tx MAY already be in the mempool. Thrown by the
- * write wrappers for the nested `SUBMIT_MAYBE_INFLIGHT` (request threw / timed out / 5xx gateway / unreadable
- * body) and `SUBMIT_DUPLICATE` (node answered "already present or mempool conflict") codes. It CARRIES the
- * locally-computed consensus `txid` so a dApp can RECONCILE (check the explorer / balance) instead of blindly
- * re-broadcasting, which would re-invite the double-broadcast this contract exists to prevent (F14). It is NOT
- * retryable (`retryable === false`); `maybeSent === true` distinguishes it from a definitely-not-sent terminal
- * refusal. See WALLET-ERROR-CODES.md in the cairn-wallet repo.
+ * The outcome of a write is AMBIGUOUS: the tx MAY already be in the mempool. Thrown by the write wrappers for
+ * the nested `SUBMIT_MAYBE_INFLIGHT` (request threw / timed out / 5xx gateway / unreadable body) and
+ * `SUBMIT_DUPLICATE` (node answered "already present or mempool conflict") codes, for `WALLET_UNAVAILABLE` on a
+ * write (the page lost the wallet's reply, which may come after the submit), for `WALLET_TIMEOUT` (the call
+ * outlasted the connection timeout while the request stays open in the wallet), and by `Chain.send` when the
+ * submit request fails after signing without a 4xx answer (a 4xx is `SUBMIT_REJECTED`). It CARRIES the
+ * locally-computed consensus `txid` when one is known so a dApp can RECONCILE (check the explorer / balance)
+ * instead of blindly re-broadcasting, which would re-invite the double-broadcast this contract exists to prevent
+ * (F14). It is NOT retryable (`retryable === false`);
+ * `maybeSent === true` distinguishes it from a definitely-not-sent terminal refusal. See WALLET-ERROR-CODES.md
+ * in the cairn-wallet repo.
  */
 export class SubmitInFlightError extends CairnError {
-  /** The locally-computed consensus txid to reconcile against the chain (may be undefined if the wallet omitted it). */
+  /** The locally-computed consensus txid to reconcile against the chain (undefined when it is not known). */
   readonly txid?: string;
-  /** Always true: the tx MAY be in the mempool. Reconcile via `txid`; never blind-retry. */
+  /** The signed transaction, set only when `Chain.send` threw this (a wallet write keeps it in the wallet).
+   *  `chain.submit(nodeJson)` resends it unchanged: the same coins under the same txid, so it cannot pay twice,
+   *  where a new send may select other coins. */
+  readonly nodeJson?: NodeTxJson;
+  /** Always true: the tx MAY be in the mempool. Reconcile via `txid` or the balance; never blind-retry. */
   readonly maybeSent = true;
-  constructor(message: string, code: "SUBMIT_MAYBE_INFLIGHT" | "SUBMIT_DUPLICATE", txid?: string) {
-    super(message, { code, docsPath: "/errors#submit-inflight", retryable: false });
+  constructor(message: string, code: "SUBMIT_MAYBE_INFLIGHT" | "SUBMIT_DUPLICATE" | "WALLET_UNAVAILABLE" | "WALLET_TIMEOUT", txid?: string, cause?: unknown, nodeJson?: NodeTxJson) {
+    super(message, { code, docsPath: "/errors#submit-inflight", retryable: false, cause });
     this.txid = txid;
+    this.nodeJson = nodeJson;
   }
 }
 
@@ -199,16 +217,18 @@ export class SubmitInFlightError extends CairnError {
 // remaining four are the genuine native-relayed codes with no earlier handler.
 const NATIVE_CODES = new Set<CairnErrorCode>(["FIRST_PARTY_ONLY", "RATE_LIMITED", "FORBIDDEN", "INTERNAL"]);
 
-// F14: nested SubmitResult codes (wallet 0.2.54+) classified into buckets. TRANSIENT = nothing was signed,
+// F14: nested SubmitResult codes (wallet 0.2.54+) classified into buckets. TRANSIENT = nothing was sent,
 // safe to auto-retry shortly. TERMINAL = a definitive fund-safety / validation refusal, nothing was sent, no
-// auto-retry. The AMBIGUOUS-INFLIGHT pair (SUBMIT_MAYBE_INFLIGHT / SUBMIT_DUPLICATE) is handled separately by
-// mapSubmitResultError because it must carry the txid (SubmitInFlightError). WALLET-ERROR-CODES.md is canonical.
-const NESTED_TRANSIENT = new Set<CairnErrorCode>(["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN", "WALLET_UNAVAILABLE", "REVIEW_REQUIRED"]);
+// auto-retry. The AMBIGUOUS-INFLIGHT codes are handled separately by mapSubmitResultError and
+// mapWriteProviderError because they must carry the txid (SubmitInFlightError). WALLET-ERROR-CODES.md is canonical.
+// WALLET_UNAVAILABLE is transient for a call that sends nothing (connect, getAddress) and in flight on a write.
+const NESTED_TRANSIENT = new Set<CairnErrorCode>(["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN", "WALLET_UNAVAILABLE", "REVIEW_REQUIRED", "SEAL_NOT_MINED"]);
 const NESTED_TERMINAL = new Set<CairnErrorCode>([
   "FILL_UNSAFE", "FILL_WRONG_TARGET", "SOURCE_DIVERGENCE", "VERIFY_TAMPER", "SUBMIT_REJECTED",
   "BAD_REQUEST", "BAD_FEE", "BAD_OUTPUTS", "NO_OUTPUTS", "ZERO_ADDR_REFUSED", "TOO_MANY_INPUTS",
   "INSUFFICIENT", "FEE_CAP", "FEE_TOO_LOW", "ACCOUNT_CHANGED", "GHOST_INPUTS_SKIPPED", "NOTHING_TO_CONSOLIDATE",
   "OFFER_SOURCE_CONFLICT", "FILL_LEGACY_SUNSET", "VERIFY_HORIZON", "VERIFY_UNREPRESENTABLE",
+  "RESERVATION_DENIED", "RPC_BLOCK_MISMATCH",
 ]);
 
 export function mapProviderError(error: string, code?: string): CairnError {
@@ -232,21 +252,32 @@ export function mapProviderError(error: string, code?: string): CairnError {
  * onto a typed error the write wrappers THROW. Without this a fund-safety refusal would RESOLVE with a phantom
  * `txid:undefined`, so a dApp doing `const { txid } = await fillOffer(...); markPaid(txid)` marks a REFUSED
  * fill as paid. Three buckets:
- *   - AMBIGUOUS-INFLIGHT (`SUBMIT_MAYBE_INFLIGHT` / `SUBMIT_DUPLICATE`): a `SubmitInFlightError` that CARRIES
- *     the locally-computed `txid` to reconcile (never blind-retry).
- *   - TRANSIENT (`VERIFY_UNAVAILABLE` / `OFFER_UNKNOWN`): `retryable === true` (nothing signed; retry shortly).
+ *   - AMBIGUOUS-INFLIGHT (`SUBMIT_MAYBE_INFLIGHT` / `SUBMIT_DUPLICATE` / `WALLET_UNAVAILABLE`): a
+ *     `SubmitInFlightError` that CARRIES the locally-computed `txid` when given, to reconcile (never blind-retry).
+ *   - TRANSIENT (`VERIFY_UNAVAILABLE` / `OFFER_UNKNOWN` / `REVIEW_REQUIRED`): `retryable === true` (nothing sent;
+ *     retry shortly).
  *   - DEFINITIVE fund-safety refusal (everything else, incl. an unknown / absent code): `retryable === false`.
  * Fail-closed: an explicit `ok:false` with no recognized code still throws a non-retryable refusal.
  */
 export function mapSubmitResultError(result: { ok?: boolean; code?: string; error?: string; txid?: string }): CairnError {
   const code = result?.code;
   const msg = (typeof result?.error === "string" && result.error) || code || "The wallet refused the transaction.";
-  if (code === "SUBMIT_MAYBE_INFLIGHT" || code === "SUBMIT_DUPLICATE") {
+  if (code === "SUBMIT_MAYBE_INFLIGHT" || code === "SUBMIT_DUPLICATE" || code === "WALLET_UNAVAILABLE") {
     return new SubmitInFlightError(msg, code, typeof result?.txid === "string" ? result.txid : undefined);
   }
   // Delegate the classification to mapProviderError (transient -> retryable, everything else -> terminal /
   // fail-closed). A codeless nested refusal falls through to a non-retryable CairnError, never a resolve.
   return mapProviderError(msg, code);
+}
+
+/**
+ * Map a write method's OUTER refusal (`{ ok:false, error, code }`). As mapProviderError, except that
+ * `WALLET_UNAVAILABLE` is maybe-sent: the wallet's content script answers it when the page lost the channel to
+ * the extension, which it cannot tell apart from a loss after the background submitted the approved write.
+ */
+export function mapWriteProviderError(error: string, code?: string): CairnError {
+  if (code === "WALLET_UNAVAILABLE") return new SubmitInFlightError(error || code, code);
+  return mapProviderError(error, code);
 }
 
 /** Convenience: the stable code of any error (or "UNKNOWN" for a non-CairnError). */
