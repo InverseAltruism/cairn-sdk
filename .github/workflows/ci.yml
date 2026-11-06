@@ -9,8 +9,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Runner images are named, not ubuntu-latest: it moved to 26.04 on 2026-11-05 and broke other repos' jobs
-# (test/ci-workflow.test.mjs pins this).
 # No job needs to write: every job reads the repo and the public npm registry only.
 permissions:
   contents: read
@@ -21,6 +19,7 @@ permissions:
 # (in both dependencies AND devDependencies) is the ecosystem lockstep version. The csd-* are PUBLIC npm
 # packages, so no sibling checkout/token is needed (unlike cairn).
 
+# Runner images are named, never a moving -latest one (test/ci-workflow.test.mjs).
 jobs:
   test:
     runs-on: ubuntu-24.04

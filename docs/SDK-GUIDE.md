@@ -197,15 +197,14 @@ outlasted the connection timeout; see below), `UNKNOWN`.
 > blindly. `WALLET_UNAVAILABLE` on a write means the page lost the wallet's reply, which can happen after the
 > wallet submitted the approved transaction. A write that outlasts the connection timeout (10 minutes by
 > default; `new WalletConnection(provider, { timeoutMs })`) rejects the same way with code `WALLET_TIMEOUT` and
-> no txid, since the request may still be open in the wallet and be sent if the user approves it: have the user
+> no txid, since the request may still be open in the wallet and be sent if the user approves it. Have the user
 > reject it in the wallet before you send again: checking the chain alone leaves it open, and approving it and a
-> resend sends twice. The key-backed
-> `cairn.chain.send` throws the same error (code `SUBMIT_MAYBE_INFLIGHT`) when its submit request fails after
+> resend sends twice. The key-backed `cairn.chain.send` throws the same error (code `SUBMIT_MAYBE_INFLIGHT`) when its submit request fails after
 > signing, carrying the signed transaction as `nodeJson`: once the chain shows it did not land, resend it with
 > `cairn.chain.submit(e.nodeJson)` (the same coins under the same txid, so it cannot pay twice) rather than a new
 > send, which may select other coins. A 4xx answer to that submit (a proxy's 400 or 413 request body cap, a 429
-> rate limit) broadcast nothing and throws a final `CairnError` with code `SUBMIT_REJECTED` instead. A code the SDK does not know yet still throws, as a final error with the
-> wallet's message.
+> rate limit) broadcast nothing and throws a final `CairnError` with code `SUBMIT_REJECTED` instead. A code the
+> SDK does not know yet still throws, as a final error with the wallet's message.
 
 ## Versioning & dependency hygiene
 

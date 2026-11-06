@@ -66,8 +66,8 @@ export interface OfferFillCheck {
   expiresAt?: number;
   /** B7b (REBIND W3/M1): the PROVEN CSD outputs to build for `pay` (a WHOLE fill of a non-partial offer),
    *  sized from the merkle-proven offer by the single-sourced `fillOutputPlan`. Present only when `pay` was
-   *  passed, the served offer carried a `status`, the offer could be sized and the fill is not refused (a served
-   *  non-open status or a refused endorsement drops it). Build EXACTLY these; never the
+   *  passed, the served offer carried a `status`, the offer could be sized, and neither the served status nor the
+   *  endorsement refuses the fill (other refusals keep the proven plan; branch on `ok`). Build EXACTLY these; never the
    *  resolver-served outputs a lying resolver could redirect. A partial (min-bearing) offer is left unsized
    *  (its running paid/delivered is not provable at this corroboration layer; the wallet's fill-SPV is the
    *  payment-grade sizer). Liveness is never proven here: the plan is sized only for the status the resolver
