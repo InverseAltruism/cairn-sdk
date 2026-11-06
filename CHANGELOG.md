@@ -31,13 +31,14 @@
   `me` without `tip` or `pay` answers `ok: false` ("invalid fill inputs: ..."), as does the endorsement without a
   served offer. Without these inputs nothing new is refused by them, and `ok` still says only that the record
   is proven.
-- Not judged yet (recorded 2026-11-05): `me` and `tip` do not refuse a fill of an offer that expires too soon.
-  cairnx-core's `fillEndorsement` does not check expiry, and the rule, `offerFillTooLate(expiresAt, tip)`, is new
-  in cairnx-core 0.2.4, while this release keeps the 0.2.3 pin; a local copy would give the rule a second home.
-  The re-pin to 0.2.4 adds `offerFillTooLate(expiresAt, tip)` to `judgeFill`, with a test. Until then compare the
-  result's `expiresAt` with your tip: CairnX's client policy refuses a fill once `expiresAt - 1 < tip + 4`
-  (cairnx-core `FILL_TIP_MARGIN`), and for an offer anchored before V22 whose expiry the v2.1 cap shortened, a late
-  fill can still be mined, paying and delivering nothing.
+- With `me` and `tip`, a fill too close to the offer's expiry is refused: cairnx-core 0.2.4's
+  `offerFillTooLate(expiresAt, tip)` is true once the offer's last live block (`expiresAt - 1`) is fewer than
+  `FILL_TIP_MARGIN` (4) blocks above `tip`, and the result answers `ok: false` with no `outputPlan` (`sized: false`)
+  and `the offer's last live block <h> leaves less than the 4-block cushion above tip <tip>, so the fill is too close
+  to the offer's expiry - do not sign it`. `fillEndorsement` does not check expiry. A fill not mined by that block is
+  refused by the node; for an offer anchored before V22 whose expiry the v2.1 cap shortened, the resolver expires the
+  offer while the node still mines its attests, so a late fill there pays and delivers nothing. Without `me` and
+  `tip` nothing new is refused; compare `expiresAt` with your tip.
 - With `pay`, the result carries `sized` (`true` when `outputPlan` holds the proven outputs for that pay).
   A partially fillable offer stays unsized, but with a served offer carrying its `paid` and `delivered` a pay
   that cairnx-core's `previewFill` says delivers nothing (below the minimum, or zero tokens) is refused: `this pay
@@ -112,6 +113,19 @@
   `want.payto` is refused, `verifyInclusion`'s fold refusal is pinned with a header source, a malformed `me` is
   refused before any chain read, `test/dep-pins.test.mjs` fails once the pinned cairnx-core exports
   `offerFillTooLate` while `judgeFill` does not call it, and `test/runtime-floor.test.mjs` pins the `engines` floor.
+
+### Dependencies
+
+- Re-pinned to the csd-sdk window of 2026-11-06: cairnx-core 0.2.3 to 0.2.4, csd-crypto 0.1.20 to 0.1.21, csd-tx
+  0.1.23 to 0.1.24, and the dev dependency csd-siwc 0.1.21 to 0.1.22. csd-client 0.1.20, csd-codec 0.1.18 and
+  csd-light 0.1.26 stay. No dependency added; the tree keeps one csd-codec and one csd-crypto.
+- csd-crypto 0.1.21's `verifyDigest`, re-exported from `/chain`, reads the 64 signature bytes as compact r || s only,
+  the node's rule: a node-valid compact signature whose bytes are also DER-shaped now verifies, and a 64-byte DER
+  signature, which the node refuses, no longer does. `preverifyOffer`'s author bind (`authorOf`) follows, so an offer
+  whose signature has such bytes is proven instead of answering that its author couldn't be proven yet. Signatures
+  from `signDigest` verify as before.
+- cairnx-core 0.2.4 adds `offerFillTooLate` (above); its `resolve()`, canonical state and `verifyFillSpv` verdicts
+  are byte-identical to 0.2.3. csd-tx 0.1.24 changes no source; it pins csd-crypto 0.1.21.
 
 ## 0.8.1
 

@@ -354,7 +354,7 @@ export class Cairn {
    * Pass opts.pay (the CSD base units you intend to pay) to receive the PROVEN outputPlan for a whole fill of a
    * non-partial offer, and opts.plannedOutputs to bind your planned per-address sums to it before signing; build
    * EXACTLY the outputPlan, never resolver-served outputs. Pass opts.me (your address) and opts.tip (the chain tip
-   * height) with pay to have cairnx-core's fillEndorsement judge the fill for you at that tip; without them `ok`
+   * height) with pay to have cairnx-core's fillEndorsement and offerFillTooLate judge the fill for you at that tip; without them `ok`
    * says the offer record is proven, not that you can fill it now.
    */
   async verifyOfferForFill(

@@ -125,7 +125,10 @@ endorsement reads (`claimedBy`, `claimUntilHeight`, `claimTxid`) are served by t
 `fillTarget` is derived from them: a resolver that serves `claimedBy` as your address turns `refused` into
 `endorsed` and `ok: true`, so rely on the Cairn Wallet's own fill preflight for the claim as well. Every result that carries
 the proven `terms` also carries the proven expiry: `expiresEpoch` and `expiresAt`, the first block height at
-which CairnX treats the offer as expired. A fill must be mined below `expiresAt`, so compare it with your tip.
+which CairnX treats the offer as expired. A fill must be mined below `expiresAt`. With `me` and `tip`, a fill
+whose offer's last live block (`expiresAt - 1`) is fewer than 4 blocks above your tip (cairnx-core's
+`offerFillTooLate`, `FILL_TIP_MARGIN`) answers `ok: false` with no `outputPlan`; without them, compare
+`expiresAt` with your tip.
 
 It returns a trust-labeled `OfferFillCheck` (`{ ok, trust, payto, seller, terms, reason, transient,
 blockHeight, expiresEpoch, expiresAt, outputPlan, sized, planBound, planReason, endorsement, fillTarget }`):
