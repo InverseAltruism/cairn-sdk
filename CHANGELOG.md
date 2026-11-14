@@ -17,6 +17,10 @@
   reads `UNKNOWN`.
 - `FILL_IN_PROGRESS` (wallet 0.3.2: another fill request for the same target is open in the wallet; nothing was
   signed for this one) is listed and final (`retryable: false`). It read `UNKNOWN` in 0.8.2.
+- `signInWithCsd` refuses a nonce that is not at least 8 ASCII letters and digits (a `crypto.randomUUID()` with
+  its hyphens, for one) with `UnsupportedMethodError` before the wallet is asked. The wallet applies that rule
+  (csd-siwc's) only after the user approved, and then answered `INTERNAL`; 0.8.2 checked only that the nonce was
+  not empty. A `generateNonce()` value from csd-siwc passes as before.
 - `ProposeParams` matches what the wallet's `propose` accepts: `fee` is optional (omitted, the wallet signs its
   Propose fee floor, the fee its approval window shows) and `outputs?: { to, value }[]` pays CSD in the same
   transaction (the approval window lists those outputs). `wallet.propose` passes both through unchanged; in 0.8.2

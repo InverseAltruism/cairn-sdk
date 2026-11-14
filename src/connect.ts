@@ -28,6 +28,11 @@ import {
 // disables it. Override per connection via `new WalletConnection(provider, { timeoutMs })`.
 const DEFAULT_PROVIDER_TIMEOUT_MS = 10 * 60_000;
 
+// The SIWC nonce rule of csd-siwc's buildSiwcMessage and of the wallet's signInWithCsd, which checks it only after
+// the user approved and then answers INTERNAL. csd-siwc does not export it; test/connect.test.ts pins this copy
+// against buildSiwcMessage.
+const SIWC_NONCE_RE = /^[A-Za-z0-9]{8,}$/;
+
 /** Result of `connect()` / `getAddress()`. */
 export interface ConnectResult {
   addr: string;
@@ -107,7 +112,8 @@ export interface FillParams {
  * artifact. The relying party MUST verify it server-side (see below).
  */
 export interface SiwcParams {
-  /** Server-issued, single-use, >=8 alphanumeric (use `generateNonce()` from @inversealtruism/csd-siwc). */
+  /** Server-issued, single-use, at least 8 ASCII letters and digits and nothing else (use `generateNonce()` from
+   *  @inversealtruism/csd-siwc). Another shape is refused before the wallet is asked. */
   nonce: string;
   /** Optional one-line human statement shown in the wallet (no newline). */
   statement?: string;
@@ -379,8 +385,8 @@ export class WalletConnection {
    * issue your OWN session. The signature is proof-of-control, NOT a bearer token. Always prompts.
    */
   signInWithCsd(params: SiwcParams): Promise<SiwcResult> {
-    if (!params || typeof params.nonce !== "string" || !params.nonce) {
-      return Promise.reject(new UnsupportedMethodError("signInWithCsd requires a server-issued { nonce }"));
+    if (!params || typeof params.nonce !== "string" || !SIWC_NONCE_RE.test(params.nonce)) {
+      return Promise.reject(new UnsupportedMethodError("signInWithCsd requires a server-issued { nonce } of at least 8 ASCII letters and digits, nothing else (a UUID's hyphens are refused); generateNonce() from @inversealtruism/csd-siwc makes one"));
     }
     if (typeof this.provider.signInWithCsd !== "function") {
       return Promise.reject(new UnsupportedMethodError("this wallet predates Sign-in-with-CSD — ask the user to update the Cairn Wallet"));

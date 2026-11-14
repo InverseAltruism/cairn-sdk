@@ -14,6 +14,7 @@ import {
   SubmitInFlightError,
 } from "../src/index.js";
 import type { CairnProvider, ProviderReply } from "../src/connect.js";
+import { buildSiwcMessage, CSD_CHAIN_MAINNET, generateNonce, SIWC_VERSION } from "@inversealtruism/csd-siwc";
 
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { c ? pass++ : fail++; console.log(`  ${c ? "✅" : "❌"} ${n}`); };
@@ -133,6 +134,36 @@ console.log("=== propose: outputs and an omitted fee reach the wallet as given =
   ok("the provider receives the params unchanged: outputs kept, no fee added", seen.length === 1 && JSON.stringify(seen[0]) === JSON.stringify(params) && !("fee" in (seen[0] as object)));
   await w.propose({ domain: "d", payloadHash: `0x${"ab".repeat(32)}`, uri: "u", expiresEpoch: 1, fee: 25_000_000 });
   ok("honest: an explicit fee still passes through", (seen[1] as { fee?: number }).fee === 25_000_000);
+}
+
+console.log("=== signInWithCsd: a nonce shape the wallet refuses after approval is refused before the request ===");
+{
+  let asked = 0;
+  const w = new WalletConnection(mockProvider({ signInWithCsd: (p) => { asked++; return Promise.resolve({ ok: true, result: { account: "0xabc", pub33: "0xpub", sig64: "0xsig", message: `m ${p.nonce}`, chainId: "csd:x" } }); } }));
+  const verdict = async (nonce: string): Promise<boolean> => {
+    const before = asked;
+    try { await w.signInWithCsd({ nonce }); return asked === before + 1; } catch (e) {
+      if (!(e instanceof UnsupportedMethodError) || asked !== before) throw e;
+      return false;
+    }
+  };
+  const uuid = "3f2b8c1e-9d4a-4f6b-8e2a-1c5d7e9f0a3b";
+  ok("a UUID nonce rejects with UnsupportedMethodError and the wallet is not asked", (await verdict(uuid)) === false);
+  const honest = generateNonce();
+  ok("honest: a generateNonce() value reaches the wallet and resolves", (await verdict(honest)) === true);
+  // Parity with csd-siwc buildSiwcMessage, whose rule the wallet applies after approval.
+  const siwcAccepts = (nonce: string): boolean => {
+    try {
+      buildSiwcMessage({ domain: "casino.example", account: `0x${"ab".repeat(20)}`, uri: "https://casino.example/", version: SIWC_VERSION, chainId: CSD_CHAIN_MAINNET, nonce, issuedAt: "2026-11-14T00:00:00Z" });
+      return true;
+    } catch { return false; }
+  };
+  const corpus = [honest, uuid, "abc123def456", "a".repeat(8), "a".repeat(7), "ABCDEFGH12", "abcd efgh", "abcdefg\u00e9", "abcdefgh\n",
+    "\uff11\uff12\uff13\uff14\uff15\uff16\uff17\uff18", "abcdefgh!", "abc_defgh", "abc.defgh", ""];
+  const mismatched: string[] = [];
+  for (const n of corpus) if ((await verdict(n)) !== siwcAccepts(n)) mismatched.push(JSON.stringify(n));
+  ok(`the SDK accepts exactly the nonces csd-siwc buildSiwcMessage accepts (${corpus.length} cases)`, mismatched.length === 0 && corpus.some(siwcAccepts) && !corpus.every(siwcAccepts));
+  if (mismatched.length) console.log(`      differ on ${mismatched.join(", ")}`);
 }
 
 console.log("=== connector: SIWC + fillOffer + capability detection ===");

@@ -148,7 +148,9 @@ the older verdict that misses a lied-about give.
 **Sign-in:** the SIWC signature proves key control ONCE. Verify it **server-side** (`verifySiwc`) and
 then issue **your own** session (rotating, expiring, HttpOnly+Secure+SameSite cookie). The signature is
 **never** a bearer token. The wallet binds the message's `domain` to the real page origin (you can't
-spoof it), so a signature for site A can't be replayed at site B.
+spoof it), so a signature for site A can't be replayed at site B. The nonce must be at least 8 ASCII letters and
+digits and nothing else (`generateNonce()` from csd-siwc makes one); `signInWithCsd` refuses another shape, such
+as a UUID, with `UNSUPPORTED_METHOD` before the wallet opens.
 
 ## Capability / version negotiation
 
