@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.3
+
+### Fixed
+
+- A CommonJS TypeScript project (`--module node16`, a `.cts` file or `"type": "commonjs"`) can import the package:
+  each subpath of the `exports` map now gives `import` and `require` their own types (`dist/*.d.ts` and
+  `dist/*.d.cts`). In 0.8.2 `require` got the ESM `.d.ts`, so tsc failed with TS1479 on every subpath, although the
+  `.d.cts` files shipped. Runtime `require()` and `import` are unchanged. `scripts/verify-tarball.mjs` now also
+  typechecks a consumer of the tarball under node16 CommonJS, node16 ESM and bundler resolution.
+
 ## 0.8.2
 
 ### Changed

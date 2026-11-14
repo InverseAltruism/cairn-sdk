@@ -8,39 +8,74 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./connect": {
-      "types": "./dist/connect.d.ts",
-      "import": "./dist/connect.js",
-      "require": "./dist/connect.cjs"
+      "import": {
+        "types": "./dist/connect.d.ts",
+        "default": "./dist/connect.js"
+      },
+      "require": {
+        "types": "./dist/connect.d.cts",
+        "default": "./dist/connect.cjs"
+      }
     },
     "./indexer": {
-      "types": "./dist/indexer.d.ts",
-      "import": "./dist/indexer.js",
-      "require": "./dist/indexer.cjs"
+      "import": {
+        "types": "./dist/indexer.d.ts",
+        "default": "./dist/indexer.js"
+      },
+      "require": {
+        "types": "./dist/indexer.d.cts",
+        "default": "./dist/indexer.cjs"
+      }
     },
     "./content": {
-      "types": "./dist/content.d.ts",
-      "import": "./dist/content.js",
-      "require": "./dist/content.cjs"
+      "import": {
+        "types": "./dist/content.d.ts",
+        "default": "./dist/content.js"
+      },
+      "require": {
+        "types": "./dist/content.d.cts",
+        "default": "./dist/content.cjs"
+      }
     },
     "./chain": {
-      "types": "./dist/chain.d.ts",
-      "import": "./dist/chain.js",
-      "require": "./dist/chain.cjs"
+      "import": {
+        "types": "./dist/chain.d.ts",
+        "default": "./dist/chain.js"
+      },
+      "require": {
+        "types": "./dist/chain.d.cts",
+        "default": "./dist/chain.cjs"
+      }
     },
     "./controller": {
-      "types": "./dist/controller.d.ts",
-      "import": "./dist/controller.js",
-      "require": "./dist/controller.cjs"
+      "import": {
+        "types": "./dist/controller.d.ts",
+        "default": "./dist/controller.js"
+      },
+      "require": {
+        "types": "./dist/controller.d.cts",
+        "default": "./dist/controller.cjs"
+      }
     },
     "./react": {
-      "types": "./dist/react.d.ts",
-      "import": "./dist/react.js",
-      "require": "./dist/react.cjs"
+      "import": {
+        "types": "./dist/react.d.ts",
+        "default": "./dist/react.js"
+      },
+      "require": {
+        "types": "./dist/react.d.cts",
+        "default": "./dist/react.cjs"
+      }
     }
   },
   "files": [

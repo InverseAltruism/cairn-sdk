@@ -45,6 +45,8 @@ try {
   const packed = packIn();
   let r = verify(packed);
   ok("honest: a fresh `pnpm pack` passes", r.code === 0 && /PASS tarball sha256 equals a fresh build and pack/.test(r.out) && /PASS the fresh pack's dist\/ equals the files just built/.test(r.out));
+  ok("honest: the consumer typecheck ran on the tarball under all three resolutions",
+    ["node16-cjs", "node16-esm", "bundler"].every((m) => new RegExp(`PASS an? ${m} consumer typechecks`).test(r.out)));
 
   // Edited after packing; the literals the entry checks look for are all still present.
   const x = join(work, "x");

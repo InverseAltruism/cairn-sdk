@@ -11,6 +11,8 @@
 //      the differing paths are listed.
 //   2. Both package entries (dist/index.js for ESM, dist/index.cjs for require()) exist, carry the ASDK-1
 //      transient arm ("fetch failed") and a parseable DEFAULT_SPV_CHECKPOINT, which is printed.
+//   3. The tarball's types: every file its exports map names is present, and a consumer importing every subpath
+//      typechecks under node16 CommonJS, node16 ESM and bundler resolution (scripts/check-consumer-types.mjs).
 // The checkpoint's agreement with the chain is test/spv-checkpoint.test.ts (a pinned header fixture); no
 // other repository is read.
 //
@@ -22,6 +24,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync }
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { consumerTypeChecks } from "./check-consumer-types.mjs";
 
 const repo = fileURLToPath(new URL("..", import.meta.url));
 const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
@@ -93,6 +96,12 @@ try {
     const m = dist.match(/DEFAULT_SPV_CHECKPOINT\s*=\s*\{\s*height:\s*(\d+)\s*,\s*hash:\s*["']([0-9a-fA-Fx]+)["']/);
     ok(`packed ${entry} carries a parseable DEFAULT_SPV_CHECKPOINT`, !!m);
     if (m) console.log(`  packed  ${entry} CP height=${m[1]} hash=${m[2].toLowerCase()}`);
+  }
+
+  // 3. A consumer of the given tarball typechecks.
+  for (const c of consumerTypeChecks(join(givenX, "package"), repo)) {
+    ok(c.name, c.ok);
+    for (const l of c.detail) console.log(`      ${l}`);
   }
 } finally {
   rmSync(work, { recursive: true, force: true });

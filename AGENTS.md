@@ -118,6 +118,7 @@ What verify-tarball checks:
 - It rebuilds this tree by running the `build` tsup command through node with only PATH and HOME set, so no npm or pnpm config can skip or fake the build.
 - It packs with scripts off, checks the packed dist/ equals what it just built, and requires the tarball's sha256 to equal the fresh pack's. The pack is deterministic; on a mismatch it lists the differing paths.
 - Both package entries must carry the ASDK-1 `fetch failed` arm and a parseable `DEFAULT_SPV_CHECKPOINT`.
+- The tarball's types: every file the `exports` map names must be in it, and a consumer importing every subpath must typecheck under node16 CommonJS, node16 ESM and bundler resolution (`scripts/check-consumer-types.mjs`, which also runs alone on a tarball). Each subpath gives `import` and `require` their own `types` (`.d.ts` and `.d.cts`); `test/consumer-types.test.mjs` pins that the 0.8.2 map, one shared ESM `types`, fails the CommonJS consumer with TS1479.
 - It reads no other repository. CI runs it on a fresh pack, and `test/verify-tarball.test.ts` (run in a disposable copy of the package) pins that an edited tarball, a stale dist under ignore-scripts or a faked script shell, and a failing build all fail.
 - `test/spv-checkpoint.test.ts` does not gate publishing: it is not in the pre-made-tarball path. The sha256 equality ties the tarball to the tree that test ran on.
 
