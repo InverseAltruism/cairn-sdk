@@ -47,6 +47,23 @@ await ok("the module examples load in Node by the package name", async () => {
   }
 });
 
+await ok("node-signer: an omitted propose or attest fee gets the node's floor, as the browser wallet's does", async () => {
+  const { makeKeyWallet } = await import(pathToFileURL(join(root, "examples", "node-signer.mjs")).href);
+  // One coin the stub cannot prove, so every build stops at input verification, after the fee check.
+  const cairn = { chain: { client: {}, utxos: async () => ({ utxos: [{ txid: `0x${"aa".repeat(32)}`, vout: 0, value: 10_000_000_000, confirmations: 10, coinbase: false }] }), submit: async () => ({ ok: true }) } };
+  const w = makeKeyWallet("11".repeat(32), cairn);
+  const calls = [
+    ["propose", { domain: "d", payloadHash: `0x${"ab".repeat(32)}`, uri: "u", expiresEpoch: 10 }],
+    ["attest", { proposalId: `0x${"ef".repeat(32)}`, score: 80, confidence: 70 }],
+  ];
+  for (const [method, params] of calls) {
+    for (const p of [params, { ...params, fee: 25_000_000 }]) {
+      const err = await w[method](p).then(() => null, (e) => String(e.message));
+      assert.ok(err !== null && !/fee out of range/.test(err) && /insufficient verifiable balance/.test(err), `${method} ${JSON.stringify(p.fee)}: ${err}`);
+    }
+  }
+});
+
 console.log("sample server, Sign in with CSD:");
 const server = spawn(process.execPath, [join(root, "examples/integrate-wallet/server.mjs")], { env: { ...process.env, PORT: "0" }, stdio: ["ignore", "pipe", "inherit"] });
 try {

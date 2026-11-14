@@ -71,7 +71,8 @@ export interface AttestParams {
   proposalId: string;
   score: number;
   confidence: number;
-  fee: number;
+  /** Base units. Omitted: the wallet signs its Attest fee floor, the fee its approval window shows. */
+  fee?: number;
 }
 
 /** Plain CSD transfer. The wallet always selects its own inputs and returns change to itself. */

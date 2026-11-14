@@ -46,6 +46,11 @@ Tested with Cairn Wallet 0.3.2.
   Propose fee floor, the fee its approval window shows) and `outputs?: { to, value }[]` pays CSD in the same
   transaction (the approval window lists those outputs). `wallet.propose` passes both through unchanged; in 0.8.2
   the type required `fee` and had no `outputs`, so either call needed a cast.
+- `AttestParams.fee` is optional too: omitted, the wallet signs its Attest fee floor. Every dApp param type
+  (propose, attest, fillOffer, sealClaim, send, revealClaim, signInWithCsd) now matches what wallet 0.3.2 accepts,
+  pinned by `test/types/wallet-params-0.3.2.ts` in `pnpm typecheck`; the other five already did. The
+  `examples/node-signer.mjs` provider signs the node's Propose or Attest floor when `fee` is omitted, as the
+  wallet does, instead of failing its build with "fee out of range".
 - The wallet's code-less `WALLET_RELOADED: ...` reply (the extension was updated or reloaded under the page; the
   request never reached the wallet) throws code `WALLET_RELOADED`, final. It read `UNKNOWN` in 0.8.2. A wallet that
   sends the same reply with the code `WALLET_RELOADED` (the next wallet release) maps to the same code.

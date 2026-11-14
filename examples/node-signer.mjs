@@ -10,6 +10,7 @@
 // CI, indexers), never for end users. End users always sign in their wallet.
 // chain primitives live under the /chain subpath (tree-shakeable away from browser dApps)
 import { buildProposeVerified, buildAttestVerified, buildSendVerified, verifyInputValues, addrFromPriv } from "@inversealtruism/cairn-sdk/chain";
+import { MIN_FEE_ATTEST, MIN_FEE_PROPOSE } from "@inversealtruism/csd-codec";
 
 /**
  * Build a CairnProvider that signs with `priv` and submits through `cairn.chain`.
@@ -41,8 +42,9 @@ export function makeKeyWallet(priv, cairn) {
     // Every builder here verifies each selected input's real value from its source tx (verifyInputValues),
     // computes change from the verified total and fails closed, so an RPC that under-reports a coin cannot make
     // the surplus burn as an implicit fee. Never the bare buildPropose, buildAttest or buildSend here.
-    async propose(p) { return submit(await buildProposeVerified({ ...p, utxos: await spendable(), priv, verify }), "propose"); },
-    async attest(p) { return submit(await buildAttestVerified({ ...p, utxos: await spendable(), priv, verify }), "attest"); },
+    // An omitted fee signs the node's floor, as the browser wallet does.
+    async propose(p) { return submit(await buildProposeVerified({ ...p, fee: p.fee ?? MIN_FEE_PROPOSE, utxos: await spendable(), priv, verify }), "propose"); },
+    async attest(p) { return submit(await buildAttestVerified({ ...p, fee: p.fee ?? MIN_FEE_ATTEST, utxos: await spendable(), priv, verify }), "attest"); },
     async send(p) {
       const outputs = Array.isArray(p.outputs) ? p.outputs : [{ to: p.to, value: p.amount }];
       return submit(await buildSendVerified({ outputs, fee: p.fee ?? 1_000_000, utxos: await spendable(), priv, verify }), "send");

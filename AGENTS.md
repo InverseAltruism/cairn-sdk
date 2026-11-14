@@ -132,6 +132,7 @@ What verify-tarball checks:
 - esbuild CLI shim ELF-errors under pnpm; scripts/build-example.mjs uses the JS API, keep it that way.
 - Audit-ID markers in `src/` comments (M3, H2, CAIRNSDK-*, CONNECT-1 and others) are mapped to the guards they explain in CHANGELOG.md, "Notes moved from AGENTS.md".
 - mapProviderError and the write wrappers classify every code in WALLET-ERROR-CODES.md (the wallet repo's canonical contract; `RESERVATION_UNCONFIRMED` never reaches a page) as retryable, in flight or final; add a new wallet code to `src/errors.ts` and `test/errors.test.ts` when the wallet adds one. Until then an unlisted code is kept on the error as sent, final; a reply naming a code only the SDK assigns (`SDK_ONLY_CODES`) reads `UNKNOWN`.
+- The dApp param types in `src/connect.ts` are pinned to what the wallet accepts by `test/types/wallet-params-0.3.2.ts` (in `pnpm typecheck`); when a wallet release changes a handler's params, update that snapshot and the types together.
 - Large-tx submits: a reverse proxy with a small body cap on POST /api/rpc/tx/submit answers HTTP 400 before the tx reaches the node (a 64KB cap is hit at roughly 127+ inputs). The cairn server has a scoped 512KB cap on that route.
 - Symptom on a server without that cap: a big Chain.send()/submit 400s with no node-side error. Suspect the proxy body cap on the server you target before blaming the SDK.
 

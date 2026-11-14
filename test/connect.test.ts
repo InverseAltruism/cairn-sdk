@@ -138,6 +138,11 @@ console.log("=== propose: outputs and an omitted fee reach the wallet as given =
   ok("the provider receives the params unchanged: outputs kept, no fee added", seen.length === 1 && JSON.stringify(seen[0]) === JSON.stringify(params) && !("fee" in (seen[0] as object)));
   await w.propose({ domain: "d", payloadHash: `0x${"ab".repeat(32)}`, uri: "u", expiresEpoch: 1, fee: 25_000_000 });
   ok("honest: an explicit fee still passes through", (seen[1] as { fee?: number }).fee === 25_000_000);
+  const attests: unknown[] = [];
+  const wa = new WalletConnection(mockProvider({ attest: (p) => { attests.push(p); return Promise.resolve({ ok: true, result: { ok: true, txid: "0xatt" } }); } }));
+  const support = { proposalId: `0x${"ef".repeat(32)}`, score: 80, confidence: 70 };
+  ok("attest with no fee resolves the txid", (await wa.attest(support)).txid === "0xatt");
+  ok("attest: the provider receives the params unchanged, no fee added", JSON.stringify(attests[0]) === JSON.stringify(support));
 }
 
 console.log("=== signInWithCsd: a nonce shape the wallet refuses after approval is refused before the request ===");
