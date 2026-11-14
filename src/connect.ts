@@ -268,7 +268,12 @@ export function detectProvider(opts: DetectOptions = {}): Promise<CairnProvider>
   });
 }
 
-/** True if the Cairn Wallet is already present (no waiting). */
+/**
+ * True if the Cairn Wallet's provider is on the page right now; it never waits. The wallet injects after the
+ * page's startup (it was absent at DOMContentLoaded and present at `load` in Chromium), so a startup call reads
+ * false for a user who has the wallet. Decide "not installed" with `detectProvider()` or `getWallet()`, which
+ * wait for the wallet's announcement (3 s by default).
+ */
 export function isInstalled(): boolean {
   return typeof window !== "undefined" && !!window.cairn?.isCairn;
 }

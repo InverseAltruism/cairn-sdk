@@ -75,10 +75,14 @@ console.log("=== connector: detection ===");
 
   // provider injected slightly later → resolved via cairn#initialized event
   const et = installWindow(undefined);
+  // The real wallet injects after the page's startup (absent at DOMContentLoaded in 0 of 8 Chromium loads): at
+  // startup isInstalled() reads false for a wallet user and does not wait; detectProvider is the startup path.
+  ok("before the late injection isInstalled() is false, synchronously (a boolean, not a promise)", isInstalled() === false);
   const pending = detectProvider({ timeoutMs: 500 });
   setTimeout(() => { (globalThis as any).window.cairn = mockProvider(); et.dispatchEvent(new Event("cairn#initialized")); }, 20);
   const p2 = await pending;
   ok("detectProvider resolves after cairn#initialized fires", p2.isCairn === true);
+  ok("after the injection isInstalled() is true", isInstalled() === true);
 
   installWindow(undefined);
   await okThrows("detectProvider times out → NotInstalled", () => detectProvider({ timeoutMs: 60 }), NotInstalledError);

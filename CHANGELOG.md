@@ -21,6 +21,10 @@
   its hyphens, for one) with `UnsupportedMethodError` before the wallet is asked. The wallet applies that rule
   (csd-siwc's) only after the user approved, and then answered `INTERNAL`; 0.8.2 checked only that the nonce was
   not empty. A `generateNonce()` value from csd-siwc passes as before.
+- `isInstalled()` stays synchronous; its documentation now says what it reads. The wallet injects after the
+  page's startup (absent at DOMContentLoaded, present at `load`), so a startup `isInstalled()` reads `false` for
+  a user who has the wallet. Use `detectProvider()` or `getWallet()` (they wait up to 3 s for the wallet's
+  announcement) to decide that the wallet is missing; the guide's "Integrate the wallet" section does.
 - `ProposeParams` matches what the wallet's `propose` accepts: `fee` is optional (omitted, the wallet signs its
   Propose fee floor, the fee its approval window shows) and `outputs?: { to, value }[]` pays CSD in the same
   transaction (the approval window lists those outputs). `wallet.propose` passes both through unchanged; in 0.8.2
