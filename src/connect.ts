@@ -55,7 +55,10 @@ export interface ProposeParams {
   payloadHash: string;
   uri: string;
   expiresEpoch: number;
-  fee: number;
+  /** Base units. Omitted: the wallet signs its Propose fee floor, the fee its approval window shows. */
+  fee?: number;
+  /** CSD outputs paid in the same transaction (base units); the approval window lists them. */
+  outputs?: { to: string; value: number }[];
 }
 
 /** Attest (support) params. */

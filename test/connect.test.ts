@@ -123,6 +123,18 @@ console.log("=== connector: method wrappers + error mapping ===");
   await okThrows("revealClaim('') rejects", () => new WalletConnection(mockProvider()).revealClaim(""), UnsupportedMethodError);
 }
 
+console.log("=== propose: outputs and an omitted fee reach the wallet as given ===");
+{
+  const seen: unknown[] = [];
+  const w = new WalletConnection(mockProvider({ propose: (p) => { seen.push(p); return Promise.resolve({ ok: true, result: { ok: true, txid: "0xtx" } }); } }));
+  const params = { domain: "cairnx:v1", payloadHash: `0x${"ab".repeat(32)}`, uri: "cairnx:transfer", expiresEpoch: 10, outputs: [{ to: `0x${"cd".repeat(20)}`, value: 5 }] };
+  const r = await w.propose(params);
+  ok("propose with outputs and no fee resolves the txid", r.txid === "0xtx");
+  ok("the provider receives the params unchanged: outputs kept, no fee added", seen.length === 1 && JSON.stringify(seen[0]) === JSON.stringify(params) && !("fee" in (seen[0] as object)));
+  await w.propose({ domain: "d", payloadHash: `0x${"ab".repeat(32)}`, uri: "u", expiresEpoch: 1, fee: 25_000_000 });
+  ok("honest: an explicit fee still passes through", (seen[1] as { fee?: number }).fee === 25_000_000);
+}
+
 console.log("=== connector: SIWC + fillOffer + capability detection ===");
 {
   const w = new WalletConnection(mockProvider());

@@ -17,6 +17,10 @@
   reads `UNKNOWN`.
 - `FILL_IN_PROGRESS` (wallet 0.3.2: another fill request for the same target is open in the wallet; nothing was
   signed for this one) is listed and final (`retryable: false`). It read `UNKNOWN` in 0.8.2.
+- `ProposeParams` matches what the wallet's `propose` accepts: `fee` is optional (omitted, the wallet signs its
+  Propose fee floor, the fee its approval window shows) and `outputs?: { to, value }[]` pays CSD in the same
+  transaction (the approval window lists those outputs). `wallet.propose` passes both through unchanged; in 0.8.2
+  the type required `fee` and had no `outputs`, so either call needed a cast.
 - The wallet's code-less `WALLET_RELOADED: ...` reply (the extension was updated or reloaded under the page; the
   request never reached the wallet) throws code `WALLET_RELOADED`, final. It read `UNKNOWN` in 0.8.2.
 
