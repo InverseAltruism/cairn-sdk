@@ -1,7 +1,7 @@
 // Integrate the Cairn Wallet in a web page: detect, connect, balances, sign-in verified by your server, a CSD send
 // and a token send, and the no-wallet, locked, rejected and account-changed cases. It imports the packages by their
 // published names, as an app that installed them does. docs/SDK-GUIDE.md, "Integrate the wallet", walks through it.
-import { Cairn, SubmitInFlightError, errorCode, getWallet, type WalletConnection } from "@inversealtruism/cairn-sdk";
+import { Cairn, CairnError, SubmitInFlightError, errorCode, getWallet, type WalletConnection } from "@inversealtruism/cairn-sdk";
 import { DOMAIN, epochOf, transfer } from "@inversealtruism/cairnx-core";
 
 const BASE = "https://cairn-substrate.com";
@@ -23,6 +23,8 @@ const setConnected = (address: string | null): void => {
 
 // Branch on the error code, never on the message text: the wallet rewords messages, the codes are its contract.
 function explain(e: unknown): string {
+  // Not a CairnError: this page failed before the wallet was asked (a record that does not validate, a failed read).
+  if (!(e instanceof CairnError)) return `Not sent to the wallet: ${String((e as Error)?.message ?? e).split("\n")[0]}`;
   if (e instanceof SubmitInFlightError) {
     return `The transaction may have been sent${e.txid ? ` (txid ${e.txid})` : ""}. Check your history before you send again.`;
   }
@@ -35,7 +37,7 @@ function explain(e: unknown): string {
     case "WALLET_RELOADED": return "The wallet was updated or reloaded. Reload this page.";
     case "RATE_LIMITED": return "Too many requests are waiting in the wallet. Answer those first.";
     case "UNSUPPORTED_METHOD": return `This wallet cannot do that: ${(e as Error).message.split("\n")[0]}`;
-    default: return `Wallet error ${errorCode(e)}: ${String((e as Error)?.message ?? e).split("\n")[0]}`;
+    default: return `Wallet error ${errorCode(e)}: ${e.shortMessage}`;
   }
 }
 async function run(task: () => Promise<void>): Promise<void> {
@@ -95,12 +97,14 @@ async function sendCsd(): Promise<void> {
 }
 
 // A token send: a cairnx:v1 transfer record anchored by a Propose. The fee is left to the wallet, which signs its
-// Propose floor. The token balance changes once the resolver reads the block that mines it.
+// Propose floor. The token balance changes once the resolver reads the block that mines it. The expiry window is
+// the one the wallet's own token transfer uses: 720 epochs, about 30 days (an epoch is 30 blocks at a 120 s target).
+const TRANSFER_EXPIRY_EPOCHS = 720;
 async function sendToken(): Promise<void> {
   if (!wallet) return;
   const record = transfer({ ticker: field("token-ticker"), to: field("token-to"), amount: field("token-amount"), ts: Math.floor(Date.now() / 1000) });
   const { height } = await cairn.chain.tip();
-  const { txid } = await wallet.propose({ domain: DOMAIN, payloadHash: record.payloadHash, uri: record.uri, expiresEpoch: epochOf(height) + 5000 });
+  const { txid } = await wallet.propose({ domain: DOMAIN, payloadHash: record.payloadHash, uri: record.uri, expiresEpoch: epochOf(height) + TRANSFER_EXPIRY_EPOCHS });
   say(`Token transfer anchored, txid ${txid}.`);
 }
 

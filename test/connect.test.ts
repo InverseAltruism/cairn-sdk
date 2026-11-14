@@ -399,6 +399,11 @@ console.log("=== wallet codes kept on the error: FILL_IN_PROGRESS, WALLET_RELOAD
   ok("a nested code this release does not list is kept as sent, final", final(ne, "SOME_CODE_FROM_A_LATER_WALLET"));
   const ge = await grab(() => new WalletConnection(mockProvider({ getAddress: () => Promise.resolve(later) })).getAddress());
   ok("a read: a code this release does not list is kept as sent", final(ge, "SOME_CODE_FROM_A_LATER_WALLET"));
+  // The two in-flight codes are maybe-sent on the outer envelope too (wallet 0.3.2 sends them nested only).
+  for (const code of ["SUBMIT_MAYBE_INFLIGHT", "SUBMIT_DUPLICATE"]) {
+    const oe = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve({ ok: false, code, error: "the submit outcome is unknown" }) })).send({ to: "0xd", amount: 1 }));
+    ok(`an outer ${code} on a write is a SubmitInFlightError (maybeSent, retryable false)`, oe instanceof SubmitInFlightError && oe.code === code && oe.maybeSent === true && oe.retryable === false);
+  }
   // A code only the SDK assigns keeps its documented meaning: WALLET_TIMEOUT is always a maybe-sent SubmitInFlightError.
   const fake = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve({ ok: false, code: "WALLET_TIMEOUT", error: "x" }) })).send({ to: "0xd", amount: 1 }));
   ok("a provider reply naming an SDK-only code is not kept (UNKNOWN)", fake instanceof CairnError && fake.code === "UNKNOWN");

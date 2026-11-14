@@ -16,6 +16,7 @@ const NONCE_TTL_MS = 5 * 60_000;
 const SESSION_TTL_MS = 30 * 60_000;
 let siwcDomain = process.env.SIWC_DOMAIN ?? ""; // host[:port] the page is served from; set after listen otherwise
 
+// Both Maps live in this process and are never swept: a real deployment needs a shared store with expiry (Redis).
 /** @type {Map<string, { exp: number, browser: string }>} nonce -> expiry and the pre-login cookie it was issued to */
 const nonces = new Map();
 /** @type {Map<string, { account: string, exp: number }>} session id -> account */

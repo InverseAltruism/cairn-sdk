@@ -54,8 +54,9 @@ no-wallet, locked, rejected and account-changed cases ran against wallet 0.3.2 i
    a synchronous read, returns `false` at startup for a user who has the wallet: do not decide "not installed"
    with it. `discoverProviders()` lists every announcing wallet for a picker.
 3. Connect. `wallet.connect()` asks the user once per site and answers silently afterwards. A locked wallet
-   shows its own unlock form in the approval window, so the page needs no branch for it; a request that runs
-   while the wallet is locked fails with `WALLET_LOCKED`.
+   shows its own unlock form in the approval window, so the page needs no branch for it: a request made while it
+   is locked waits there for the user to unlock. `WALLET_LOCKED` arrives when the wallet locks between the user's
+   review and the approval.
 4. Balances are served reads for display, never a payment gate. CSD: `cairn.chain.utxos(addr)`,
    `confirmed_balance` in base units (1 CSD = 100,000,000). Tokens: `GET
    https://cairn-substrate.com/trade/api/cairnx/address/<addr>` answers `{ balances: { <ticker>: { available,
@@ -71,8 +72,9 @@ no-wallet, locked, rejected and account-changed cases ran against wallet 0.3.2 i
 7. A token send: build the record with cairnx-core `transfer({ ticker, to, amount, ts })` (amount in the token's
    base units) and anchor it with `wallet.propose({ domain: DOMAIN, payloadHash, uri, expiresEpoch })`, where
    `DOMAIN` is cairnx-core's `cairnx:v1`. With no `fee` the wallet signs its Propose fee floor (`MIN_FEE_PROPOSE`,
-   25,000,000 base units). The approval window shows a CairnX token transfer; the balance changes once the
-   resolver reads the block that mines it.
+   25,000,000 base units). The sample sets `expiresEpoch` to the current epoch plus 720, the window the wallet's
+   own token transfer uses (about 30 days: an epoch is 30 blocks at a 120 s target). The approval window shows a
+   CairnX token transfer; the balance changes once the resolver reads the block that mines it.
 8. Failures: branch on `errorCode(e)`, never on the message. `NOT_INSTALLED`, `USER_REJECTED` (also when the
    user closes the approval window), `WALLET_LOCKED`, `ACCOUNT_CHANGED` (the account changed while the request was
    open), `WALLET_RELOADED` (reload the page), `RATE_LIMITED` (too many requests wait in the wallet). A

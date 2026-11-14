@@ -8,6 +8,8 @@
 //
 // SECURITY: this holds a private key in process: only for keys you own (treasury bots,
 // CI, indexers), never for end users. End users always sign in their wallet.
+// Install: @inversealtruism/cairn-sdk and @inversealtruism/csd-codec (the fee floors; cairn-sdk depends on it, but
+// an app that imports it must declare it).
 // chain primitives live under the /chain subpath (tree-shakeable away from browser dApps)
 import { buildProposeVerified, buildAttestVerified, buildSendVerified, verifyInputValues, addrFromPriv } from "@inversealtruism/cairn-sdk/chain";
 import { MIN_FEE_ATTEST, MIN_FEE_PROPOSE } from "@inversealtruism/csd-codec";

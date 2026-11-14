@@ -245,6 +245,8 @@ const NESTED_TERMINAL = new Set<CairnErrorCode>([
 ]);
 
 export function mapProviderError(error: string, code?: string): CairnError {
+  // Maybe-sent wherever it appears: wallet 0.3.2 nests these two only, but an outer one must not read as final.
+  if (code === "SUBMIT_MAYBE_INFLIGHT" || code === "SUBMIT_DUPLICATE") return new SubmitInFlightError(error || code, code);
   if (code === "USER_REJECTED" || code === "APPROVAL_CLOSED") return new UserRejectedError(error);
   if (code === "WALLET_LOCKED") return new WalletLockedError(error);
   if (code === "UNSUPPORTED_METHOD" || code === "UNKNOWN_KIND") return new UnsupportedMethodError(error);

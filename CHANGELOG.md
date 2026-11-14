@@ -26,9 +26,14 @@ Tested with Cairn Wallet 0.3.2.
 - A wallet error code this SDK release does not list stays on the error: `errorCode(e)` and `e.code` return the
   code the wallet sent, with `retryable: false`, where 0.8.2 flattened it to `UNKNOWN`. `CairnErrorCode` gains a
   `string` member for that, so a `switch` over it can no longer be exhaustive (one with a `never` default stops
-  compiling); branching on the listed codes is unchanged. A reply naming a code only the SDK assigns
+  compiling), a comparison with a misspelt code (`errorCode(e) === "USER_REJECTD"`) compiles where 0.8.2 reported
+  TS2367, and a `Record<CairnErrorCode, T>` no longer requires every key; branching on the listed codes is
+  unchanged. A reply naming a code only the SDK assigns
   (`WALLET_TIMEOUT`, `NOT_INSTALLED`, `HTTP_ERROR`, `CONTENT_VERIFICATION`, `CONTENT_NOT_JSON`, `UNKNOWN`) still
   reads `UNKNOWN`.
+- `SUBMIT_MAYBE_INFLIGHT` and `SUBMIT_DUPLICATE` throw a `SubmitInFlightError` (`maybeSent: true`) wherever the
+  reply carries them, on the outer envelope as well as nested. Wallet 0.3.2 sends them nested only; an outer one
+  read `UNKNOWN` in 0.8.2 and would have been a plain `CairnError` with the new code pass-through.
 - `FILL_IN_PROGRESS` (wallet 0.3.2: another fill request for the same target is open in the wallet; nothing was
   signed for this one) is listed and final (`retryable: false`). It read `UNKNOWN` in 0.8.2.
 - `signInWithCsd` refuses a nonce that is not at least 8 ASCII letters and digits (a `crypto.randomUUID()` with
@@ -50,7 +55,9 @@ Tested with Cairn Wallet 0.3.2.
   (propose, attest, fillOffer, sealClaim, send, revealClaim, signInWithCsd) now matches what wallet 0.3.2 accepts,
   pinned by `test/types/wallet-params-0.3.2.ts` in `pnpm typecheck`; the other five already did. The
   `examples/node-signer.mjs` provider signs the node's Propose or Attest floor when `fee` is omitted, as the
-  wallet does, instead of failing its build with "fee out of range".
+  wallet does, instead of failing its build with "fee out of range". Type break for a custom provider, test
+  stand-in or wrapper: code that reads `ProposeParams.fee` or `AttestParams.fee` as a `number` now fails with
+  TS2345 or TS2322; default it as the wallet does.
 - The wallet's code-less `WALLET_RELOADED: ...` reply (the extension was updated or reloaded under the page; the
   request never reached the wallet) throws code `WALLET_RELOADED`, final. It read `UNKNOWN` in 0.8.2. A wallet that
   sends the same reply with the code `WALLET_RELOADED` (the next wallet release) maps to the same code.
