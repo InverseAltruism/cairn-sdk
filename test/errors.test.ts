@@ -44,6 +44,11 @@ ok("'wallet locked' → WALLET_LOCKED", mapProviderError("wallet locked").code =
 ok("'unsupported dApp method: x' → UNSUPPORTED_METHOD", mapProviderError("unsupported dApp method: x").code === "UNSUPPORTED_METHOD");
 ok("'…predates Sign-in-with-CSD' → UNSUPPORTED_METHOD", mapProviderError("this wallet predates Sign-in-with-CSD").code === "UNSUPPORTED_METHOD");
 ok("unknown string → UNKNOWN", mapProviderError("weird backend error").code === "UNKNOWN");
+ok("a code this release does not list is kept, final", mapProviderError("x", "SOME_LATER_CODE").code === "SOME_LATER_CODE" && mapProviderError("x", "SOME_LATER_CODE").retryable === false);
+ok("a non-string code is ignored (the string fallback runs)", mapProviderError("rejected by user", 7 as unknown as string).code === "USER_REJECTED");
+ok("FILL_IN_PROGRESS keeps its code, final", mapProviderError("held", "FILL_IN_PROGRESS").code === "FILL_IN_PROGRESS" && mapProviderError("held", "FILL_IN_PROGRESS").retryable === false);
+ok("the code-less 'WALLET_RELOADED:' prefix -> WALLET_RELOADED, final", mapProviderError("WALLET_RELOADED: refresh this page").code === "WALLET_RELOADED" && mapProviderError("WALLET_RELOADED: refresh this page").retryable === false);
+ok("'WALLET_RELOADED' elsewhere in a message is not the prefix", mapProviderError("not WALLET_RELOADED: x").code === "UNKNOWN");
 ok("errorCode(CairnError) returns its code", errorCode(new WalletLockedError()) === "WALLET_LOCKED");
 ok("errorCode(plain Error) → UNKNOWN", errorCode(new Error("x")) === "UNKNOWN");
 

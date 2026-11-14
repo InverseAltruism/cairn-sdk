@@ -318,6 +318,39 @@ console.log("=== a write the wallet may have submitted: WALLET_UNAVAILABLE and t
     tr instanceof CairnError && !(tr instanceof SubmitInFlightError) && tr.retryable === false);
 }
 
+console.log("=== wallet codes kept on the error: FILL_IN_PROGRESS, WALLET_RELOADED, a code this release does not list ===");
+{
+  const grab = async (fn: () => Promise<unknown>): Promise<unknown> => { try { return await fn(); } catch (e) { return e; } };
+  const final = (e: unknown, code: string) => e instanceof CairnError && !(e instanceof SubmitInFlightError) && e.code === code && e.retryable === false;
+  // wallet 0.3.2 background.ts queueDappRequest: refused on arrival, nothing queued or signed
+  const held = { ok: false as const, code: "FILL_IN_PROGRESS", error: "A payment request for this offer is already in your wallet, waiting for your answer or being sent." };
+  const fe = await grab(() => new WalletConnection(mockProvider({ fillOffer: () => Promise.resolve(held) })).fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 1 }] }));
+  ok("fillOffer: FILL_IN_PROGRESS keeps its code, final, not maybe-sent", final(fe, "FILL_IN_PROGRESS"));
+  const ae = await grab(() => new WalletConnection(mockProvider({ attest: () => Promise.resolve(held) })).attest({ proposalId: "0xp", score: 1, confidence: 1_000_000, fee: 1 }));
+  ok("attest at the token-fill confidence: FILL_IN_PROGRESS keeps its code", final(ae, "FILL_IN_PROGRESS"));
+  // wallet content.ts: sendMessage threw (extension context invalidated), so the request never left the page
+  const reloaded = { ok: false as const, error: "WALLET_RELOADED: the wallet extension was updated or reloaded - refresh this page to reconnect" };
+  const se = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve(reloaded) })).send({ to: "0xd", amount: 1 }));
+  ok("send: the code-less WALLET_RELOADED: reply gets code WALLET_RELOADED, final, not maybe-sent", final(se, "WALLET_RELOADED"));
+  const ce = await grab(() => new WalletConnection(mockProvider({ connect: () => Promise.resolve(reloaded) })).connect());
+  ok("connect: the WALLET_RELOADED: reply gets code WALLET_RELOADED", final(ce, "WALLET_RELOADED"));
+  const later = { ok: false as const, code: "SOME_CODE_FROM_A_LATER_WALLET", error: "a refusal this SDK release does not know" };
+  const le = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve(later) })).send({ to: "0xd", amount: 1 }));
+  ok("an outer code this release does not list is kept as sent, final", final(le, "SOME_CODE_FROM_A_LATER_WALLET") && (le as CairnError).shortMessage === later.error);
+  const ne = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve({ ok: true, result: { ...later, ok: false } }) })).send({ to: "0xd", amount: 1 }));
+  ok("a nested code this release does not list is kept as sent, final", final(ne, "SOME_CODE_FROM_A_LATER_WALLET"));
+  const ge = await grab(() => new WalletConnection(mockProvider({ getAddress: () => Promise.resolve(later) })).getAddress());
+  ok("a read: a code this release does not list is kept as sent", final(ge, "SOME_CODE_FROM_A_LATER_WALLET"));
+  // A code only the SDK assigns keeps its documented meaning: WALLET_TIMEOUT is always a maybe-sent SubmitInFlightError.
+  const fake = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve({ ok: false, code: "WALLET_TIMEOUT", error: "x" }) })).send({ to: "0xd", amount: 1 }));
+  ok("a provider reply naming an SDK-only code is not kept (UNKNOWN)", fake instanceof CairnError && fake.code === "UNKNOWN");
+  // honest path: a known code and the code-less legacy strings map as before
+  const re = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve({ ok: false, code: "USER_REJECTED", error: "rejected by user" }) })).send({ to: "0xd", amount: 1 }));
+  ok("honest: USER_REJECTED still throws UserRejectedError", re instanceof UserRejectedError);
+  const le2 = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve({ ok: false, error: "wallet locked" }) })).send({ to: "0xd", amount: 1 }));
+  ok("honest: a code-less 'wallet locked' still throws WalletLockedError", le2 instanceof WalletLockedError);
+}
+
 console.log("=== B7c: per-call provider timeout ===");
 {
   installWindow();

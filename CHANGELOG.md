@@ -9,6 +9,16 @@
   `dist/*.d.cts`). In 0.8.2 `require` got the ESM `.d.ts`, so tsc failed with TS1479 on every subpath, although the
   `.d.cts` files shipped. Runtime `require()` and `import` are unchanged. `scripts/verify-tarball.mjs` now also
   typechecks a consumer of the tarball under node16 CommonJS, node16 ESM and bundler resolution.
+- A wallet error code this SDK release does not list stays on the error: `errorCode(e)` and `e.code` return the
+  code the wallet sent, with `retryable: false`, where 0.8.2 flattened it to `UNKNOWN`. `CairnErrorCode` gains a
+  `string` member for that, so a `switch` over it can no longer be exhaustive (one with a `never` default stops
+  compiling); branching on the listed codes is unchanged. A reply naming a code only the SDK assigns
+  (`WALLET_TIMEOUT`, `NOT_INSTALLED`, `HTTP_ERROR`, `CONTENT_VERIFICATION`, `CONTENT_NOT_JSON`, `UNKNOWN`) still
+  reads `UNKNOWN`.
+- `FILL_IN_PROGRESS` (wallet 0.3.2: another fill request for the same target is open in the wallet; nothing was
+  signed for this one) is listed and final (`retryable: false`). It read `UNKNOWN` in 0.8.2.
+- The wallet's code-less `WALLET_RELOADED: ...` reply (the extension was updated or reloaded under the page; the
+  request never reached the wallet) throws code `WALLET_RELOADED`, final. It read `UNKNOWN` in 0.8.2.
 
 ## 0.8.2
 

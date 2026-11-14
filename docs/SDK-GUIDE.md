@@ -184,18 +184,23 @@ catch (e) {
 Codes: `NOT_INSTALLED`, `USER_REJECTED`, `WALLET_LOCKED`, `UNSUPPORTED_METHOD`, `HTTP_ERROR` (also
 a 2xx body whose shape is wrong, such as a names list read that is not an array), `CONTENT_VERIFICATION`,
 `CONTENT_NOT_JSON` (`content.get()` on verified bytes that are not JSON), `WALLET_TIMEOUT` (a write method
-outlasted the connection timeout; see below), `UNKNOWN`.
+outlasted the connection timeout; see below), `WALLET_RELOADED` (the wallet was updated or reloaded under the
+page; the request never reached it, and the page must reload to reach the wallet again), `UNKNOWN`, and every
+wallet code below.
 
 > **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the
 > source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error (except
 > `UNKNOWN_KIND`, which throws `UnsupportedMethodError` with `UNSUPPORTED_METHOD`, and `APPROVAL_CLOSED`, which
-> throws `UserRejectedError` with `USER_REJECTED`) and classify every code listed there as of wallet 0.3.1 except
+> throws `UserRejectedError` with `USER_REJECTED`) and classify every code listed there as of wallet 0.3.2 except
 > `RESERVATION_UNCONFIRMED`, which the wallet returns to its approval window only: retryable (`VERIFY_UNAVAILABLE`, `OFFER_UNKNOWN`, `REVIEW_REQUIRED`,
 > `SEAL_NOT_MINED`, and `WALLET_UNAVAILABLE` on `connect` and `getAddress`: nothing was sent), in flight
 > (`SUBMIT_MAYBE_INFLIGHT`, `SUBMIT_DUPLICATE`, and `WALLET_UNAVAILABLE` on a write method: `send`,
 > `fillOffer`, `propose`, `attest`, `sealClaim`, `revealClaim`), and final (every other code, including
 > `OFFER_SOURCE_CONFLICT`, `FILL_LEGACY_SUNSET`, `VERIFY_HORIZON`, `VERIFY_UNREPRESENTABLE`,
-> `RESERVATION_DENIED` and `RPC_BLOCK_MISMATCH`; `retryable: false`). An in-flight error is a `SubmitInFlightError` (`maybeSent: true`, `retryable: false`)
+> `RESERVATION_DENIED`, `RPC_BLOCK_MISMATCH` and `FILL_IN_PROGRESS`; `retryable: false`). `FILL_IN_PROGRESS`
+> means another fill request for the same offer or reservation is open in the wallet, queued or being sent; this
+> one was not queued and nothing was signed for it. Ask again only after the first is answered, and if the first
+> was sent, check that purchase before paying again. An in-flight error is a `SubmitInFlightError` (`maybeSent: true`, `retryable: false`)
 > carrying the txid when the wallet knows it: check the chain or the balance before you send again, never retry
 > blindly. `WALLET_UNAVAILABLE` on a write means the page lost the wallet's reply, which can happen after the
 > wallet submitted the approved transaction. A write that outlasts the connection timeout (10 minutes by
@@ -207,7 +212,12 @@ outlasted the connection timeout; see below), `UNKNOWN`.
 > `cairn.chain.submit(e.nodeJson)` (the same coins under the same txid, so it cannot pay twice) rather than a new
 > send, which may select other coins. A 4xx answer to that submit (a proxy's 400 or 413 request body cap, a 429
 > rate limit) broadcast nothing and throws a final `CairnError` with code `SUBMIT_REJECTED` instead. A code the
-> SDK does not know yet still throws, as a final error with the wallet's message.
+> wallet sends that this SDK release does not list yet is kept on the error as sent (`errorCode(e)` returns it),
+> final, with the wallet's message, so you can branch on a newer wallet's code before the SDK lists it; the
+> `CairnErrorCode` type admits any string for that reason. A reply that names a code only the SDK assigns
+> (`WALLET_TIMEOUT`, `NOT_INSTALLED`, `HTTP_ERROR`, `CONTENT_VERIFICATION`, `CONTENT_NOT_JSON`, `UNKNOWN`) is
+> not the wallet's and reads `UNKNOWN`. The wallet's code-less `WALLET_RELOADED:` reply becomes code
+> `WALLET_RELOADED`.
 
 ## Versioning & dependency hygiene
 
