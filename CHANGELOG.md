@@ -47,7 +47,8 @@ Tested with Cairn Wallet 0.3.2.
   transaction (the approval window lists those outputs). `wallet.propose` passes both through unchanged; in 0.8.2
   the type required `fee` and had no `outputs`, so either call needed a cast.
 - The wallet's code-less `WALLET_RELOADED: ...` reply (the extension was updated or reloaded under the page; the
-  request never reached the wallet) throws code `WALLET_RELOADED`, final. It read `UNKNOWN` in 0.8.2.
+  request never reached the wallet) throws code `WALLET_RELOADED`, final. It read `UNKNOWN` in 0.8.2. A wallet that
+  sends the same reply with the code `WALLET_RELOADED` (the next wallet release) maps to the same code.
 
 ## 0.8.2
 

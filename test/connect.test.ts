@@ -381,6 +381,12 @@ console.log("=== wallet codes kept on the error: FILL_IN_PROGRESS, WALLET_RELOAD
   ok("send: the code-less WALLET_RELOADED: reply gets code WALLET_RELOADED, final, not maybe-sent", final(se, "WALLET_RELOADED"));
   const ce = await grab(() => new WalletConnection(mockProvider({ connect: () => Promise.resolve(reloaded) })).connect());
   ok("connect: the WALLET_RELOADED: reply gets code WALLET_RELOADED", final(ce, "WALLET_RELOADED"));
+  // wallet 0.3.3 sends the same reply with the code; both shapes map to the one code
+  const reloadedCoded = { ...reloaded, code: "WALLET_RELOADED" };
+  const sc = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve(reloadedCoded) })).send({ to: "0xd", amount: 1 }));
+  ok("send: the coded WALLET_RELOADED reply (wallet 0.3.3) keeps code WALLET_RELOADED, final, not maybe-sent", final(sc, "WALLET_RELOADED"));
+  const cc = await grab(() => new WalletConnection(mockProvider({ connect: () => Promise.resolve(reloadedCoded) })).connect());
+  ok("connect: the coded WALLET_RELOADED reply keeps code WALLET_RELOADED", final(cc, "WALLET_RELOADED"));
   const later = { ok: false as const, code: "SOME_CODE_FROM_A_LATER_WALLET", error: "a refusal this SDK release does not know" };
   const le = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve(later) })).send({ to: "0xd", amount: 1 }));
   ok("an outer code this release does not list is kept as sent, final", final(le, "SOME_CODE_FROM_A_LATER_WALLET") && (le as CairnError).shortMessage === later.error);

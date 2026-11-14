@@ -48,6 +48,7 @@ ok("a code this release does not list is kept, final", mapProviderError("x", "SO
 ok("a non-string code is ignored (the string fallback runs)", mapProviderError("rejected by user", 7 as unknown as string).code === "USER_REJECTED");
 ok("FILL_IN_PROGRESS keeps its code, final", mapProviderError("held", "FILL_IN_PROGRESS").code === "FILL_IN_PROGRESS" && mapProviderError("held", "FILL_IN_PROGRESS").retryable === false);
 ok("the code-less 'WALLET_RELOADED:' prefix -> WALLET_RELOADED, final", mapProviderError("WALLET_RELOADED: refresh this page").code === "WALLET_RELOADED" && mapProviderError("WALLET_RELOADED: refresh this page").retryable === false);
+ok("the coded WALLET_RELOADED reply (wallet 0.3.3) -> WALLET_RELOADED, final", mapProviderError("WALLET_RELOADED: refresh this page", "WALLET_RELOADED").code === "WALLET_RELOADED" && mapProviderError("x", "WALLET_RELOADED").retryable === false);
 ok("'WALLET_RELOADED' elsewhere in a message is not the prefix", mapProviderError("not WALLET_RELOADED: x").code === "UNKNOWN");
 ok("errorCode(CairnError) returns its code", errorCode(new WalletLockedError()) === "WALLET_LOCKED");
 ok("errorCode(plain Error) → UNKNOWN", errorCode(new Error("x")) === "UNKNOWN");

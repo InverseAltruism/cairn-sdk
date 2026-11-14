@@ -277,8 +277,8 @@ wallet code below.
 > final, with the wallet's message, so you can branch on a newer wallet's code before the SDK lists it; the
 > `CairnErrorCode` type admits any string for that reason. A reply that names a code only the SDK assigns
 > (`WALLET_TIMEOUT`, `NOT_INSTALLED`, `HTTP_ERROR`, `CONTENT_VERIFICATION`, `CONTENT_NOT_JSON`, `UNKNOWN`) is
-> not the wallet's and reads `UNKNOWN`. The wallet's code-less `WALLET_RELOADED:` reply becomes code
-> `WALLET_RELOADED`.
+> not the wallet's and reads `UNKNOWN`. The wallet's `WALLET_RELOADED:` reply becomes code `WALLET_RELOADED`
+> whether it carries that code or none (wallet 0.3.2 sends none).
 
 ## Versioning & dependency hygiene
 
