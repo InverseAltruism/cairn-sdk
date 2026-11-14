@@ -1,6 +1,6 @@
 // hello-csd: a minimal dApp. Connect the Cairn Wallet, read recent on-chain proposals from the indexer,
 // and watch the live feed. Bundled by `pnpm build:example` (esbuild) into app.js, which index.html loads.
-import { Cairn, NotInstalledError, UserRejectedError } from "../../src/index.js";
+import { Cairn, NotInstalledError, UserRejectedError } from "@inversealtruism/cairn-sdk";
 
 const cairn = new Cairn({ network: "mainnet" });
 const $ = (id: string) => document.getElementById(id)!;

@@ -45,7 +45,7 @@ Everything defaults to the hosted public bases at https://cairn-substrate.com: R
 - `chain.ts`: tip/utxos/submit/light(); Chain.send() = key-backed send via buildSendVerified + verifyInputValues (fail-closed); a submit that fails after signing throws SubmitInFlightError with the signed txid and the signed tx as `nodeJson`, except a 4xx answer (csd-client's `terminal` flag), which broadcast nothing and throws a final CairnError `SUBMIT_REJECTED` (`test/chain-send.test.ts`).
 - `controller.ts` (framework-agnostic reactive store; spoofed-accountsChanged adoption guard), `react.ts` (createCairnHooks(React), zero react dependency), `errors.ts` (CairnError hierarchy with stable codes; SDK_VERSION manually kept == package.json, test-enforced), `http.ts` (15s timeout, 16MiB streamed byte cap, idempotent-GET-only retries).
 
-docs/SDK-GUIDE.md (third-party guide incl. the verifies-vs-trusts section), examples/ (read-only, wallet-connect, siwc-login, node-signer, hello-csd), scripts/ (esbuild example build + 6 maintainer-run live E2E harnesses: scripts/live-wallet-ui.mjs, scripts/names-e2e.mjs, scripts/names-buy-e2e.mjs, scripts/ux-live-readonly.mjs, scripts/ux-openlane-buy.mjs, scripts/wallet-send-spv-e2e.mjs).
+docs/SDK-GUIDE.md (third-party guide incl. the verifies-vs-trusts section and "Integrate the wallet"), examples/ (integrate-wallet, read-only, wallet-connect, siwc-login, node-signer, hello-csd; each imports the package by its name, which resolves to dist/ through the exports map, and `test/examples.test.mjs` typechecks them, loads the modules, bundles the browser sample and runs the sample server's sign-in), scripts/ (esbuild example build + 6 maintainer-run live E2E harnesses: scripts/live-wallet-ui.mjs, scripts/names-e2e.mjs, scripts/names-buy-e2e.mjs, scripts/ux-live-readonly.mjs, scripts/ux-openlane-buy.mjs, scripts/wallet-send-spv-e2e.mjs).
 
 Deps and the fill-verify surface:
 
@@ -118,6 +118,7 @@ What verify-tarball checks:
 - It rebuilds this tree by running the `build` tsup command through node with only PATH and HOME set, so no npm or pnpm config can skip or fake the build.
 - It packs with scripts off, checks the packed dist/ equals what it just built, and requires the tarball's sha256 to equal the fresh pack's. The pack is deterministic; on a mismatch it lists the differing paths.
 - Both package entries must carry the ASDK-1 `fetch failed` arm and a parseable `DEFAULT_SPV_CHECKPOINT`.
+- The tarball's types: every file the `exports` map names must be in it, and a consumer importing every subpath must typecheck under node16 CommonJS, node16 ESM and bundler resolution (`scripts/check-consumer-types.mjs`, which also runs alone on a tarball). Each subpath gives `import` and `require` their own `types` (`.d.ts` and `.d.cts`); `test/consumer-types.test.mjs` pins that the 0.8.2 map, one shared ESM `types`, fails the CommonJS consumer with TS1479.
 - It reads no other repository. CI runs it on a fresh pack, and `test/verify-tarball.test.ts` (run in a disposable copy of the package) pins that an edited tarball, a stale dist under ignore-scripts or a faked script shell, and a failing build all fail.
 - `test/spv-checkpoint.test.ts` does not gate publishing: it is not in the pre-made-tarball path. The sha256 equality ties the tarball to the tree that test ran on.
 
@@ -130,7 +131,8 @@ What verify-tarball checks:
 - SSE through a buffering reverse proxy needs `X-Accel-Buffering: no` from the origin (the hosted proxy sets it); WS subscribe still needs a direct indexer URL because the hosted proxy is REST+SSE only.
 - esbuild CLI shim ELF-errors under pnpm; scripts/build-example.mjs uses the JS API, keep it that way.
 - Audit-ID markers in `src/` comments (M3, H2, CAIRNSDK-*, CONNECT-1 and others) are mapped to the guards they explain in CHANGELOG.md, "Notes moved from AGENTS.md".
-- mapProviderError and the write wrappers classify every code in WALLET-ERROR-CODES.md (the wallet repo's canonical contract; `RESERVATION_UNCONFIRMED` never reaches a page) as retryable, in flight or final; add a new wallet code to `src/errors.ts` and `test/errors.test.ts` when the wallet adds one.
+- mapProviderError and the write wrappers classify every code in WALLET-ERROR-CODES.md (the wallet repo's canonical contract; `RESERVATION_UNCONFIRMED` never reaches a page) as retryable, in flight or final; add a new wallet code to `src/errors.ts` and `test/errors.test.ts` when the wallet adds one. Until then an unlisted code is kept on the error as sent, final; a reply naming a code only the SDK assigns (`SDK_ONLY_CODES`) reads `UNKNOWN`.
+- The dApp param types in `src/connect.ts` are pinned to what the wallet accepts by `test/types/wallet-params-0.3.2.ts` (in `pnpm typecheck`); when a wallet release changes a handler's params, update that snapshot and the types together.
 - Large-tx submits: a reverse proxy with a small body cap on POST /api/rpc/tx/submit answers HTTP 400 before the tx reaches the node (a 64KB cap is hit at roughly 127+ inputs). The cairn server has a scoped 512KB cap on that route.
 - Symptom on a server without that cap: a big Chain.send()/submit 400s with no node-side error. Suspect the proxy body cap on the server you target before blaming the SDK.
 

@@ -9,6 +9,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { exportTargets } from "../scripts/check-consumer-types.mjs";
 
 let pass = 0, fail = 0;
 const ok = (name, fn) => { try { fn(); pass++; console.log("  ✓", name); } catch (e) { fail++; console.log("  ✗", name, "\n      ", e.message); } };
@@ -56,8 +57,10 @@ try {
   });
   ok("every exports-map target exists in the build", () => {
     const files = new Set(readdirSync(out));
-    for (const target of Object.values(pkg.exports).flatMap((o) => Object.values(o))) {
-      assert.ok(files.has(target.replace("./dist/", "")), `${target} is not built`);
+    const targets = exportTargets(pkg.exports, "exports");
+    assert.ok(targets.length > 0, "the exports map names no file");
+    for (const [at, target] of targets) {
+      assert.ok(files.has(target.replace("./dist/", "")), `${at}: ${target} is not built`);
     }
   });
 

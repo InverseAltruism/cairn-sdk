@@ -1,5 +1,67 @@
 # Changelog
 
+## 0.8.3
+
+Tested with Cairn Wallet 0.3.2.
+
+### Added
+
+- `docs/SDK-GUIDE.md` has an "Integrate the wallet" section, and `examples/integrate-wallet/` is its runnable
+  sample: a page and a sign-in server covering detect, connect, balances (CSD and tokens), sign-in verified on
+  the server, a CSD send, a token send (cairnx-core `transfer()` plus `wallet.propose`), and the no-wallet, locked,
+  rejected and account-changed cases. Every example now imports the package by its published name (`hello-csd`
+  imported `../../src`, `read-only.mjs` and `node-signer.mjs` imported `../dist`); `test/examples.test.mjs`
+  typechecks them, loads the module examples, bundles the browser sample and runs the sample server's sign-in.
+- README: all six examples are listed; the claim that the wallet injects on every site is replaced by where it
+  injects (the top frame of https pages and of http pages on localhost and 127.0.0.1); it says there is no
+  `signMessage`, and which wallet version this release was tested with.
+
+### Fixed
+
+- A CommonJS TypeScript project (`--module node16`, a `.cts` file or `"type": "commonjs"`) can import the package:
+  each subpath of the `exports` map now gives `import` and `require` their own types (`dist/*.d.ts` and
+  `dist/*.d.cts`). In 0.8.2 `require` got the ESM `.d.ts`, so tsc failed with TS1479 on every subpath, although the
+  `.d.cts` files shipped. Runtime `require()` and `import` are unchanged. `scripts/verify-tarball.mjs` now also
+  typechecks a consumer of the tarball under node16 CommonJS, node16 ESM and bundler resolution.
+- A wallet error code this SDK release does not list stays on the error: `errorCode(e)` and `e.code` return the
+  code the wallet sent, with `retryable: false`, where 0.8.2 flattened it to `UNKNOWN`. `CairnErrorCode` gains a
+  `string` member for that, so a `switch` over it can no longer be exhaustive (one with a `never` default stops
+  compiling), a comparison with a misspelt code (`errorCode(e) === "USER_REJECTD"`) compiles where 0.8.2 reported
+  TS2367, and a `Record<CairnErrorCode, T>` no longer requires every key; branching on the listed codes is
+  unchanged. A reply naming a code only the SDK assigns
+  (`WALLET_TIMEOUT`, `NOT_INSTALLED`, `HTTP_ERROR`, `CONTENT_VERIFICATION`, `CONTENT_NOT_JSON`, `UNKNOWN`) still
+  reads `UNKNOWN`.
+- `SUBMIT_MAYBE_INFLIGHT` and `SUBMIT_DUPLICATE` throw a `SubmitInFlightError` (`maybeSent: true`) wherever the
+  reply carries them, on the outer envelope as well as nested. Wallet 0.3.2 sends them nested only; an outer one
+  read `UNKNOWN` in 0.8.2 and would have been a plain `CairnError` with the new code pass-through.
+- `FILL_IN_PROGRESS` (wallet 0.3.2: another fill request for the same target is open in the wallet; nothing was
+  signed for this one) is listed and final (`retryable: false`). It read `UNKNOWN` in 0.8.2.
+- `signInWithCsd` refuses a nonce that is not at least 8 ASCII letters and digits (a `crypto.randomUUID()` with
+  its hyphens, for one) with `UnsupportedMethodError` before the wallet is asked. The wallet applies that rule
+  (csd-siwc's) only after the user approved, and then answered `INTERNAL`; 0.8.2 checked only that the nonce was
+  not empty. A `generateNonce()` value from csd-siwc passes as before.
+- `isInstalled()` stays synchronous; its documentation now says what it reads. The wallet injects after the
+  page's startup (absent at DOMContentLoaded, present at `load`), so a startup `isInstalled()` reads `false` for
+  a user who has the wallet. Use `detectProvider()` or `getWallet()` (they wait up to 3 s for the wallet's
+  announcement) to decide that the wallet is missing; the guide's "Integrate the wallet" section does.
+- Five error messages and the node-signer example's status line no longer contain an em dash (a colon or a
+  semicolon instead): `NotInstalledError` outside a browser, the three "this wallet predates ..." refusals and
+  `ContentVerificationError`. The codes are unchanged; branch on them, not on the text.
+- `ProposeParams` matches what the wallet's `propose` accepts: `fee` is optional (omitted, the wallet signs its
+  Propose fee floor, the fee its approval window shows) and `outputs?: { to, value }[]` pays CSD in the same
+  transaction (the approval window lists those outputs). `wallet.propose` passes both through unchanged; in 0.8.2
+  the type required `fee` and had no `outputs`, so either call needed a cast.
+- `AttestParams.fee` is optional too: omitted, the wallet signs its Attest fee floor. Every dApp param type
+  (propose, attest, fillOffer, sealClaim, send, revealClaim, signInWithCsd) now matches what wallet 0.3.2 accepts,
+  pinned by `test/types/wallet-params-0.3.2.ts` in `pnpm typecheck`; the other five already did. The
+  `examples/node-signer.mjs` provider signs the node's Propose or Attest floor when `fee` is omitted, as the
+  wallet does, instead of failing its build with "fee out of range". Type break for a custom provider, test
+  stand-in or wrapper: code that reads `ProposeParams.fee` or `AttestParams.fee` as a `number` now fails with
+  TS2345 or TS2322; default it as the wallet does.
+- The wallet's code-less `WALLET_RELOADED: ...` reply (the extension was updated or reloaded under the page; the
+  request never reached the wallet) throws code `WALLET_RELOADED`, final. It read `UNKNOWN` in 0.8.2. A wallet that
+  sends the same reply with the code `WALLET_RELOADED` (the next wallet release) maps to the same code.
+
 ## 0.8.2
 
 ### Changed

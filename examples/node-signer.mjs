@@ -6,10 +6,13 @@
 // sign with a key it holds. Both satisfy the same CairnProvider contract, so the same
 // WalletConnection calls (send, propose, attest) work either way.
 //
-// SECURITY: this holds a private key in process — only for keys you own (treasury bots,
+// SECURITY: this holds a private key in process: only for keys you own (treasury bots,
 // CI, indexers), never for end users. End users always sign in their wallet.
+// Install: @inversealtruism/cairn-sdk and @inversealtruism/csd-codec (the fee floors; cairn-sdk depends on it, but
+// an app that imports it must declare it).
 // chain primitives live under the /chain subpath (tree-shakeable away from browser dApps)
-import { buildProposeVerified, buildAttestVerified, buildSendVerified, verifyInputValues, addrFromPriv } from "../dist/chain.js";
+import { buildProposeVerified, buildAttestVerified, buildSendVerified, verifyInputValues, addrFromPriv } from "@inversealtruism/cairn-sdk/chain";
+import { MIN_FEE_ATTEST, MIN_FEE_PROPOSE } from "@inversealtruism/csd-codec";
 
 /**
  * Build a CairnProvider that signs with `priv` and submits through `cairn.chain`.
@@ -41,8 +44,9 @@ export function makeKeyWallet(priv, cairn) {
     // Every builder here verifies each selected input's real value from its source tx (verifyInputValues),
     // computes change from the verified total and fails closed, so an RPC that under-reports a coin cannot make
     // the surplus burn as an implicit fee. Never the bare buildPropose, buildAttest or buildSend here.
-    async propose(p) { return submit(await buildProposeVerified({ ...p, utxos: await spendable(), priv, verify }), "propose"); },
-    async attest(p) { return submit(await buildAttestVerified({ ...p, utxos: await spendable(), priv, verify }), "attest"); },
+    // An omitted fee signs the node's floor, as the browser wallet does.
+    async propose(p) { return submit(await buildProposeVerified({ ...p, fee: p.fee ?? MIN_FEE_PROPOSE, utxos: await spendable(), priv, verify }), "propose"); },
+    async attest(p) { return submit(await buildAttestVerified({ ...p, fee: p.fee ?? MIN_FEE_ATTEST, utxos: await spendable(), priv, verify }), "attest"); },
     async send(p) {
       const outputs = Array.isArray(p.outputs) ? p.outputs : [{ to: p.to, value: p.amount }];
       return submit(await buildSendVerified({ outputs, fee: p.fee ?? 1_000_000, utxos: await spendable(), priv, verify }), "send");
@@ -55,7 +59,7 @@ export function makeKeyWallet(priv, cairn) {
 
 // Demo when run directly: print the derived address + spendable balance (no spend).
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { Cairn } = await import("../dist/index.js");
+  const { Cairn } = await import("@inversealtruism/cairn-sdk");
   const { readFileSync } = await import("node:fs");
   const keyPath = process.env.CAIRN_KEY || `${process.env.HOME}/.config/cairn/key.json`;
   const priv = JSON.parse(readFileSync(keyPath, "utf8")).privkey;
@@ -63,5 +67,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const provider = makeKeyWallet(priv, cairn);
   const { addr } = (await provider.connect()).result;
   const bal = await cairn.chain.utxos(addr);
-  console.log(`node-signer ready for ${addr} — ${(bal.confirmed_balance / 1e8).toFixed(4)} CSD spendable across ${bal.utxos?.length || 0} UTXO(s)`);
+  console.log(`node-signer ready for ${addr}: ${(bal.confirmed_balance / 1e8).toFixed(4)} CSD spendable across ${bal.utxos?.length || 0} UTXO(s)`);
 }

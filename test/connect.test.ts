@@ -14,6 +14,7 @@ import {
   SubmitInFlightError,
 } from "../src/index.js";
 import type { CairnProvider, ProviderReply } from "../src/connect.js";
+import { buildSiwcMessage, CSD_CHAIN_MAINNET, generateNonce, SIWC_VERSION } from "@inversealtruism/csd-siwc";
 
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { c ? pass++ : fail++; console.log(`  ${c ? "✅" : "❌"} ${n}`); };
@@ -74,10 +75,14 @@ console.log("=== connector: detection ===");
 
   // provider injected slightly later → resolved via cairn#initialized event
   const et = installWindow(undefined);
+  // The real wallet injects after the page's startup (absent at DOMContentLoaded in 0 of 8 Chromium loads): at
+  // startup isInstalled() reads false for a wallet user and does not wait; detectProvider is the startup path.
+  ok("before the late injection isInstalled() is false, synchronously (a boolean, not a promise)", isInstalled() === false);
   const pending = detectProvider({ timeoutMs: 500 });
   setTimeout(() => { (globalThis as any).window.cairn = mockProvider(); et.dispatchEvent(new Event("cairn#initialized")); }, 20);
   const p2 = await pending;
   ok("detectProvider resolves after cairn#initialized fires", p2.isCairn === true);
+  ok("after the injection isInstalled() is true", isInstalled() === true);
 
   installWindow(undefined);
   await okThrows("detectProvider times out → NotInstalled", () => detectProvider({ timeoutMs: 60 }), NotInstalledError);
@@ -121,6 +126,53 @@ console.log("=== connector: method wrappers + error mapping ===");
   await okThrows("'unsupported dApp method' → UnsupportedMethodError", () => unsupW.attest({ proposalId: "p", score: 1, confidence: 1, fee: 1 }), UnsupportedMethodError);
 
   await okThrows("revealClaim('') rejects", () => new WalletConnection(mockProvider()).revealClaim(""), UnsupportedMethodError);
+}
+
+console.log("=== propose: outputs and an omitted fee reach the wallet as given ===");
+{
+  const seen: unknown[] = [];
+  const w = new WalletConnection(mockProvider({ propose: (p) => { seen.push(p); return Promise.resolve({ ok: true, result: { ok: true, txid: "0xtx" } }); } }));
+  const params = { domain: "cairnx:v1", payloadHash: `0x${"ab".repeat(32)}`, uri: "cairnx:transfer", expiresEpoch: 10, outputs: [{ to: `0x${"cd".repeat(20)}`, value: 5 }] };
+  const r = await w.propose(params);
+  ok("propose with outputs and no fee resolves the txid", r.txid === "0xtx");
+  ok("the provider receives the params unchanged: outputs kept, no fee added", seen.length === 1 && JSON.stringify(seen[0]) === JSON.stringify(params) && !("fee" in (seen[0] as object)));
+  await w.propose({ domain: "d", payloadHash: `0x${"ab".repeat(32)}`, uri: "u", expiresEpoch: 1, fee: 25_000_000 });
+  ok("honest: an explicit fee still passes through", (seen[1] as { fee?: number }).fee === 25_000_000);
+  const attests: unknown[] = [];
+  const wa = new WalletConnection(mockProvider({ attest: (p) => { attests.push(p); return Promise.resolve({ ok: true, result: { ok: true, txid: "0xatt" } }); } }));
+  const support = { proposalId: `0x${"ef".repeat(32)}`, score: 80, confidence: 70 };
+  ok("attest with no fee resolves the txid", (await wa.attest(support)).txid === "0xatt");
+  ok("attest: the provider receives the params unchanged, no fee added", JSON.stringify(attests[0]) === JSON.stringify(support));
+}
+
+console.log("=== signInWithCsd: a nonce shape the wallet refuses after approval is refused before the request ===");
+{
+  let asked = 0;
+  const w = new WalletConnection(mockProvider({ signInWithCsd: (p) => { asked++; return Promise.resolve({ ok: true, result: { account: "0xabc", pub33: "0xpub", sig64: "0xsig", message: `m ${p.nonce}`, chainId: "csd:x" } }); } }));
+  const verdict = async (nonce: string): Promise<boolean> => {
+    const before = asked;
+    try { await w.signInWithCsd({ nonce }); return asked === before + 1; } catch (e) {
+      if (!(e instanceof UnsupportedMethodError) || asked !== before) throw e;
+      return false;
+    }
+  };
+  const uuid = "3f2b8c1e-9d4a-4f6b-8e2a-1c5d7e9f0a3b";
+  ok("a UUID nonce rejects with UnsupportedMethodError and the wallet is not asked", (await verdict(uuid)) === false);
+  const honest = generateNonce();
+  ok("honest: a generateNonce() value reaches the wallet and resolves", (await verdict(honest)) === true);
+  // Parity with csd-siwc buildSiwcMessage, whose rule the wallet applies after approval.
+  const siwcAccepts = (nonce: string): boolean => {
+    try {
+      buildSiwcMessage({ domain: "casino.example", account: `0x${"ab".repeat(20)}`, uri: "https://casino.example/", version: SIWC_VERSION, chainId: CSD_CHAIN_MAINNET, nonce, issuedAt: "2026-11-14T00:00:00Z" });
+      return true;
+    } catch { return false; }
+  };
+  const corpus = [honest, uuid, "abc123def456", "a".repeat(8), "a".repeat(7), "ABCDEFGH12", "abcd efgh", "abcdefg\u00e9", "abcdefgh\n",
+    "\uff11\uff12\uff13\uff14\uff15\uff16\uff17\uff18", "abcdefgh!", "abc_defgh", "abc.defgh", ""];
+  const mismatched: string[] = [];
+  for (const n of corpus) if ((await verdict(n)) !== siwcAccepts(n)) mismatched.push(JSON.stringify(n));
+  ok(`the SDK accepts exactly the nonces csd-siwc buildSiwcMessage accepts (${corpus.length} cases)`, mismatched.length === 0 && corpus.some(siwcAccepts) && !corpus.every(siwcAccepts));
+  if (mismatched.length) console.log(`      differ on ${mismatched.join(", ")}`);
 }
 
 console.log("=== connector: SIWC + fillOffer + capability detection ===");
@@ -316,6 +368,50 @@ console.log("=== a write the wallet may have submitted: WALLET_UNAVAILABLE and t
   const tr = await grab(() => hungRead.getAddress());
   ok("a timed-out getAddress stays a plain non-retryable CairnError (it sends nothing)",
     tr instanceof CairnError && !(tr instanceof SubmitInFlightError) && tr.retryable === false);
+}
+
+console.log("=== wallet codes kept on the error: FILL_IN_PROGRESS, WALLET_RELOADED, a code this release does not list ===");
+{
+  const grab = async (fn: () => Promise<unknown>): Promise<unknown> => { try { return await fn(); } catch (e) { return e; } };
+  const final = (e: unknown, code: string) => e instanceof CairnError && !(e instanceof SubmitInFlightError) && e.code === code && e.retryable === false;
+  // wallet 0.3.2 background.ts queueDappRequest: refused on arrival, nothing queued or signed
+  const held = { ok: false as const, code: "FILL_IN_PROGRESS", error: "A payment request for this offer is already in your wallet, waiting for your answer or being sent." };
+  const fe = await grab(() => new WalletConnection(mockProvider({ fillOffer: () => Promise.resolve(held) })).fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 1 }] }));
+  ok("fillOffer: FILL_IN_PROGRESS keeps its code, final, not maybe-sent", final(fe, "FILL_IN_PROGRESS"));
+  const ae = await grab(() => new WalletConnection(mockProvider({ attest: () => Promise.resolve(held) })).attest({ proposalId: "0xp", score: 1, confidence: 1_000_000, fee: 1 }));
+  ok("attest at the token-fill confidence: FILL_IN_PROGRESS keeps its code", final(ae, "FILL_IN_PROGRESS"));
+  // wallet content.ts: sendMessage threw (extension context invalidated), so the request never left the page
+  const reloaded = { ok: false as const, error: "WALLET_RELOADED: the wallet extension was updated or reloaded - refresh this page to reconnect" };
+  const se = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve(reloaded) })).send({ to: "0xd", amount: 1 }));
+  ok("send: the code-less WALLET_RELOADED: reply gets code WALLET_RELOADED, final, not maybe-sent", final(se, "WALLET_RELOADED"));
+  const ce = await grab(() => new WalletConnection(mockProvider({ connect: () => Promise.resolve(reloaded) })).connect());
+  ok("connect: the WALLET_RELOADED: reply gets code WALLET_RELOADED", final(ce, "WALLET_RELOADED"));
+  // wallet 0.3.3 sends the same reply with the code; both shapes map to the one code
+  const reloadedCoded = { ...reloaded, code: "WALLET_RELOADED" };
+  const sc = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve(reloadedCoded) })).send({ to: "0xd", amount: 1 }));
+  ok("send: the coded WALLET_RELOADED reply (wallet 0.3.3) keeps code WALLET_RELOADED, final, not maybe-sent", final(sc, "WALLET_RELOADED"));
+  const cc = await grab(() => new WalletConnection(mockProvider({ connect: () => Promise.resolve(reloadedCoded) })).connect());
+  ok("connect: the coded WALLET_RELOADED reply keeps code WALLET_RELOADED", final(cc, "WALLET_RELOADED"));
+  const later = { ok: false as const, code: "SOME_CODE_FROM_A_LATER_WALLET", error: "a refusal this SDK release does not know" };
+  const le = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve(later) })).send({ to: "0xd", amount: 1 }));
+  ok("an outer code this release does not list is kept as sent, final", final(le, "SOME_CODE_FROM_A_LATER_WALLET") && (le as CairnError).shortMessage === later.error);
+  const ne = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve({ ok: true, result: { ...later, ok: false } }) })).send({ to: "0xd", amount: 1 }));
+  ok("a nested code this release does not list is kept as sent, final", final(ne, "SOME_CODE_FROM_A_LATER_WALLET"));
+  const ge = await grab(() => new WalletConnection(mockProvider({ getAddress: () => Promise.resolve(later) })).getAddress());
+  ok("a read: a code this release does not list is kept as sent", final(ge, "SOME_CODE_FROM_A_LATER_WALLET"));
+  // The two in-flight codes are maybe-sent on the outer envelope too (wallet 0.3.2 sends them nested only).
+  for (const code of ["SUBMIT_MAYBE_INFLIGHT", "SUBMIT_DUPLICATE"]) {
+    const oe = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve({ ok: false, code, error: "the submit outcome is unknown" }) })).send({ to: "0xd", amount: 1 }));
+    ok(`an outer ${code} on a write is a SubmitInFlightError (maybeSent, retryable false)`, oe instanceof SubmitInFlightError && oe.code === code && oe.maybeSent === true && oe.retryable === false);
+  }
+  // A code only the SDK assigns keeps its documented meaning: WALLET_TIMEOUT is always a maybe-sent SubmitInFlightError.
+  const fake = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve({ ok: false, code: "WALLET_TIMEOUT", error: "x" }) })).send({ to: "0xd", amount: 1 }));
+  ok("a provider reply naming an SDK-only code is not kept (UNKNOWN)", fake instanceof CairnError && fake.code === "UNKNOWN");
+  // honest path: a known code and the code-less legacy strings map as before
+  const re = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve({ ok: false, code: "USER_REJECTED", error: "rejected by user" }) })).send({ to: "0xd", amount: 1 }));
+  ok("honest: USER_REJECTED still throws UserRejectedError", re instanceof UserRejectedError);
+  const le2 = await grab(() => new WalletConnection(mockProvider({ send: () => Promise.resolve({ ok: false, error: "wallet locked" }) })).send({ to: "0xd", amount: 1 }));
+  ok("honest: a code-less 'wallet locked' still throws WalletLockedError", le2 instanceof WalletLockedError);
 }
 
 console.log("=== B7c: per-call provider timeout ===");

@@ -41,6 +41,8 @@ The SDK follows the exact model MetaMask uses, there is **no allowlist you maint
 
 - **`connect()` / `getAddress()`** grant *address visibility*. The first time a site connects, the user approves once; after that the wallet answers silently (the site shows up under **Settings → Connected sites**, revocable anytime). These are the only calls that can return the address without a prompt. `getPermissions()` (read this site's own grant) and `revokePermissions()` (drop it) are silent too; neither signs anything.
 - **Every signing / fund-moving call:** `send`, `propose`, `attest`, `fillOffer`, `sealClaim`, `revealClaim` and `signInWithCsd`, **always** opens the wallet's clear-signing approval window, **every time**, no matter what. Being "connected" never pre-approves a signature. A connected site cannot move a satoshi without an explicit, fully-disclosed approval click. The legacy `signIn()` is deprecated and first-party-only: the wallet refuses it from any other site with `FIRST_PARTY_ONLY` before prompting; use `signInWithCsd()`.
+- There is no arbitrary message signing (`signMessage`): the wallet signs transactions and "Sign in with CSD" messages only.
+- Detect the wallet with `getWallet()` / `connect()` (they wait up to 3 s for it). The wallet injects after the page starts, so `isInstalled()`, a synchronous read, returns `false` at startup even when the wallet is installed.
 
 ```ts
 import { connect, UserRejectedError, NotInstalledError } from "@inversealtruism/cairn-sdk";
@@ -68,8 +70,14 @@ Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{con
 
 ## Examples
 
-- **`examples/read-only.mjs`:** runs against live mainnet with no wallet. It imports the built `dist/`, so run `pnpm build` first, then `pnpm test:live`. Demonstrates chain/indexer reads + verified merkle inclusion + verified content fetch.
-- **`examples/hello-csd/`:** a no-framework browser dApp (connect → read recent proposals → live feed). Build the bundle with `pnpm build:example`, then serve the folder from **localhost** (the wallet injects there) with the Cairn Wallet installed.
+Every example imports the package by its published name, as your app does. In this repo the name resolves to the built `dist/` through the `exports` map, so run `pnpm build` first; `test/examples.test.mjs` typechecks and loads them.
+
+- **`examples/integrate-wallet/`:** the wallet integration end to end: detect, connect, balances, sign-in verified by its own server, a CSD send, a token send, and the no-wallet, locked, rejected and account-changed cases. `pnpm build:example`, then `node examples/integrate-wallet/server.mjs` and open `http://127.0.0.1:4173/` with the Cairn Wallet installed. Walkthrough: [`docs/SDK-GUIDE.md`, "Integrate the wallet"](docs/SDK-GUIDE.md#integrate-the-wallet).
+- **`examples/hello-csd/`:** a no-framework browser dApp (connect, read recent proposals, live feed). Build the bundle with `pnpm build:example`, then serve the folder from `localhost` or `127.0.0.1` with the Cairn Wallet installed.
+- **`examples/wallet-connect.mjs`:** browser snippets for discovery, connect, permissions, capability detection, events, the controller and the React adapter.
+- **`examples/siwc-login.mjs`:** "Sign in with CSD", the browser half and an Express-style server half in one file (`integrate-wallet/server.mjs` is the runnable server).
+- **`examples/read-only.mjs`:** runs against live mainnet with no wallet (`pnpm test:live`): chain and indexer reads, verified merkle inclusion, verified content fetch.
+- **`examples/node-signer.mjs`:** a server-side `CairnProvider` that signs with a key you hold (bots, treasury), never for end users.
 
 ## Trust model & honest limits
 
@@ -77,7 +85,8 @@ Content bytes are always verified client-side; merkle inclusion is verified when
 
 - **Content comes from the cairn origin.** `cairn.content` reads `/content/<hash>` on the cairn base and verifies every byte against the hash.
 - **The indexer runs behind the cairn proxy.** By default `cairn.index` uses the cairn server's hardened, read-only, rate-limited `/explorer/api` reverse proxy (no separate public indexer needed). **SSE works through that proxy; `subscribe()` (WebSocket) needs a direct indexer endpoint:** set `baseUrls.indexer` to a private/localhost indexer for WS.
-- **The wallet injects on every site** (connect-anywhere shipped in 0.2.4x) behind a per-origin consent gate: a site sees nothing until the user approves the connection, and some request kinds stay first-party-only (the `FIRST_PARTY_ONLY` error code).
+- **Where the wallet injects:** the top frame of every https page, and of http pages on `localhost` and `127.0.0.1`; not into iframes and not on other http hosts. Behind a per-origin consent gate: a site sees nothing until the user approves the connection, and some request kinds stay first-party-only (the `FIRST_PARTY_ONLY` error code).
+- **Compatibility:** this release was tested with Cairn Wallet 0.3.2.
 
 ## Configuration
 

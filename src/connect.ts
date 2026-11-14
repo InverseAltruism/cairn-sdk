@@ -1,8 +1,8 @@
-// Wallet connector — a thin, typed, documented wrapper over the Cairn Wallet's
+// Wallet connector: a thin, typed, documented wrapper over the Cairn Wallet's
 // injected `window.cairn` provider. This is the source of truth for the dApp-facing
 // wallet API contract.
 //
-// SECURITY MODEL (mirrors how MetaMask actually works — see the wallet's boundary):
+// SECURITY MODEL (mirrors how MetaMask actually works; see the wallet's boundary):
 //   • connect()/getAddress() grant ADDRESS VISIBILITY. After the user approves an
 //     origin once, the wallet may answer these silently (per-origin "connected sites").
 //   • Every signing / fund-moving call (signIn, signInWithCsd, send, fillOffer, propose,
@@ -28,6 +28,11 @@ import {
 // disables it. Override per connection via `new WalletConnection(provider, { timeoutMs })`.
 const DEFAULT_PROVIDER_TIMEOUT_MS = 10 * 60_000;
 
+// The SIWC nonce rule of csd-siwc's buildSiwcMessage and of the wallet's signInWithCsd, which checks it only after
+// the user approved and then answers INTERNAL. csd-siwc does not export it; test/connect.test.ts pins this copy
+// against buildSiwcMessage.
+const SIWC_NONCE_RE = /^[A-Za-z0-9]{8,}$/;
+
 /** Result of `connect()` / `getAddress()`. */
 export interface ConnectResult {
   addr: string;
@@ -40,7 +45,7 @@ export interface TxResult {
   [k: string]: unknown;
 }
 
-/** Sign-in (passwordless auth) result — a signature over a login nonce, never a tx sighash. */
+/** Sign-in (passwordless auth) result: a signature over a login nonce, never a tx sighash. */
 export interface SignInResult {
   addr?: string;
   pub33?: string;
@@ -55,7 +60,10 @@ export interface ProposeParams {
   payloadHash: string;
   uri: string;
   expiresEpoch: number;
-  fee: number;
+  /** Base units. Omitted: the wallet signs its Propose fee floor, the fee its approval window shows. */
+  fee?: number;
+  /** CSD outputs paid in the same transaction (base units); the approval window lists them. */
+  outputs?: { to: string; value: number }[];
 }
 
 /** Attest (support) params. */
@@ -63,7 +71,8 @@ export interface AttestParams {
   proposalId: string;
   score: number;
   confidence: number;
-  fee: number;
+  /** Base units. Omitted: the wallet signs its Attest fee floor, the fee its approval window shows. */
+  fee?: number;
 }
 
 /** Plain CSD transfer. The wallet always selects its own inputs and returns change to itself. */
@@ -98,13 +107,14 @@ export interface FillParams {
 }
 
 /**
- * Audience-bound "Sign in with CSD" (SIWC) params — the secure third-party login. The wallet binds
+ * Audience-bound "Sign in with CSD" (SIWC) params: the secure third-party login. The wallet binds
  * the REAL requesting origin as the message `domain` (from the unforgeable sender.origin, NEVER this
  * field) plus your server `nonce`, chain id, and a validity window, and returns only the signed
  * artifact. The relying party MUST verify it server-side (see below).
  */
 export interface SiwcParams {
-  /** Server-issued, single-use, >=8 alphanumeric (use `generateNonce()` from @inversealtruism/csd-siwc). */
+  /** Server-issued, single-use, at least 8 ASCII letters and digits and nothing else (use `generateNonce()` from
+   *  @inversealtruism/csd-siwc). Another shape is refused before the wallet is asked. */
   nonce: string;
   /** Optional one-line human statement shown in the wallet (no newline). */
   statement?: string;
@@ -115,12 +125,12 @@ export interface SiwcParams {
   notBeforeSecs?: number;
   requestId?: string;
   resources?: string[];
-  /** Optional cross-check only — if set it MUST equal the requesting origin's host, else refused. */
+  /** Optional cross-check only: if set it MUST equal the requesting origin's host, else refused. */
   domain?: string;
 }
 
 /**
- * SIWC result — the signed artifact. VERIFY SERVER-SIDE with `verifySiwc` from
+ * SIWC result: the signed artifact. VERIFY SERVER-SIDE with `verifySiwc` from
  * `@inversealtruism/csd-siwc` (check domain==your-origin, nonce==your-issued-single-use-nonce,
  * chainId, time window, signature, hash160(pub33)==account), THEN issue your OWN session. The
  * signature is proof-of-control, NEVER a bearer token.
@@ -159,7 +169,7 @@ export interface CairnProvider {
   getAddress(): Promise<ProviderReply<ConnectResult>>;
   /** @deprecated First-party-only legacy login. Third parties MUST use `signInWithCsd`. */
   signIn(): Promise<ProviderReply<SignInResult>>;
-  /** Audience-bound "Sign in with CSD" — the secure third-party login. */
+  /** Audience-bound "Sign in with CSD": the secure third-party login. */
   signInWithCsd(p: SiwcParams): Promise<ProviderReply<SiwcResult>>;
   propose(p: ProposeParams): Promise<ProviderReply<TxResult>>;
   attest(p: AttestParams): Promise<ProviderReply<TxResult>>;
@@ -211,7 +221,7 @@ export interface ProviderDetail {
 }
 
 /**
- * Enumerate all wallets that announce via the `csd:` discovery handshake (EIP-6963 analog) — for a
+ * Enumerate all wallets that announce via the `csd:` discovery handshake (EIP-6963 analog), for a
  * multi-wallet picker. Resolves with everything announced within `timeoutMs` (default 1000ms).
  */
 export function discoverProviders(opts: DetectOptions = {}): Promise<ProviderDetail[]> {
@@ -238,7 +248,7 @@ export function detectProvider(opts: DetectOptions = {}): Promise<CairnProvider>
   const timeoutMs = opts.timeoutMs ?? 3000;
   return new Promise((resolve, reject) => {
     if (typeof window === "undefined") {
-      reject(new NotInstalledError("Not running in a browser — `window.cairn` is unavailable."));
+      reject(new NotInstalledError("Not running in a browser: `window.cairn` is unavailable."));
       return;
     }
     let done = false;
@@ -259,7 +269,12 @@ export function detectProvider(opts: DetectOptions = {}): Promise<CairnProvider>
   });
 }
 
-/** True if the Cairn Wallet is already present (no waiting). */
+/**
+ * True if the Cairn Wallet's provider is on the page right now; it never waits. The wallet injects after the
+ * page's startup (it was absent at DOMContentLoaded and present at `load` in Chromium), so a startup call reads
+ * false for a user who has the wallet. Decide "not installed" with `detectProvider()` or `getWallet()`, which
+ * wait for the wallet's announcement (3 s by default).
+ */
 export function isInstalled(): boolean {
   return typeof window !== "undefined" && !!window.cairn?.isCairn;
 }
@@ -274,7 +289,7 @@ function unwrap<T>(reply: ProviderReply<T>): T {
  * Unwrap a WRITE (tx) reply. Two layers refuse here (F14):
  *   1. the OUTER envelope (`{ ok:false }`: user rejection, wallet locked, unsupported) via mapWriteProviderError,
  *      which classifies as `unwrap` does except that `WALLET_UNAVAILABLE` is maybe-sent, and
- *   2. the NESTED `SubmitResult` (`result.ok === false`) — a fund-safety / validation refusal the wallet
+ *   2. the NESTED `SubmitResult` (`result.ok === false`): a fund-safety / validation refusal the wallet
  *      returns INSIDE an outer-ok reply. Left un-inspected this RESOLVES with `{ ok:false, txid:undefined }`,
  *      so a dApp doing `const { txid } = await fillOffer(...); markPaid(txid)` would mark a REFUSED fill paid.
  * We THROW a typed `CairnError` (matching the outer-ok unwrap, which also throws) built from the nested `code`
@@ -369,18 +384,18 @@ export class WalletConnection {
   }
 
   /**
-   * Audience-bound "Sign in with CSD" (SIWC) — the secure, replay-resistant third-party login.
+   * Audience-bound "Sign in with CSD" (SIWC): the secure, replay-resistant third-party login.
    * The wallet binds the REAL requesting origin + your single-use server `nonce` into the signed
    * message and returns the artifact; it never mints a session. VERIFY the result SERVER-SIDE with
    * `verifySiwc` from `@inversealtruism/csd-siwc` (domain/nonce/chain/time/signature/account), then
    * issue your OWN session. The signature is proof-of-control, NOT a bearer token. Always prompts.
    */
   signInWithCsd(params: SiwcParams): Promise<SiwcResult> {
-    if (!params || typeof params.nonce !== "string" || !params.nonce) {
-      return Promise.reject(new UnsupportedMethodError("signInWithCsd requires a server-issued { nonce }"));
+    if (!params || typeof params.nonce !== "string" || !SIWC_NONCE_RE.test(params.nonce)) {
+      return Promise.reject(new UnsupportedMethodError("signInWithCsd requires a server-issued { nonce } of at least 8 ASCII letters and digits, nothing else (a UUID's hyphens are refused); generateNonce() from @inversealtruism/csd-siwc makes one"));
     }
     if (typeof this.provider.signInWithCsd !== "function") {
-      return Promise.reject(new UnsupportedMethodError("this wallet predates Sign-in-with-CSD — ask the user to update the Cairn Wallet"));
+      return Promise.reject(new UnsupportedMethodError("this wallet predates Sign-in-with-CSD; ask the user to update the Cairn Wallet"));
     }
     return this.call(() => this.provider.signInWithCsd!(params), "signInWithCsd").then(unwrap);
   }
@@ -405,7 +420,7 @@ export class WalletConnection {
    */
   fillOffer(params: FillParams): Promise<TxResult> {
     if (typeof this.provider.fillOffer !== "function") {
-      return Promise.reject(new UnsupportedMethodError("this wallet predates fillOffer() — ask the user to update the Cairn Wallet"));
+      return Promise.reject(new UnsupportedMethodError("this wallet predates fillOffer(); ask the user to update the Cairn Wallet"));
     }
     this.adviseFillSpvCapability();
     return this.call(() => this.provider.fillOffer!(params), "fillOffer", true).then(unwrapWrite);
@@ -436,7 +451,7 @@ export class WalletConnection {
   /** Explicitly request permission to see the address (prompts, like connect). */
   requestPermissions(): Promise<WalletPermission[]> {
     if (typeof this.provider.requestPermissions !== "function") {
-      return Promise.reject(new UnsupportedMethodError("this wallet predates requestPermissions — use connect()"));
+      return Promise.reject(new UnsupportedMethodError("this wallet predates requestPermissions; use connect()"));
     }
     return this.call(() => this.provider.requestPermissions!(), "requestPermissions").then(unwrap);
   }
@@ -449,7 +464,7 @@ export class WalletConnection {
 
   /**
    * Subscribe to provider events. `accountsChanged` fires with `[]` when this site loses access
-   * (wallet lock / account switch / revoke) — re-call connect() to (re)share; `disconnect` likewise.
+   * (wallet lock / account switch / revoke); re-call connect() to (re)share; `disconnect` likewise.
    * No-op if the wallet predates events. Use the SAME handler reference with off() to unsubscribe.
    */
   on(event: "accountsChanged" | "disconnect" | (string & {}), handler: (data: any) => void): void {

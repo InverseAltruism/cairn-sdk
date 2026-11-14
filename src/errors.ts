@@ -59,13 +59,19 @@ export type CairnErrorCode =
   | "SEAL_NOT_MINED"
   | "RESERVATION_DENIED"
   | "RPC_BLOCK_MISMATCH"
+  // wallet 0.3.2: another fill request holds this fill target; nothing was signed for this one
+  | "FILL_IN_PROGRESS"
+  // the wallet was updated or reloaded under the page (the wallet's code-less `WALLET_RELOADED:` reply); refresh
+  | "WALLET_RELOADED"
   // SDK-side: a write method that outlasted the connection timeout (the wallet may still send it)
   | "WALLET_TIMEOUT"
-  | "UNKNOWN";
+  | "UNKNOWN"
+  // a code the wallet sent that this SDK release does not list: kept as sent, final (retryable false)
+  | (string & {});
 
 // Kept in sync with package.json `version` (the build has no JSON import; bump both together). SDK-VERSION-DRIFT:
 // errors.test.ts now asserts SDK_VERSION === package.json.version (the old test compared the constant to itself).
-export const SDK_VERSION = "0.8.2";
+export const SDK_VERSION = "0.8.3";
 const DOCS_BASE = "https://cairn-substrate.com/docs/sdk";
 
 export interface CairnErrorOptions {
@@ -172,7 +178,7 @@ export class HttpError extends CairnError {
 export class ContentVerificationError extends CairnError {
   expected: string;
   constructor(expected: string) {
-    super(`Content does not match its payload hash ${expected} — bytes were tampered with in transit.`, { code: "CONTENT_VERIFICATION", docsPath: "/content#verification" });
+    super(`Content does not match its payload hash ${expected}: bytes were tampered with in transit.`, { code: "CONTENT_VERIFICATION", docsPath: "/content#verification" });
     this.expected = expected;
   }
 }
@@ -208,14 +214,21 @@ export class SubmitInFlightError extends CairnError {
 
 /**
  * Map a provider error reply onto a typed error. Wallet 0.2.46+ sends a stable machine `code`
- * next to the human `error` string — that is the PREFERRED branch (B10; UX copy may change).
- * The string matching below stays as the fallback for pre-0.2.46 wallets.
+ * next to the human `error` string: that is the PREFERRED branch (B10; UX copy may change).
+ * A code this release does not list is kept on the error as sent (final). The string matching below
+ * stays as the fallback for a reply without a code (pre-0.2.46 wallets, the `WALLET_RELOADED:` prefix).
  */
 // B7c (REBIND, cairn-sdk LOW): the DEAD entries were removed. `APPROVAL_CLOSED` is already mapped to
 // UserRejectedError at the top of mapProviderError, and `ACCOUNT_CHANGED` is in NESTED_TERMINAL (checked
 // first), so NEITHER could ever reach this set's branch below - both were unreachable dead code. The
-// remaining four are the genuine native-relayed codes with no earlier handler.
-const NATIVE_CODES = new Set<CairnErrorCode>(["FIRST_PARTY_ONLY", "RATE_LIMITED", "FORBIDDEN", "INTERNAL"]);
+// remaining entries are the native-relayed codes with no earlier handler, all final.
+const NATIVE_CODES = new Set<CairnErrorCode>(["FIRST_PARTY_ONLY", "RATE_LIMITED", "FORBIDDEN", "INTERNAL", "FILL_IN_PROGRESS", "WALLET_RELOADED"]);
+// Codes only the SDK assigns. A provider reply naming one is not kept: each keeps the meaning the SDK documents
+// (WALLET_TIMEOUT is always a maybe-sent SubmitInFlightError, for one).
+const SDK_ONLY_CODES = new Set<CairnErrorCode>(["NOT_INSTALLED", "HTTP_ERROR", "CONTENT_VERIFICATION", "CONTENT_NOT_JSON", "WALLET_TIMEOUT", "UNKNOWN"]);
+// The wallet's content script answers with this prefix and no code when the extension was updated or reloaded
+// under a live page; the request never reached the wallet.
+const WALLET_RELOADED_PREFIX = "WALLET_RELOADED:";
 
 // F14: nested SubmitResult codes (wallet 0.2.54+) classified into buckets. TRANSIENT = nothing was sent,
 // safe to auto-retry shortly. TERMINAL = a definitive fund-safety / validation refusal, nothing was sent, no
@@ -232,6 +245,8 @@ const NESTED_TERMINAL = new Set<CairnErrorCode>([
 ]);
 
 export function mapProviderError(error: string, code?: string): CairnError {
+  // Maybe-sent wherever it appears: wallet 0.3.2 nests these two only, but an outer one must not read as final.
+  if (code === "SUBMIT_MAYBE_INFLIGHT" || code === "SUBMIT_DUPLICATE") return new SubmitInFlightError(error || code, code);
   if (code === "USER_REJECTED" || code === "APPROVAL_CLOSED") return new UserRejectedError(error);
   if (code === "WALLET_LOCKED") return new WalletLockedError(error);
   if (code === "UNSUPPORTED_METHOD" || code === "UNKNOWN_KIND") return new UnsupportedMethodError(error);
@@ -240,6 +255,8 @@ export function mapProviderError(error: string, code?: string): CairnError {
   if (code && NESTED_TRANSIENT.has(code as CairnErrorCode)) return new CairnError(error || code, { code: code as CairnErrorCode, retryable: true });
   if (code && NESTED_TERMINAL.has(code as CairnErrorCode)) return new CairnError(error || code, { code: code as CairnErrorCode, retryable: false });
   if (code && NATIVE_CODES.has(code as CairnErrorCode)) return new CairnError(error || code, { code: code as CairnErrorCode });
+  if (typeof code === "string" && code && !SDK_ONLY_CODES.has(code)) return new CairnError(error || code, { code, retryable: false });
+  if (String(error || "").startsWith(WALLET_RELOADED_PREFIX)) return new CairnError(error, { code: "WALLET_RELOADED", retryable: false });
   const e = String(error || "").toLowerCase();
   if (e.includes("rejected by user")) return new UserRejectedError(error);
   if (e.includes("wallet locked")) return new WalletLockedError(error);

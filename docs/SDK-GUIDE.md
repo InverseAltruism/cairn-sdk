@@ -27,6 +27,67 @@ await wallet.send({ to: "0x…", amount: 100_000_000 });    // wallet clear-sign
 
 Sign-in (passwordless): see `examples/siwc-login.mjs` for the full client + server flow.
 
+## Integrate the wallet
+
+`examples/integrate-wallet/` is a runnable page and server that does all of the steps below: `app.ts` (the page),
+`index.html` and `server.mjs` (serves the page and verifies the sign-in). It imports the packages by their
+published names. In this repo:
+
+```bash
+pnpm install --frozen-lockfile && pnpm build && pnpm build:example
+node examples/integrate-wallet/server.mjs      # http://127.0.0.1:4173/ (PORT to change it)
+```
+
+In your own project, install `@inversealtruism/cairn-sdk` and `@inversealtruism/cairnx-core` for the page and
+`@inversealtruism/csd-siwc` for the server, and bundle `app.ts` with your bundler.
+
+Compatibility: cairn-sdk 0.8.3 was tested with Cairn Wallet 0.3.2. It classifies the wallet's error codes as of
+0.3.2, and on 2026-11-14 the sample's detect, connect, balance, sign-in, send and token-send steps and its
+no-wallet, locked, rejected and account-changed cases ran against wallet 0.3.2 in Chromium.
+
+1. Where the wallet runs. It injects into the top frame only, of https pages and of http pages on `localhost` and
+   `127.0.0.1` (any port). It does not inject into an iframe or into an http page on any other host; there
+   `getWallet()` rejects with `NOT_INSTALLED`. Served from `http://127.0.0.1:4173`, the sign-in domain your
+   server expects is `127.0.0.1:4173`.
+2. Detect. `getWallet()` (or `detectProvider()`) waits up to 3 s (`timeoutMs`) for the wallet to announce itself
+   and rejects with `NOT_INSTALLED` when none does. The wallet injects after the page starts, so `isInstalled()`,
+   a synchronous read, returns `false` at startup for a user who has the wallet: do not decide "not installed"
+   with it. `discoverProviders()` lists every announcing wallet for a picker.
+3. Connect. `wallet.connect()` asks the user once per site and answers silently afterwards. A locked wallet
+   shows its own unlock form in the approval window, so the page needs no branch for it: a request made while it
+   is locked waits there for the user to unlock. `WALLET_LOCKED` arrives when the wallet locks between the user's
+   review and the approval.
+4. Balances are served reads for display, never a payment gate. CSD: `cairn.chain.utxos(addr)`,
+   `confirmed_balance` in base units (1 CSD = 100,000,000). Tokens: `GET
+   https://cairn-substrate.com/trade/api/cairnx/address/<addr>` answers `{ balances: { <ticker>: { available,
+   locked } } }` in base units as strings; `cairn.names.token(ticker)` gives the `decimals`. The SDK does not wrap
+   that route.
+5. Sign in with server-side verification. Your server issues a nonce (`generateNonce()`; at least 8 ASCII letters
+   and digits, see "Sign-in" below), the page calls `wallet.signInWithCsd({ nonce, statement })`, and the server
+   looks the nonce up in its own store (bound to the browser that asked for it), deletes it, runs `verifySiwc`
+   with its own domain and that nonce, then starts its own session. `verifySiwc` only compares the message with
+   what you pass it: given the nonce read from the message without your store lookup, it accepts a replay.
+6. A CSD send: `wallet.send({ to, amount })`, amount in base units. The wallet selects the inputs, returns change
+   to itself and shows every output and the fee.
+7. A token send: build the record with cairnx-core `transfer({ ticker, to, amount, ts })` (amount in the token's
+   base units) and anchor it with `wallet.propose({ domain: DOMAIN, payloadHash, uri, expiresEpoch })`, where
+   `DOMAIN` is cairnx-core's `cairnx:v1`. With no `fee` the wallet signs its Propose fee floor (`MIN_FEE_PROPOSE`,
+   25,000,000 base units). The sample sets `expiresEpoch` to the current epoch plus 720, the window the wallet's
+   own token transfer uses (about 30 days: an epoch is 30 blocks at a 120 s target). The approval window shows a
+   CairnX token transfer; the balance changes once the resolver reads the block that mines it.
+8. Failures: branch on `errorCode(e)`, never on the message. `NOT_INSTALLED`, `USER_REJECTED` (also when the
+   user closes the approval window), `WALLET_LOCKED`, `ACCOUNT_CHANGED` (the account changed while the request was
+   open), `WALLET_RELOADED` (reload the page), `RATE_LIMITED` (too many requests wait in the wallet). A
+   `SubmitInFlightError` means the transaction may have been sent: check before sending again ("Typed errors"
+   below). A failed SDK read rejects with the platform's own error, for which `errorCode` gives `UNKNOWN`.
+9. Account changes: `wallet.on("accountsChanged", (accounts) => ...)` fires with `[]` when the site loses access
+   (the wallet locked, switched account or revoked the site). It never carries the new address; call
+   `connect()` again.
+10. What the wallet does not do: there is no `signMessage` (arbitrary message signing). The signing methods are
+    `send`, `propose`, `attest`, `fillOffer`, `sealClaim`, `revealClaim` and `signInWithCsd`, and each opens the
+    approval window every time. There is no testnet ("Getting CSD for development" below), so taking a
+    transaction past the approval window spends mainnet CSD.
+
 ## Subpath exports (tree-shakeable)
 
 | Import | What |
@@ -148,7 +209,9 @@ the older verdict that misses a lied-about give.
 **Sign-in:** the SIWC signature proves key control ONCE. Verify it **server-side** (`verifySiwc`) and
 then issue **your own** session (rotating, expiring, HttpOnly+Secure+SameSite cookie). The signature is
 **never** a bearer token. The wallet binds the message's `domain` to the real page origin (you can't
-spoof it), so a signature for site A can't be replayed at site B.
+spoof it), so a signature for site A can't be replayed at site B. The nonce must be at least 8 ASCII letters and
+digits and nothing else (`generateNonce()` from csd-siwc makes one); `signInWithCsd` refuses another shape, such
+as a UUID, with `UNSUPPORTED_METHOD` before the wallet opens.
 
 ## Capability / version negotiation
 
@@ -184,18 +247,23 @@ catch (e) {
 Codes: `NOT_INSTALLED`, `USER_REJECTED`, `WALLET_LOCKED`, `UNSUPPORTED_METHOD`, `HTTP_ERROR` (also
 a 2xx body whose shape is wrong, such as a names list read that is not an array), `CONTENT_VERIFICATION`,
 `CONTENT_NOT_JSON` (`content.get()` on verified bytes that are not JSON), `WALLET_TIMEOUT` (a write method
-outlasted the connection timeout; see below), `UNKNOWN`.
+outlasted the connection timeout; see below), `WALLET_RELOADED` (the wallet was updated or reloaded under the
+page; the request never reached it, and the page must reload to reach the wallet again), `UNKNOWN`, and every
+wallet code below.
 
 > **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the
 > source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error (except
 > `UNKNOWN_KIND`, which throws `UnsupportedMethodError` with `UNSUPPORTED_METHOD`, and `APPROVAL_CLOSED`, which
-> throws `UserRejectedError` with `USER_REJECTED`) and classify every code listed there as of wallet 0.3.1 except
+> throws `UserRejectedError` with `USER_REJECTED`) and classify every code listed there as of wallet 0.3.2 except
 > `RESERVATION_UNCONFIRMED`, which the wallet returns to its approval window only: retryable (`VERIFY_UNAVAILABLE`, `OFFER_UNKNOWN`, `REVIEW_REQUIRED`,
 > `SEAL_NOT_MINED`, and `WALLET_UNAVAILABLE` on `connect` and `getAddress`: nothing was sent), in flight
 > (`SUBMIT_MAYBE_INFLIGHT`, `SUBMIT_DUPLICATE`, and `WALLET_UNAVAILABLE` on a write method: `send`,
 > `fillOffer`, `propose`, `attest`, `sealClaim`, `revealClaim`), and final (every other code, including
 > `OFFER_SOURCE_CONFLICT`, `FILL_LEGACY_SUNSET`, `VERIFY_HORIZON`, `VERIFY_UNREPRESENTABLE`,
-> `RESERVATION_DENIED` and `RPC_BLOCK_MISMATCH`; `retryable: false`). An in-flight error is a `SubmitInFlightError` (`maybeSent: true`, `retryable: false`)
+> `RESERVATION_DENIED`, `RPC_BLOCK_MISMATCH` and `FILL_IN_PROGRESS`; `retryable: false`). `FILL_IN_PROGRESS`
+> means another fill request for the same offer or reservation is open in the wallet, queued or being sent; this
+> one was not queued and nothing was signed for it. Ask again only after the first is answered, and if the first
+> was sent, check that purchase before paying again. An in-flight error is a `SubmitInFlightError` (`maybeSent: true`, `retryable: false`)
 > carrying the txid when the wallet knows it: check the chain or the balance before you send again, never retry
 > blindly. `WALLET_UNAVAILABLE` on a write means the page lost the wallet's reply, which can happen after the
 > wallet submitted the approved transaction. A write that outlasts the connection timeout (10 minutes by
@@ -207,7 +275,12 @@ outlasted the connection timeout; see below), `UNKNOWN`.
 > `cairn.chain.submit(e.nodeJson)` (the same coins under the same txid, so it cannot pay twice) rather than a new
 > send, which may select other coins. A 4xx answer to that submit (a proxy's 400 or 413 request body cap, a 429
 > rate limit) broadcast nothing and throws a final `CairnError` with code `SUBMIT_REJECTED` instead. A code the
-> SDK does not know yet still throws, as a final error with the wallet's message.
+> wallet sends that this SDK release does not list yet is kept on the error as sent (`errorCode(e)` returns it),
+> final, with the wallet's message, so you can branch on a newer wallet's code before the SDK lists it; the
+> `CairnErrorCode` type admits any string for that reason. A reply that names a code only the SDK assigns
+> (`WALLET_TIMEOUT`, `NOT_INSTALLED`, `HTTP_ERROR`, `CONTENT_VERIFICATION`, `CONTENT_NOT_JSON`, `UNKNOWN`) is
+> not the wallet's and reads `UNKNOWN`. The wallet's `WALLET_RELOADED:` reply becomes code `WALLET_RELOADED`
+> whether it carries that code or none (wallet 0.3.2 sends none).
 
 ## Versioning & dependency hygiene
 
