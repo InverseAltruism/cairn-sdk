@@ -221,7 +221,7 @@ export class SubmitInFlightError extends CairnError {
 // B7c (REBIND, cairn-sdk LOW): the DEAD entries were removed. `APPROVAL_CLOSED` is already mapped to
 // UserRejectedError at the top of mapProviderError, and `ACCOUNT_CHANGED` is in NESTED_TERMINAL (checked
 // first), so NEITHER could ever reach this set's branch below - both were unreachable dead code. The
-// remaining four are the genuine native-relayed codes with no earlier handler.
+// remaining entries are the native-relayed codes with no earlier handler, all final.
 const NATIVE_CODES = new Set<CairnErrorCode>(["FIRST_PARTY_ONLY", "RATE_LIMITED", "FORBIDDEN", "INTERNAL", "FILL_IN_PROGRESS", "WALLET_RELOADED"]);
 // Codes only the SDK assigns. A provider reply naming one is not kept: each keeps the meaning the SDK documents
 // (WALLET_TIMEOUT is always a maybe-sent SubmitInFlightError, for one).
