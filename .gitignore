@@ -7,7 +7,7 @@ dist/
 examples/hello-csd/app.js
 examples/integrate-wallet/app.js
 
-# secrets — never commit env/keys
+# secrets: never commit env/keys
 .env
 .env.*
 **/*key*.json

@@ -39,6 +39,9 @@ Tested with Cairn Wallet 0.3.2.
   page's startup (absent at DOMContentLoaded, present at `load`), so a startup `isInstalled()` reads `false` for
   a user who has the wallet. Use `detectProvider()` or `getWallet()` (they wait up to 3 s for the wallet's
   announcement) to decide that the wallet is missing; the guide's "Integrate the wallet" section does.
+- Five error messages and the node-signer example's status line no longer contain an em dash (a colon or a
+  semicolon instead): `NotInstalledError` outside a browser, the three "this wallet predates ..." refusals and
+  `ContentVerificationError`. The codes are unchanged; branch on them, not on the text.
 - `ProposeParams` matches what the wallet's `propose` accepts: `fee` is optional (omitted, the wallet signs its
   Propose fee floor, the fee its approval window shows) and `outputs?: { to, value }[]` pays CSD in the same
   transaction (the approval window lists those outputs). `wallet.propose` passes both through unchanged; in 0.8.2

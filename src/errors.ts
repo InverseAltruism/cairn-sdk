@@ -178,7 +178,7 @@ export class HttpError extends CairnError {
 export class ContentVerificationError extends CairnError {
   expected: string;
   constructor(expected: string) {
-    super(`Content does not match its payload hash ${expected} — bytes were tampered with in transit.`, { code: "CONTENT_VERIFICATION", docsPath: "/content#verification" });
+    super(`Content does not match its payload hash ${expected}: bytes were tampered with in transit.`, { code: "CONTENT_VERIFICATION", docsPath: "/content#verification" });
     this.expected = expected;
   }
 }
@@ -214,7 +214,7 @@ export class SubmitInFlightError extends CairnError {
 
 /**
  * Map a provider error reply onto a typed error. Wallet 0.2.46+ sends a stable machine `code`
- * next to the human `error` string — that is the PREFERRED branch (B10; UX copy may change).
+ * next to the human `error` string: that is the PREFERRED branch (B10; UX copy may change).
  * A code this release does not list is kept on the error as sent (final). The string matching below
  * stays as the fallback for a reply without a code (pre-0.2.46 wallets, the `WALLET_RELOADED:` prefix).
  */

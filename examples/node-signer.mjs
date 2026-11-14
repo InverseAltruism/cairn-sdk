@@ -6,7 +6,7 @@
 // sign with a key it holds. Both satisfy the same CairnProvider contract, so the same
 // WalletConnection calls (send, propose, attest) work either way.
 //
-// SECURITY: this holds a private key in process — only for keys you own (treasury bots,
+// SECURITY: this holds a private key in process: only for keys you own (treasury bots,
 // CI, indexers), never for end users. End users always sign in their wallet.
 // chain primitives live under the /chain subpath (tree-shakeable away from browser dApps)
 import { buildProposeVerified, buildAttestVerified, buildSendVerified, verifyInputValues, addrFromPriv } from "@inversealtruism/cairn-sdk/chain";
@@ -63,5 +63,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const provider = makeKeyWallet(priv, cairn);
   const { addr } = (await provider.connect()).result;
   const bal = await cairn.chain.utxos(addr);
-  console.log(`node-signer ready for ${addr} — ${(bal.confirmed_balance / 1e8).toFixed(4)} CSD spendable across ${bal.utxos?.length || 0} UTXO(s)`);
+  console.log(`node-signer ready for ${addr}: ${(bal.confirmed_balance / 1e8).toFixed(4)} CSD spendable across ${bal.utxos?.length || 0} UTXO(s)`);
 }
