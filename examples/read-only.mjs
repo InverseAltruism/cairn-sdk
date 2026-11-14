@@ -1,8 +1,9 @@
-// Runnable read-only example: works against live mainnet, no wallet, no build step beyond `pnpm build`.
+// Runnable read-only example: works against live mainnet, no wallet. In this repo, run `pnpm build` first (the
+// package name resolves to its own dist/ through the exports map).
 //   node examples/read-only.mjs
 // Demonstrates the read surfaces: chain tip, indexer health and proposals, trust-minimized
 // merkle inclusion, and verified content fetch.
-import { Cairn } from "../dist/index.js";
+import { Cairn } from "@inversealtruism/cairn-sdk";
 
 const cairn = new Cairn({ network: "mainnet" });
 

@@ -9,7 +9,7 @@
 // SECURITY: this holds a private key in process — only for keys you own (treasury bots,
 // CI, indexers), never for end users. End users always sign in their wallet.
 // chain primitives live under the /chain subpath (tree-shakeable away from browser dApps)
-import { buildProposeVerified, buildAttestVerified, buildSendVerified, verifyInputValues, addrFromPriv } from "../dist/chain.js";
+import { buildProposeVerified, buildAttestVerified, buildSendVerified, verifyInputValues, addrFromPriv } from "@inversealtruism/cairn-sdk/chain";
 
 /**
  * Build a CairnProvider that signs with `priv` and submits through `cairn.chain`.
@@ -55,7 +55,7 @@ export function makeKeyWallet(priv, cairn) {
 
 // Demo when run directly: print the derived address + spendable balance (no spend).
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { Cairn } = await import("../dist/index.js");
+  const { Cairn } = await import("@inversealtruism/cairn-sdk");
   const { readFileSync } = await import("node:fs");
   const keyPath = process.env.CAIRN_KEY || `${process.env.HOME}/.config/cairn/key.json`;
   const priv = JSON.parse(readFileSync(keyPath, "utf8")).privkey;

@@ -2,6 +2,20 @@
 
 ## 0.8.3
 
+Tested with Cairn Wallet 0.3.2.
+
+### Added
+
+- `docs/SDK-GUIDE.md` has an "Integrate the wallet" section, and `examples/integrate-wallet/` is its runnable
+  sample: a page and a sign-in server covering detect, connect, balances (CSD and tokens), sign-in verified on
+  the server, a CSD send, a token send (cairnx-core `transfer()` plus `wallet.propose`), and the no-wallet, locked,
+  rejected and account-changed cases. Every example now imports the package by its published name (`hello-csd`
+  imported `../../src`, `read-only.mjs` and `node-signer.mjs` imported `../dist`); `test/examples.test.mjs`
+  typechecks them, loads the module examples, bundles the browser sample and runs the sample server's sign-in.
+- README: all six examples are listed; the claim that the wallet injects on every site is replaced by where it
+  injects (the top frame of https pages and of http pages on localhost and 127.0.0.1); it says there is no
+  `signMessage`, and which wallet version this release was tested with.
+
 ### Fixed
 
 - A CommonJS TypeScript project (`--module node16`, a `.cts` file or `"type": "commonjs"`) can import the package:

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Integrate the Cairn Wallet: Cairn SDK sample</title>
+<link rel="icon" href="data:," />
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 680px; margin: 32px auto; padding: 0 16px; }
+  fieldset { margin: 12px 0; }
+  input { width: 100%; box-sizing: border-box; margin: 2px 0 6px; }
+  #status, #balances { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <h1>Integrate the Cairn Wallet</h1>
+  <p id="status">Looking for the Cairn Wallet...</p>
+
+  <fieldset>
+    <legend>Account</legend>
+    <button id="connect" disabled>Connect</button> <code id="address"></code>
+    <p id="balances"></p>
+    <button id="signin" disabled>Sign in</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Send CSD</legend>
+    <label>To <input id="send-to" placeholder="0x..." /></label>
+    <label>Amount (base units) <input id="send-amount" inputmode="numeric" value="100000000" /></label>
+    <button id="send" disabled>Send</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Send a token</legend>
+    <label>Ticker <input id="token-ticker" /></label>
+    <label>To <input id="token-to" placeholder="0x..." /></label>
+    <label>Amount (base units) <input id="token-amount" inputmode="numeric" /></label>
+    <button id="token-send" disabled>Send token</button>
+  </fieldset>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
