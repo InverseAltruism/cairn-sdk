@@ -211,7 +211,7 @@ then issue **your own** session (rotating, expiring, HttpOnly+Secure+SameSite co
 **never** a bearer token. The wallet binds the message's `domain` to the real page origin (you can't
 spoof it), so a signature for site A can't be replayed at site B. The nonce must be at least 8 ASCII letters and
 digits and nothing else (`generateNonce()` from csd-siwc makes one); `signInWithCsd` refuses another shape, such
-as a UUID, with `UNSUPPORTED_METHOD` before the wallet opens.
+as a UUID, with `BAD_REQUEST` before the wallet opens: the fault is in your server's nonce, not in the wallet.
 
 ## Capability / version negotiation
 

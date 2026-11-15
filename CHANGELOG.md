@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.4
+
+### Changed
+
+- `signInWithCsd` refuses a missing or malformed nonce with code `BAD_REQUEST` (a final `CairnError`) instead of
+  `UNSUPPORTED_METHOD` (`UnsupportedMethodError`), the code that elsewhere means the wallet is too old for a
+  method. A site that issued UUID nonces and branched on `UNSUPPORTED_METHOD` told its users to update their
+  wallet when its own server was at fault. Code that branched on `UNSUPPORTED_METHOD` or `UnsupportedMethodError`
+  for this case must branch on `BAD_REQUEST`; nothing else about the refusal changed (the wallet is still not
+  asked).
+
 ## 0.8.3
 
 Tested with Cairn Wallet 0.3.2.

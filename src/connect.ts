@@ -392,7 +392,7 @@ export class WalletConnection {
    */
   signInWithCsd(params: SiwcParams): Promise<SiwcResult> {
     if (!params || typeof params.nonce !== "string" || !SIWC_NONCE_RE.test(params.nonce)) {
-      return Promise.reject(new UnsupportedMethodError("signInWithCsd requires a server-issued { nonce } of at least 8 ASCII letters and digits, nothing else (a UUID's hyphens are refused); generateNonce() from @inversealtruism/csd-siwc makes one"));
+      return Promise.reject(new CairnError("signInWithCsd requires a server-issued { nonce } of at least 8 ASCII letters and digits, nothing else (a UUID's hyphens are refused); generateNonce() from @inversealtruism/csd-siwc makes one", { code: "BAD_REQUEST" }));
     }
     if (typeof this.provider.signInWithCsd !== "function") {
       return Promise.reject(new UnsupportedMethodError("this wallet predates Sign-in-with-CSD; ask the user to update the Cairn Wallet"));

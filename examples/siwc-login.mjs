@@ -1,8 +1,8 @@
-// "Sign in with CSD" (SIWC) — end-to-end reference for third-party sites.
+// "Sign in with CSD" (SIWC): end-to-end reference for third-party sites.
 //
 // SIWC is audience-bound, replay-resistant wallet auth (CAIP-122 / EIP-4361 style). The wallet binds
 // the REAL requesting origin + your single-use server nonce into the signed message and returns ONLY
-// the signed artifact. You verify it SERVER-SIDE and then issue your OWN session — the signature is
+// the signed artifact. You verify it SERVER-SIDE and then issue your OWN session; the signature is
 // proof-of-control, NEVER a bearer token. A signature made for another site (or reused) is rejected.
 //
 // Two halves below: CLIENT (browser, Cairn Wallet installed) and SERVER (your Node backend).
@@ -26,6 +26,7 @@ export async function signIn() {
   } catch (e) {
     if (errorCode(e) === "USER_REJECTED") return null;       // user closed the prompt
     if (errorCode(e) === "UNSUPPORTED_METHOD") throw new Error("Please update the Cairn Wallet.");
+    if (errorCode(e) === "BAD_REQUEST") throw new Error("The sign-in nonce from the server is malformed (see generateNonce()).");
     throw e;
   }
 
@@ -35,11 +36,11 @@ export async function signIn() {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ message: signed.message, sig64: signed.sig64, pub33: signed.pub33 }),
   });
-  return res.json(); // { ok, account } — your server set the session cookie
+  return res.json(); // { ok, account }; your server set the session cookie
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SERVER (your Node backend, e.g. Express) — verify + own-session pattern
+// SERVER (your Node backend, e.g. Express): verify + own-session pattern
 // ─────────────────────────────────────────────────────────────────────────────
 import { verifySiwc, parseSiwcMessage, generateNonce, CSD_CHAIN_MAINNET } from "@inversealtruism/csd-siwc";
 
@@ -70,7 +71,7 @@ export function mountSiwc(app) {
 
     nonces.delete(parsed.nonce);           // single-use: consume atomically on success
     // Issue YOUR OWN session here (rotate id; HttpOnly+Secure+SameSite cookie; idle+absolute timeout).
-    // The SIWC signature is the proof-of-control EVENT — do not store/reuse it as a credential.
+    // The SIWC signature is the proof-of-control EVENT; do not store/reuse it as a credential.
     res.json({ ok: true, account: v.account });
   });
 }
