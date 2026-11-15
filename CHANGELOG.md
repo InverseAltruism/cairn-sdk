@@ -17,6 +17,9 @@
   returned what the pass-through added in 0.8.3 returns for the same code: a final `CairnError` with the code kept.
   No behaviour change; the existing tests are unchanged and pass. A new final wallet code needs only its
   `CairnErrorCode` entry.
+- The SDK's own code tables and `SubmitInFlightError`'s code parameter are typed with an unexported closed union
+  of the listed codes, so a misspelt code there fails typecheck again (the open `string` member on
+  `CairnErrorCode` had switched that off in 0.8.3). `CairnErrorCode` itself is unchanged.
 
 ## 0.8.3
 

@@ -6,8 +6,9 @@
 
 import type { NodeTxJson } from "@inversealtruism/csd-tx";
 
-/** Stable machine-readable error codes (branch on these, not the message text). */
-export type CairnErrorCode =
+// The codes this release lists. Not exported: the SDK's own tables are typed with it so a misspelt code fails
+// typecheck; callers get CairnErrorCode, which also admits a code the wallet adds later.
+type KnownCode =
   | "NOT_INSTALLED"
   | "USER_REJECTED"
   | "WALLET_LOCKED"
@@ -65,9 +66,11 @@ export type CairnErrorCode =
   | "WALLET_RELOADED"
   // SDK-side: a write method that outlasted the connection timeout (the wallet may still send it)
   | "WALLET_TIMEOUT"
-  | "UNKNOWN"
-  // a code the wallet sent that this SDK release does not list: kept as sent, final (retryable false)
-  | (string & {});
+  | "UNKNOWN";
+
+/** Stable machine-readable error codes (branch on these, not the message text). A code the wallet sent that this
+ *  SDK release does not list is kept as sent, final (retryable false). */
+export type CairnErrorCode = KnownCode | (string & {});
 
 // Kept in sync with package.json `version` (the build has no JSON import; bump both together). SDK-VERSION-DRIFT:
 // errors.test.ts now asserts SDK_VERSION === package.json.version (the old test compared the constant to itself).
@@ -205,7 +208,7 @@ export class SubmitInFlightError extends CairnError {
   readonly nodeJson?: NodeTxJson;
   /** Always true: the tx MAY be in the mempool. Reconcile via `txid` or the balance; never blind-retry. */
   readonly maybeSent = true;
-  constructor(message: string, code: "SUBMIT_MAYBE_INFLIGHT" | "SUBMIT_DUPLICATE" | "WALLET_UNAVAILABLE" | "WALLET_TIMEOUT", txid?: string, cause?: unknown, nodeJson?: NodeTxJson) {
+  constructor(message: string, code: Extract<KnownCode, "SUBMIT_MAYBE_INFLIGHT" | "SUBMIT_DUPLICATE" | "WALLET_UNAVAILABLE" | "WALLET_TIMEOUT">, txid?: string, cause?: unknown, nodeJson?: NodeTxJson) {
     super(message, { code, docsPath: "/errors#submit-inflight", retryable: false, cause });
     this.txid = txid;
     this.nodeJson = nodeJson;
@@ -220,7 +223,7 @@ export class SubmitInFlightError extends CairnError {
  */
 // Codes only the SDK assigns. A provider reply naming one is not kept: each keeps the meaning the SDK documents
 // (WALLET_TIMEOUT is always a maybe-sent SubmitInFlightError, for one).
-const SDK_ONLY_CODES = new Set<CairnErrorCode>(["NOT_INSTALLED", "HTTP_ERROR", "CONTENT_VERIFICATION", "CONTENT_NOT_JSON", "WALLET_TIMEOUT", "UNKNOWN"]);
+const SDK_ONLY_CODES = new Set<KnownCode>(["NOT_INSTALLED", "HTTP_ERROR", "CONTENT_VERIFICATION", "CONTENT_NOT_JSON", "WALLET_TIMEOUT", "UNKNOWN"]);
 // The wallet's content script answers with this prefix and no code when the extension was updated or reloaded
 // under a live page; the request never reached the wallet.
 const WALLET_RELOADED_PREFIX = "WALLET_RELOADED:";
@@ -229,7 +232,7 @@ const WALLET_RELOADED_PREFIX = "WALLET_RELOADED:";
 // canonical). WALLET_UNAVAILABLE is transient for a call that sends nothing (connect, getAddress) and in flight on a
 // write (mapWriteProviderError). Every other wallet code is final, kept as sent by the pass-through in
 // mapProviderError, so a final code needs no table entry.
-const NESTED_TRANSIENT = new Set<CairnErrorCode>(["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN", "WALLET_UNAVAILABLE", "REVIEW_REQUIRED", "SEAL_NOT_MINED"]);
+const NESTED_TRANSIENT = new Set<KnownCode>(["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN", "WALLET_UNAVAILABLE", "REVIEW_REQUIRED", "SEAL_NOT_MINED"]);
 
 export function mapProviderError(error: string, code?: string): CairnError {
   // Maybe-sent wherever it appears: wallet 0.3.2 nests these two only, but an outer one must not read as final.
@@ -237,8 +240,8 @@ export function mapProviderError(error: string, code?: string): CairnError {
   if (code === "USER_REJECTED" || code === "APPROVAL_CLOSED") return new UserRejectedError(error);
   if (code === "WALLET_LOCKED") return new WalletLockedError(error);
   if (code === "UNSUPPORTED_METHOD" || code === "UNKNOWN_KIND") return new UnsupportedMethodError(error);
-  if (code && NESTED_TRANSIENT.has(code as CairnErrorCode)) return new CairnError(error || code, { code: code as CairnErrorCode, retryable: true });
-  if (typeof code === "string" && code && !SDK_ONLY_CODES.has(code)) return new CairnError(error || code, { code, retryable: false });
+  if (code && NESTED_TRANSIENT.has(code as KnownCode)) return new CairnError(error || code, { code, retryable: true });
+  if (typeof code === "string" && code && !SDK_ONLY_CODES.has(code as KnownCode)) return new CairnError(error || code, { code, retryable: false });
   if (String(error || "").startsWith(WALLET_RELOADED_PREFIX)) return new CairnError(error, { code: "WALLET_RELOADED", retryable: false });
   const e = String(error || "").toLowerCase();
   if (e.includes("rejected by user")) return new UserRejectedError(error);
