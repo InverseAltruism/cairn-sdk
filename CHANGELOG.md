@@ -11,6 +11,13 @@
   for this case must branch on `BAD_REQUEST`; nothing else about the refusal changed (the wallet is still not
   asked).
 
+### Internal
+
+- `src/errors.ts` drops two code tables (`NESTED_TERMINAL`, 23 codes, and `NATIVE_CODES`, 6) whose branches
+  returned what the pass-through added in 0.8.3 returns for the same code: a final `CairnError` with the code kept.
+  No behaviour change; the existing tests are unchanged and pass. A new final wallet code needs only its
+  `CairnErrorCode` entry.
+
 ## 0.8.3
 
 Tested with Cairn Wallet 0.3.2.

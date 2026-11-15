@@ -218,11 +218,6 @@ export class SubmitInFlightError extends CairnError {
  * A code this release does not list is kept on the error as sent (final). The string matching below
  * stays as the fallback for a reply without a code (pre-0.2.46 wallets, the `WALLET_RELOADED:` prefix).
  */
-// B7c (REBIND, cairn-sdk LOW): the DEAD entries were removed. `APPROVAL_CLOSED` is already mapped to
-// UserRejectedError at the top of mapProviderError, and `ACCOUNT_CHANGED` is in NESTED_TERMINAL (checked
-// first), so NEITHER could ever reach this set's branch below - both were unreachable dead code. The
-// remaining entries are the native-relayed codes with no earlier handler, all final.
-const NATIVE_CODES = new Set<CairnErrorCode>(["FIRST_PARTY_ONLY", "RATE_LIMITED", "FORBIDDEN", "INTERNAL", "FILL_IN_PROGRESS", "WALLET_RELOADED"]);
 // Codes only the SDK assigns. A provider reply naming one is not kept: each keeps the meaning the SDK documents
 // (WALLET_TIMEOUT is always a maybe-sent SubmitInFlightError, for one).
 const SDK_ONLY_CODES = new Set<CairnErrorCode>(["NOT_INSTALLED", "HTTP_ERROR", "CONTENT_VERIFICATION", "CONTENT_NOT_JSON", "WALLET_TIMEOUT", "UNKNOWN"]);
@@ -230,19 +225,11 @@ const SDK_ONLY_CODES = new Set<CairnErrorCode>(["NOT_INSTALLED", "HTTP_ERROR", "
 // under a live page; the request never reached the wallet.
 const WALLET_RELOADED_PREFIX = "WALLET_RELOADED:";
 
-// F14: nested SubmitResult codes (wallet 0.2.54+) classified into buckets. TRANSIENT = nothing was sent,
-// safe to auto-retry shortly. TERMINAL = a definitive fund-safety / validation refusal, nothing was sent, no
-// auto-retry. The AMBIGUOUS-INFLIGHT codes are handled separately by mapSubmitResultError and
-// mapWriteProviderError because they must carry the txid (SubmitInFlightError). WALLET-ERROR-CODES.md is canonical.
-// WALLET_UNAVAILABLE is transient for a call that sends nothing (connect, getAddress) and in flight on a write.
+// The wallet codes that are retryable: nothing was sent, a retry shortly can succeed (WALLET-ERROR-CODES.md is
+// canonical). WALLET_UNAVAILABLE is transient for a call that sends nothing (connect, getAddress) and in flight on a
+// write (mapWriteProviderError). Every other wallet code is final, kept as sent by the pass-through in
+// mapProviderError, so a final code needs no table entry.
 const NESTED_TRANSIENT = new Set<CairnErrorCode>(["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN", "WALLET_UNAVAILABLE", "REVIEW_REQUIRED", "SEAL_NOT_MINED"]);
-const NESTED_TERMINAL = new Set<CairnErrorCode>([
-  "FILL_UNSAFE", "FILL_WRONG_TARGET", "SOURCE_DIVERGENCE", "VERIFY_TAMPER", "SUBMIT_REJECTED",
-  "BAD_REQUEST", "BAD_FEE", "BAD_OUTPUTS", "NO_OUTPUTS", "ZERO_ADDR_REFUSED", "TOO_MANY_INPUTS",
-  "INSUFFICIENT", "FEE_CAP", "FEE_TOO_LOW", "ACCOUNT_CHANGED", "GHOST_INPUTS_SKIPPED", "NOTHING_TO_CONSOLIDATE",
-  "OFFER_SOURCE_CONFLICT", "FILL_LEGACY_SUNSET", "VERIFY_HORIZON", "VERIFY_UNREPRESENTABLE",
-  "RESERVATION_DENIED", "RPC_BLOCK_MISMATCH",
-]);
 
 export function mapProviderError(error: string, code?: string): CairnError {
   // Maybe-sent wherever it appears: wallet 0.3.2 nests these two only, but an outer one must not read as final.
@@ -250,11 +237,7 @@ export function mapProviderError(error: string, code?: string): CairnError {
   if (code === "USER_REJECTED" || code === "APPROVAL_CLOSED") return new UserRejectedError(error);
   if (code === "WALLET_LOCKED") return new WalletLockedError(error);
   if (code === "UNSUPPORTED_METHOD" || code === "UNKNOWN_KIND") return new UnsupportedMethodError(error);
-  // F14: nested SubmitResult fund-safety codes. Transient -> retryable; every other nested refusal -> terminal
-  // (retryable=false). The inflight/duplicate pair is routed through mapSubmitResultError so its txid survives.
   if (code && NESTED_TRANSIENT.has(code as CairnErrorCode)) return new CairnError(error || code, { code: code as CairnErrorCode, retryable: true });
-  if (code && NESTED_TERMINAL.has(code as CairnErrorCode)) return new CairnError(error || code, { code: code as CairnErrorCode, retryable: false });
-  if (code && NATIVE_CODES.has(code as CairnErrorCode)) return new CairnError(error || code, { code: code as CairnErrorCode });
   if (typeof code === "string" && code && !SDK_ONLY_CODES.has(code)) return new CairnError(error || code, { code, retryable: false });
   if (String(error || "").startsWith(WALLET_RELOADED_PREFIX)) return new CairnError(error, { code: "WALLET_RELOADED", retryable: false });
   const e = String(error || "").toLowerCase();
