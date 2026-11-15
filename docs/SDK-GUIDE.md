@@ -41,9 +41,8 @@ node examples/integrate-wallet/server.mjs      # http://127.0.0.1:4173/ (PORT to
 In your own project, install `@inversealtruism/cairn-sdk` and `@inversealtruism/cairnx-core` for the page and
 `@inversealtruism/csd-siwc` for the server, and bundle `app.ts` with your bundler.
 
-Compatibility: cairn-sdk 0.8.3 was tested with Cairn Wallet 0.3.2. It classifies the wallet's error codes as of
-0.3.2, and on 2026-11-14 the sample's detect, connect, balance, sign-in, send and token-send steps and its
-no-wallet, locked, rejected and account-changed cases ran against wallet 0.3.2 in Chromium.
+Compatibility: each release's CHANGELOG entry names the Cairn Wallet version whose error codes and params it
+follows, and says whether the sample ran against that wallet for the release.
 
 1. Where the wallet runs. It injects into the top frame only, of https pages and of http pages on `localhost` and
    `127.0.0.1` (any port). It does not inject into an iframe or into an http page on any other host; there

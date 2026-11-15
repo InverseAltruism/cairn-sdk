@@ -2,6 +2,9 @@
 
 ## 0.8.4
 
+Wallet contract: Cairn Wallet 0.3.2 (error codes and params), as in 0.8.3. The sample was not run against the
+wallet for this patch.
+
 ### Changed
 
 - `signInWithCsd` refuses a missing or malformed nonce with code `BAD_REQUEST` (a final `CairnError`) instead of
@@ -23,6 +26,8 @@
 - `test/types/wallet-params-0.3.2.ts` is now `test/types/wallet-params.ts`, and it and AGENTS.md say what it
   checks: SDK param types against a hand-written snapshot of the wallet's params, not against the wallet. Its six
   checks that each provider method takes the matching param type, which the interface states literally, are gone.
+- README and the guide no longer state which wallet version a release was tested with; the release steps did not
+  keep that current. Each CHANGELOG entry carries it.
 
 ## 0.8.3
 
