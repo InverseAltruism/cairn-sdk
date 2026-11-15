@@ -20,6 +20,9 @@
 - The SDK's own code tables and `SubmitInFlightError`'s code parameter are typed with an unexported closed union
   of the listed codes, so a misspelt code there fails typecheck again (the open `string` member on
   `CairnErrorCode` had switched that off in 0.8.3). `CairnErrorCode` itself is unchanged.
+- `test/types/wallet-params-0.3.2.ts` is now `test/types/wallet-params.ts`, and it and AGENTS.md say what it
+  checks: SDK param types against a hand-written snapshot of the wallet's params, not against the wallet. Its six
+  checks that each provider method takes the matching param type, which the interface states literally, are gone.
 
 ## 0.8.3
 
