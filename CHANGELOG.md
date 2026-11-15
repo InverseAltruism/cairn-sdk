@@ -14,7 +14,7 @@ wallet for this patch.
   for this case must branch on `BAD_REQUEST`; nothing else about the refusal changed (the wallet is still not
   asked).
 
-### Internal
+### Docs and internal
 
 - `src/errors.ts` drops two code tables (`NESTED_TERMINAL`, 23 codes, and `NATIVE_CODES`, 6) whose branches
   returned what the pass-through added in 0.8.3 returns for the same code: a final `CairnError` with the code kept.
