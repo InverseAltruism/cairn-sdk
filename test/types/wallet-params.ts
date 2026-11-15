@@ -1,10 +1,11 @@
-// The dApp param types of src/connect.ts against what cairn-wallet v0.3.2 accepts from a page: the background's
-// dispatch (src/background.ts resolvePending) and the handlers it calls (src/core/wallet.ts propose, attest,
-// fillOffer, sealClaim, send/sendMany, signInWithCsd; revealClaim(txid)). Optional where the wallet defaults the
-// field, present where it reads it, absent where it ignores it. expectSigner, tokenQuote and reservationAck are
+// A hand-written snapshot of the params the Cairn Wallet accepts from a page, read from cairn-wallet v0.3.2: the
+// background's dispatch (src/background.ts resolvePending) and the handlers it calls (src/core/wallet.ts propose,
+// attest, fillOffer, sealClaim, send/sendMany, signInWithCsd; revealClaim(txid)). Optional where the wallet defaults
+// the field, present where it reads it, absent where it ignores it. expectSigner, tokenQuote and reservationAck are
 // set by the background from the approval window, after the page's params, so they are not dApp params.
 // signInWithCsd types its params as unknown and refuses at run time; the shape below is what it accepts.
-// pnpm typecheck compiles this file; a type that drifts from the wallet fails it.
+// pnpm typecheck compiles this file: an SDK param type in src/connect.ts that differs from the snapshot fails it.
+// Nothing here reads the wallet; the snapshot is checked against the wallet by hand at each wallet release.
 import type { AttestParams, CairnProvider, FillParams, ProposeParams, SealClaimParams, SendParams, SiwcParams } from "../../src/connect.js";
 
 type Out = { to: string; value: number };
@@ -30,11 +31,4 @@ export const checks = [
   same<Equal<Expand<SendParams>, Expand<Wallet032["send"]>>>(),
   same<Equal<Expand<SiwcParams>, Expand<Wallet032["signInWithCsd"]>>>(),
   same<Equal<Parameters<CairnProvider["revealClaim"]>[0], Wallet032["revealClaim"]>>(),
-  // the provider methods take exactly these types
-  same<Equal<Parameters<CairnProvider["propose"]>[0], ProposeParams>>(),
-  same<Equal<Parameters<CairnProvider["attest"]>[0], AttestParams>>(),
-  same<Equal<Parameters<CairnProvider["fillOffer"]>[0], FillParams>>(),
-  same<Equal<Parameters<CairnProvider["sealClaim"]>[0], SealClaimParams>>(),
-  same<Equal<Parameters<CairnProvider["send"]>[0], SendParams>>(),
-  same<Equal<Parameters<CairnProvider["signInWithCsd"]>[0], SiwcParams>>(),
 ];

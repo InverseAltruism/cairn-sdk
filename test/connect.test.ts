@@ -149,15 +149,16 @@ console.log("=== signInWithCsd: a nonce shape the wallet refuses after approval 
 {
   let asked = 0;
   const w = new WalletConnection(mockProvider({ signInWithCsd: (p) => { asked++; return Promise.resolve({ ok: true, result: { account: "0xabc", pub33: "0xpub", sig64: "0xsig", message: `m ${p.nonce}`, chainId: "csd:x" } }); } }));
-  const verdict = async (nonce: string): Promise<boolean> => {
+  // true: the wallet was asked; false: refused before it with BAD_REQUEST, final; a string: any other outcome.
+  const verdict = async (nonce: string): Promise<boolean | string> => {
     const before = asked;
     try { await w.signInWithCsd({ nonce }); return asked === before + 1; } catch (e) {
-      if (!(e instanceof UnsupportedMethodError) || asked !== before) throw e;
+      if (!(e instanceof CairnError) || e.code !== "BAD_REQUEST" || e instanceof UnsupportedMethodError || e.retryable || asked !== before) return `unexpected: ${(e as Error)?.name} ${(e as CairnError)?.code}`;
       return false;
     }
   };
   const uuid = "3f2b8c1e-9d4a-4f6b-8e2a-1c5d7e9f0a3b";
-  ok("a UUID nonce rejects with UnsupportedMethodError and the wallet is not asked", (await verdict(uuid)) === false);
+  ok("a UUID nonce rejects with BAD_REQUEST (final, not the old-wallet UNSUPPORTED_METHOD) and the wallet is not asked", (await verdict(uuid)) === false);
   const honest = generateNonce();
   ok("honest: a generateNonce() value reaches the wallet and resolves", (await verdict(honest)) === true);
   // Parity with csd-siwc buildSiwcMessage, whose rule the wallet applies after approval.
@@ -181,7 +182,8 @@ console.log("=== connector: SIWC + fillOffer + capability detection ===");
   const s = await w.signInWithCsd({ nonce: "abc123def456", statement: "Sign in" });
   ok("signInWithCsd unwraps the signed artifact", s.account === "0xabc" && s.sig64 === "0xsig" && typeof s.message === "string" && s.chainId.startsWith("csd:"));
   ok("supportsSiwc is true when the provider exposes it", w.supportsSiwc === true);
-  await okThrows("signInWithCsd without a nonce rejects", () => w.signInWithCsd({} as any), UnsupportedMethodError);
+  const noNonce = await w.signInWithCsd({} as any).then(() => null, (e: unknown) => e);
+  ok("signInWithCsd without a nonce rejects with BAD_REQUEST", noNonce instanceof CairnError && noNonce.code === "BAD_REQUEST" && !(noNonce instanceof UnsupportedMethodError));
 
   const fr = await w.fillOffer({ proposalId: "0xp", outputs: [{ to: "0xq", value: 10 }] });
   ok("fillOffer unwraps the txid", fr.txid === "0xfill");

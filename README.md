@@ -86,7 +86,7 @@ Content bytes are always verified client-side; merkle inclusion is verified when
 - **Content comes from the cairn origin.** `cairn.content` reads `/content/<hash>` on the cairn base and verifies every byte against the hash.
 - **The indexer runs behind the cairn proxy.** By default `cairn.index` uses the cairn server's hardened, read-only, rate-limited `/explorer/api` reverse proxy (no separate public indexer needed). **SSE works through that proxy; `subscribe()` (WebSocket) needs a direct indexer endpoint:** set `baseUrls.indexer` to a private/localhost indexer for WS.
 - **Where the wallet injects:** the top frame of every https page, and of http pages on `localhost` and `127.0.0.1`; not into iframes and not on other http hosts. Behind a per-origin consent gate: a site sees nothing until the user approves the connection, and some request kinds stay first-party-only (the `FIRST_PARTY_ONLY` error code).
-- **Compatibility:** this release was tested with Cairn Wallet 0.3.2.
+- **Compatibility:** each release's [CHANGELOG](CHANGELOG.md) entry names the Cairn Wallet version whose error codes and params it follows.
 
 ## Configuration
 

@@ -41,9 +41,8 @@ node examples/integrate-wallet/server.mjs      # http://127.0.0.1:4173/ (PORT to
 In your own project, install `@inversealtruism/cairn-sdk` and `@inversealtruism/cairnx-core` for the page and
 `@inversealtruism/csd-siwc` for the server, and bundle `app.ts` with your bundler.
 
-Compatibility: cairn-sdk 0.8.3 was tested with Cairn Wallet 0.3.2. It classifies the wallet's error codes as of
-0.3.2, and on 2026-11-14 the sample's detect, connect, balance, sign-in, send and token-send steps and its
-no-wallet, locked, rejected and account-changed cases ran against wallet 0.3.2 in Chromium.
+Compatibility: each release's CHANGELOG entry names the Cairn Wallet version whose error codes and params it
+follows, and says whether the sample ran against that wallet for the release.
 
 1. Where the wallet runs. It injects into the top frame only, of https pages and of http pages on `localhost` and
    `127.0.0.1` (any port). It does not inject into an iframe or into an http page on any other host; there
@@ -79,7 +78,9 @@ no-wallet, locked, rejected and account-changed cases ran against wallet 0.3.2 i
    user closes the approval window), `WALLET_LOCKED`, `ACCOUNT_CHANGED` (the account changed while the request was
    open), `WALLET_RELOADED` (reload the page), `RATE_LIMITED` (too many requests wait in the wallet). A
    `SubmitInFlightError` means the transaction may have been sent: check before sending again ("Typed errors"
-   below). A failed SDK read rejects with the platform's own error, for which `errorCode` gives `UNKNOWN`.
+   below). A failed read never involved the wallet: an HTTP status from the indexer, content or names routes
+   throws an `HttpError` with code `HTTP_ERROR`; a chain read (`cairn.chain.*`) that fails, or a request that got
+   no answer, rejects with a plain `Error`, for which `errorCode` gives `UNKNOWN`.
 9. Account changes: `wallet.on("accountsChanged", (accounts) => ...)` fires with `[]` when the site loses access
    (the wallet locked, switched account or revoked the site). It never carries the new address; call
    `connect()` again.
@@ -211,7 +212,7 @@ then issue **your own** session (rotating, expiring, HttpOnly+Secure+SameSite co
 **never** a bearer token. The wallet binds the message's `domain` to the real page origin (you can't
 spoof it), so a signature for site A can't be replayed at site B. The nonce must be at least 8 ASCII letters and
 digits and nothing else (`generateNonce()` from csd-siwc makes one); `signInWithCsd` refuses another shape, such
-as a UUID, with `UNSUPPORTED_METHOD` before the wallet opens.
+as a UUID, with `BAD_REQUEST` before the wallet opens: the fault is in your server's nonce, not in the wallet.
 
 ## Capability / version negotiation
 

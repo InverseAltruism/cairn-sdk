@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.8.4
+
+Wallet contract: Cairn Wallet 0.3.2 (error codes and params), as in 0.8.3. The sample was not run against the
+wallet for this patch.
+
+### Changed
+
+- `signInWithCsd` refuses a missing or malformed nonce with code `BAD_REQUEST` (a final `CairnError`) instead of
+  `UNSUPPORTED_METHOD` (`UnsupportedMethodError`), the code that elsewhere means the wallet is too old for a
+  method. A site that issued UUID nonces and branched on `UNSUPPORTED_METHOD` told its users to update their
+  wallet when its own server was at fault. Code that branched on `UNSUPPORTED_METHOD` or `UnsupportedMethodError`
+  for this case must branch on `BAD_REQUEST`; nothing else about the refusal changed (the wallet is still not
+  asked).
+
+### Docs and internal
+
+- `src/errors.ts` drops two code tables (`NESTED_TERMINAL`, 23 codes, and `NATIVE_CODES`, 6) whose branches
+  returned what the pass-through added in 0.8.3 returns for the same code: a final `CairnError` with the code kept.
+  No behaviour change; the existing tests are unchanged and pass. A new final wallet code needs only its
+  `CairnErrorCode` entry.
+- The SDK's own code tables and `SubmitInFlightError`'s code parameter are typed with an unexported closed union
+  of the listed codes, so a misspelt code there fails typecheck again (the open `string` member on
+  `CairnErrorCode` had switched that off in 0.8.3). `CairnErrorCode` itself is unchanged.
+- `test/types/wallet-params-0.3.2.ts` is now `test/types/wallet-params.ts`, and it and AGENTS.md say what it
+  checks: SDK param types against a hand-written snapshot of the wallet's params, not against the wallet. Its six
+  checks that each provider method takes the matching param type, which the interface states literally, are gone.
+- Guide step 8 says which code a failed read carries: `HTTP_ERROR` for an HTTP status from the indexer, content
+  or names routes, `UNKNOWN` for a failed chain read or no answer (it said `UNKNOWN` for every failed read). The
+  integration sample prints an `HTTP_ERROR` as a failed read, not as a wallet error.
+- README and the guide no longer state which wallet version a release was tested with; the release steps did not
+  keep that current. Each CHANGELOG entry carries it.
+
 ## 0.8.3
 
 Tested with Cairn Wallet 0.3.2.
