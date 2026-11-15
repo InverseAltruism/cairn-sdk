@@ -26,6 +26,9 @@ wallet for this patch.
 - `test/types/wallet-params-0.3.2.ts` is now `test/types/wallet-params.ts`, and it and AGENTS.md say what it
   checks: SDK param types against a hand-written snapshot of the wallet's params, not against the wallet. Its six
   checks that each provider method takes the matching param type, which the interface states literally, are gone.
+- Guide step 8 says which code a failed read carries: `HTTP_ERROR` for an HTTP status from the indexer, content
+  or names routes, `UNKNOWN` for a failed chain read or no answer (it said `UNKNOWN` for every failed read). The
+  integration sample prints an `HTTP_ERROR` as a failed read, not as a wallet error.
 - README and the guide no longer state which wallet version a release was tested with; the release steps did not
   keep that current. Each CHANGELOG entry carries it.
 

@@ -78,7 +78,9 @@ follows, and says whether the sample ran against that wallet for the release.
    user closes the approval window), `WALLET_LOCKED`, `ACCOUNT_CHANGED` (the account changed while the request was
    open), `WALLET_RELOADED` (reload the page), `RATE_LIMITED` (too many requests wait in the wallet). A
    `SubmitInFlightError` means the transaction may have been sent: check before sending again ("Typed errors"
-   below). A failed SDK read rejects with the platform's own error, for which `errorCode` gives `UNKNOWN`.
+   below). A failed read never involved the wallet: an HTTP status from the indexer, content or names routes
+   throws an `HttpError` with code `HTTP_ERROR`; a chain read (`cairn.chain.*`) that fails, or a request that got
+   no answer, rejects with a plain `Error`, for which `errorCode` gives `UNKNOWN`.
 9. Account changes: `wallet.on("accountsChanged", (accounts) => ...)` fires with `[]` when the site loses access
    (the wallet locked, switched account or revoked the site). It never carries the new address; call
    `connect()` again.

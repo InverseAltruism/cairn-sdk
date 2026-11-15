@@ -37,6 +37,7 @@ function explain(e: unknown): string {
     case "WALLET_RELOADED": return "The wallet was updated or reloaded. Reload this page.";
     case "RATE_LIMITED": return "Too many requests are waiting in the wallet. Answer those first.";
     case "UNSUPPORTED_METHOD": return `This wallet cannot do that: ${(e as Error).message.split("\n")[0]}`;
+    case "HTTP_ERROR": return `A read from the Cairn API failed (the wallet was not asked): ${e.shortMessage}`;
     default: return `Wallet error ${errorCode(e)}: ${e.shortMessage}`;
   }
 }
