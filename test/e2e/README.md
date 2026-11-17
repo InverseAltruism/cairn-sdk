@@ -18,3 +18,18 @@ Three layers, fastest → most involved. The unit suites import `src/` through t
 ## The node-signer
 
 `examples/node-signer.mjs` is a server/bot `CairnProvider` backed by a raw key (built on the SDK's own `chain` primitives), so a backend drives the same `WalletConnection` calls a browser dApp drives through the wallet. No e2e layer spends CSD.
+
+## The unit runner
+
+- `pnpm test` is `test/run.mjs`, offline: a glob runner that discovers every `test/*.test.{ts,mjs}`, runs all of them
+  even after a failure, applies a per-file timeout, and classifies SKIP instead of miscounting it. `ls test` is the
+  suite list.
+- `test/runner-guards.test.mjs` drives the real runner against throwaway sandboxes, including a 3-file middle-fails
+  fixture: a mid-suite failure still runs the rest and forces a non-zero exit.
+- `test/e2e/` also holds the `e2e-siwc.mjs` helper beyond the three canonical layers.
+
+## Maintainer-run live harnesses (`scripts/*.mjs`)
+
+The six `scripts/*.mjs` live harnesses are maintainer-run only, and some spend CSD. `scripts/live-wallet-ui.mjs` is
+the read-only one: headed Chrome and the real MV3 extension against the production site. It approves only the
+non-spend Connect, reads, then rejects every fund- or fee-bearing clear-sign popup, and captures screenshots.
