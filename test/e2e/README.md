@@ -4,7 +4,7 @@ Three layers, fastest → most involved. The unit suites import `src/` through t
 
 | Suite | Command | Cost | What it proves |
 |---|---|---|---|
-| **Unit** | `pnpm test` | free, offline | Connector error mapping, client paths, content + merkle verification reject tampered inputs (mock fetch + mock provider, real merkle fixtures). 34 checks. |
+| **Unit** | `pnpm test` | free, offline | Connector error mapping, client paths, content + merkle verification reject tampered inputs (mock fetch + mock provider, real merkle fixtures). |
 | **Live read** | `pnpm test:live` | free | Every read surface vs mainnet (chain/index/content), trust-minimized `verifyInclusion` (a recent proposal and a near-tip tx, which runs the reorg re-check), self-certifying content, live SSE, **+ adversarial**: bogus inclusion → not-found, unknown content → null, tamper → rejected. `CAIRN_BASE=http://127.0.0.1:7777` points it at another front door. |
 | **Wallet connector** | `pnpm test:live:wallet` | free | Real Chromium + the real Cairn Wallet extension + the real SDK connector under Xvfb: connect → approval window → address; **repeat is silent (consented)**; **send still prompts (signing never auto-approves)**; list + revoke connected sites. 16 checks. |
 
@@ -18,3 +18,18 @@ Three layers, fastest → most involved. The unit suites import `src/` through t
 ## The node-signer
 
 `examples/node-signer.mjs` is a server/bot `CairnProvider` backed by a raw key (built on the SDK's own `chain` primitives), so a backend drives the same `WalletConnection` calls a browser dApp drives through the wallet. No e2e layer spends CSD.
+
+## The unit runner
+
+- `pnpm test` is `test/run.mjs`, offline: a glob runner that discovers every `test/*.test.{ts,mjs}`, runs all of them
+  even after a failure, applies a per-file timeout, and classifies SKIP instead of miscounting it. `ls test` is the
+  suite list.
+- `test/runner-guards.test.mjs` drives the real runner against throwaway sandboxes, including a 3-file middle-fails
+  fixture: a mid-suite failure still runs the rest and forces a non-zero exit.
+- `test/e2e/` also holds the `e2e-siwc.mjs` helper beyond the three canonical layers.
+
+## Maintainer-run live harnesses (`scripts/*.mjs`)
+
+The six `scripts/*.mjs` live harnesses are maintainer-run only, and some spend CSD. `scripts/live-wallet-ui.mjs` is
+the read-only one: headed Chrome and the real MV3 extension against the production site. It approves only the
+non-spend Connect, reads, then rejects every fund- or fee-bearing clear-sign popup, and captures screenshots.

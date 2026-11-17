@@ -1,6 +1,8 @@
-// A hand-written snapshot of the params the Cairn Wallet accepts from a page, read from cairn-wallet v0.3.2: the
-// background's dispatch (src/background.ts resolvePending) and the handlers it calls (src/core/wallet.ts propose,
-// attest, fillOffer, sealClaim, send/sendMany, signInWithCsd; revealClaim(txid)). Optional where the wallet defaults
+// A hand-written snapshot of the params the Cairn Wallet accepts from a page, read from cairn-wallet v0.3.3: the
+// background's dispatch (src/background.ts resolvePending) and the readers it and src/core/wallet.ts build from
+// (src/core/signfields.ts: proposeFields, attestFields, fillFields, sealFields, sendFields, revealFields;
+// src/core/siwcparams.ts for signInWithCsd). fillOffer's outputs stay required here although the wallet defaults a
+// missing list to empty. Optional where the wallet defaults
 // the field, present where it reads it, absent where it ignores it. expectSigner, tokenQuote and reservationAck are
 // set by the background from the approval window, after the page's params, so they are not dApp params.
 // signInWithCsd types its params as unknown and refuses at run time; the shape below is what it accepts.
@@ -9,7 +11,7 @@
 import type { AttestParams, CairnProvider, FillParams, ProposeParams, SealClaimParams, SendParams, SiwcParams } from "../../src/connect.js";
 
 type Out = { to: string; value: number };
-interface Wallet032 {
+interface WalletParams {
   propose: { domain: string; payloadHash: string; uri: string; expiresEpoch: number; fee?: number; outputs?: Out[] };
   attest: { proposalId: string; score: number; confidence: number; fee?: number };
   fillOffer: { proposalId: string; outputs: Out[]; score?: number; confidence?: number; fee?: number };
@@ -24,11 +26,11 @@ type Expand<T> = T extends object ? { [K in keyof T]: T[K] } : T;
 const same = <T extends true>(): T | undefined => undefined;
 
 export const checks = [
-  same<Equal<Expand<ProposeParams>, Expand<Wallet032["propose"]>>>(),
-  same<Equal<Expand<AttestParams>, Expand<Wallet032["attest"]>>>(),
-  same<Equal<Expand<FillParams>, Expand<Wallet032["fillOffer"]>>>(),
-  same<Equal<Expand<SealClaimParams>, Expand<Wallet032["sealClaim"]>>>(),
-  same<Equal<Expand<SendParams>, Expand<Wallet032["send"]>>>(),
-  same<Equal<Expand<SiwcParams>, Expand<Wallet032["signInWithCsd"]>>>(),
-  same<Equal<Parameters<CairnProvider["revealClaim"]>[0], Wallet032["revealClaim"]>>(),
+  same<Equal<Expand<ProposeParams>, Expand<WalletParams["propose"]>>>(),
+  same<Equal<Expand<AttestParams>, Expand<WalletParams["attest"]>>>(),
+  same<Equal<Expand<FillParams>, Expand<WalletParams["fillOffer"]>>>(),
+  same<Equal<Expand<SealClaimParams>, Expand<WalletParams["sealClaim"]>>>(),
+  same<Equal<Expand<SendParams>, Expand<WalletParams["send"]>>>(),
+  same<Equal<Expand<SiwcParams>, Expand<WalletParams["signInWithCsd"]>>>(),
+  same<Equal<Parameters<CairnProvider["revealClaim"]>[0], WalletParams["revealClaim"]>>(),
 ];

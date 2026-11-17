@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.8.5
+
+Wallet contract: Cairn Wallet 0.3.3 (error codes and params). The param snapshot was compared by hand with the
+wallet's v0.3.3 readers (`src/core/signfields.ts`, `src/core/siwcparams.ts`); the sample was not run against the
+wallet for this patch.
+
+### Changed
+
+- **`DEFAULT_SPV_CHECKPOINT` moves from height 115,403 to 131,996**
+  (`0x00000000000004a739bc4251993bc0a3b425d8cb1bee686f6d70bbd500a9fcc3`), copied from cairn's
+  `public/trade/swapguard.js` (cairn `2387a2b4`, where the site's anchor moved on 2026-11-14; 0.8.3 and 0.8.4
+  shipped after that move without the copy). The hash was checked against three local nodes, and each serves it at
+  that height. A cold checkpoint-to-tip seed is 16,593 headers shorter. What a caller sees differently for
+  **heights 115,403 to 131,995**:
+  - `index.verifyInclusion(txid)` returns `trustLevel: "proof-consistent"`, `included: false`, where 0.8.4
+    returned `"verified-inclusion"`, `included: true`. The `reason` reads `indexer proof only, header at <h>
+    not verified (height <h> is below the SPV checkpoint 131996 (cannot PoW-verify backward))`.
+  - `verifyOfferForFill` for an offer mined at 115,358 to 131,950 returns `ok: false, trust: "unverified"`
+    (not transient) with a reason naming the checkpoint window base 131,951 and `config.spvCheckpoint`. Offers
+    mined at 131,951 to 131,995 sit inside the 46-header seed window and still verify on this path.
+  - Pass `config.spvCheckpoint: { height: 115403, hash: "0x00000000000052e29166597d598827b137af1dea7542123b848637fee0b67347" }`
+    to keep the old anchor.
+
+### Docs and internal
+
+- The header capture the SPV suites drive is re-taken at the new anchor
+  (`test/fixtures/spv-headers-131951-80.json`, one read-only `GET /api/headers/131951/80`, stored verbatim), and
+  the four suites that use it name the new heights. No assertion changed.
+- `test/types/wallet-params.ts` names the wallet version it was compared with, 0.3.3. The params a page may send
+  are the ones 0.3.2 accepted; the wallet now defaults a missing `fillOffer` `outputs` to an empty list, and the
+  SDK type keeps `outputs` required. The wallet's two new codes, `BAD_REQUEST` and `WALLET_RELOADED` (now sent as a
+  code as well as the message prefix), were already in `CairnErrorCode`.
+- `AGENTS.md` keeps the rules and commands; module, SPV and release detail moved to `docs/architecture.md` and
+  `docs/release.md`.
+
 ## 0.8.4
 
 Wallet contract: Cairn Wallet 0.3.2 (error codes and params), as in 0.8.3. The sample was not run against the

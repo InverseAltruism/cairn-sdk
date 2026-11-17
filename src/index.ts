@@ -63,7 +63,7 @@ export interface CairnConfig {
 // cairn/public/trade/swapguard.js's CP in the same cycle, never bumped here alone. test/spv-checkpoint.test.ts
 // checks it is a real block against a committed header capture; the cairn copies (swapguard.js and
 // `deploy/spv-checkpoint`) are checked in the cairn repo. Pin a newer one via config.spvCheckpoint.
-export const DEFAULT_SPV_CHECKPOINT = { height: 115403, hash: "0x00000000000052e29166597d598827b137af1dea7542123b848637fee0b67347" };
+export const DEFAULT_SPV_CHECKPOINT = { height: 131996, hash: "0x00000000000004a739bc4251993bc0a3b425d8cb1bee686f6d70bbd500a9fcc3" };
 
 const DEFAULT_CAIRN = "https://cairn-substrate.com";
 
