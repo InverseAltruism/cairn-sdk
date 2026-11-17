@@ -602,11 +602,11 @@ console.log("\nP75-5 fill-surface guards:");
   });
 }
 
-// The real facade over the real SPV header fixture (checkpoint 115,403; rows 115358..115437), so the light
+// The real facade over the real SPV header fixture (checkpoint 131,996; rows 131951..132030), so the light
 // client, the near-tip re-check and csd-light's own below-base answer all run for real.
 {
   type Row = { height: number; header: Record<string, unknown>; hash: string };
-  const ROWS = (JSON.parse(readFileSync(new URL("./fixtures/spv-headers-115358-80.json", import.meta.url), "utf8")) as { headers: Row[] }).headers;
+  const ROWS = (JSON.parse(readFileSync(new URL("./fixtures/spv-headers-131951-80.json", import.meta.url), "utf8")) as { headers: Row[] }).headers;
   const BASE = ROWS[0]!.height, TIP = ROWS[ROWS.length - 1]!.height;
   const mkCairn = (seen: string[], txHeight?: number) => new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: (async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -671,7 +671,7 @@ console.log("\nP75-5 fill-surface guards:");
     const seen: string[] = [];
     const r = await mkCairn(seen, 110_000).verifyOfferForFill("0x" + "cd".repeat(32));
     await ok("[F4] an offer below the synced base is not transient", () => r.ok === false && r.transient !== true && r.trust === "unverified");
-    await ok("[F4] the reason says it is below the checkpoint window and names config.spvCheckpoint", () => /below this SDK's SPV checkpoint window \(base 115358\)/.test(r.reason ?? "") && /config\.spvCheckpoint/.test(r.reason ?? ""));
+    await ok("[F4] the reason says it is below the checkpoint window and names config.spvCheckpoint", () => /below this SDK's SPV checkpoint window \(base 131951\)/.test(r.reason ?? "") && /config\.spvCheckpoint/.test(r.reason ?? ""));
     const r2 = await mkCairn([], undefined).verifyOfferForFill("0x" + "cd".repeat(32));
     await ok("[F4 honest] a tx the node does not place in a block (mempool/unknown) stays transient", () => r2.ok === false && r2.transient === true);
   }
