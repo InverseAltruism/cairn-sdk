@@ -34,3 +34,8 @@ export const checks = [
   same<Equal<Expand<SiwcParams>, Expand<WalletParams["signInWithCsd"]>>>(),
   same<Equal<Parameters<CairnProvider["revealClaim"]>[0], WalletParams["revealClaim"]>>(),
 ];
+
+// getCapabilities().methods of cairn-wallet v0.3.3 (src/inpage.ts; docs/PROVIDER.md: every method of its table
+// except signIn). test/testing.test.ts requires the /testing mock to advertise exactly these.
+export const WALLET_CAPABILITY_METHODS = ["connect", "getAddress", "signInWithCsd", "getPermissions", "requestPermissions",
+  "revokePermissions", "propose", "attest", "send", "fillOffer", "sealClaim", "revealClaim"] as const;

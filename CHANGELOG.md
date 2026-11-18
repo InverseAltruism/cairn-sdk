@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.6
+
+Wallet contract: Cairn Wallet 0.3.3 (error codes, params and the provider method list), as in 0.8.5.
+
+### Added
+
+- `@inversealtruism/cairn-sdk/testing`, a new subpath: `mockCairnProvider(options)`, a mock of the wallet's
+  provider for an integrator's tests (no key, signs nothing), and `installMockCairn(target, provider)`, which sets
+  `target.cairn` with the wallet's discovery handshake and returns an uninstall function. Types: `MockCairnProvider`,
+  `MockCairnOptions`, `MockAnswer`, `MockMethod`, `MockCall`, `MockCapabilities`, `MockCairnTarget`,
+  `DisconnectReason`. README and the guide have a "Testing your integration" section. No dependency added; the
+  main entry's bundle is unchanged apart from the version string.
+
+### Docs and internal
+
+- `test/connect.test.ts` drives the exported mock instead of its own copy; its 95 assertions are unchanged.
+  `test/types/wallet-params.ts` adds the wallet's `getCapabilities().methods` (v0.3.3), which
+  `test/testing.test.ts` requires the mock to advertise.
+
 ## 0.8.5
 
 Wallet contract: Cairn Wallet 0.3.3 (error codes and params). The param snapshot was compared by hand with the

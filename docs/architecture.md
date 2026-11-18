@@ -99,7 +99,9 @@ self-hosted setups. The chain is the only source of truth; every read carries an
 - `test/types/wallet-params.ts` is a hand-written snapshot of the params the wallet accepts (its header names the
   wallet version it was read from); `pnpm typecheck` fails when a param type in `src/connect.ts` differs from it. It
   does not read the wallet: at each wallet release, compare the snapshot with the wallet's handlers by hand and
-  update it and the types together.
+  update it and the types together. Its `WALLET_CAPABILITY_METHODS` is the wallet's `getCapabilities().methods`;
+  `test/testing.test.ts` requires `src/testing.ts` (the `/testing` mock) to advertise exactly those, so a new wallet
+  method goes into the snapshot and the mock together.
 - Audit-ID markers in `src/` comments (M3, H2, CAIRNSDK-*, CONNECT-1 and others) are mapped to the guards they
   explain in `CHANGELOG.md`, "Notes moved from AGENTS.md".
 

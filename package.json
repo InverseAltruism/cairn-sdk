@@ -1,6 +1,6 @@
 {
   "name": "@inversealtruism/cairn-sdk",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "The Compute Substrate dApp kit: one cohesive toolkit to connect the Cairn Wallet, read the chain, the indexer and .csd names, verify self-certifying content, and resolve .csd names. Composes the published csd-* primitives.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -76,6 +76,16 @@
         "types": "./dist/react.d.cts",
         "default": "./dist/react.cjs"
       }
+    },
+    "./testing": {
+      "import": {
+        "types": "./dist/testing.d.ts",
+        "default": "./dist/testing.js"
+      },
+      "require": {
+        "types": "./dist/testing.d.cts",
+        "default": "./dist/testing.cjs"
+      }
     }
   },
   "files": [
@@ -84,7 +94,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/connect.ts src/indexer.ts src/content.ts src/chain.ts src/controller.ts src/react.ts --format esm,cjs --dts --clean",
+    "build": "tsup src/index.ts src/connect.ts src/indexer.ts src/content.ts src/chain.ts src/controller.ts src/react.ts src/testing.ts --format esm,cjs --dts --clean",
     "typecheck": "tsc -p tsconfig.typecheck.json",
     "lint": "biome lint --max-diagnostics=none .",
     "check:dashes-paths": "node scripts/check-dashes-paths.mjs",

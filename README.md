@@ -66,7 +66,7 @@ try {
 
 **`cairn.chain`:** `tip()`, `utxos(addr)`, `submit(nodeJsonTx)`, `.client` (full `CsdClient`), `.light()` (a `LightClient` over the same RPC with no checkpoint and no batch header source: it proves nothing until seeded, and a sync from it reads one block per height through the RPC; for verified reads use `cairn.index.verifyInclusion()` and `cairn.verifyOfferForFill()`, which run the facade's light client seeded from `DEFAULT_SPV_CHECKPOINT`, or build your own `new LightClient({ client, checkpoints, headersBatchProvider })` from a pinned checkpoint). The package also re-exports the primitives under the `/chain` subpath: `buildSendVerified/buildProposeVerified/buildAttestVerified` (they check each input's value against its source transaction; use them over the bare `buildSend/buildPropose/buildAttest` with any RPC you do not run), `signTx`, `keygen`, `payloadHash`, `verifyMerkleProof`, `LightClient`, etc.
 
-Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{connect,indexer,content,chain,controller,react}`.
+Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{connect,indexer,content,chain,controller,react,testing}`.
 
 ## Examples
 
@@ -104,7 +104,46 @@ new Cairn({
 });
 ```
 
-## Testing
+## Testing your integration
+
+`@inversealtruism/cairn-sdk/testing` exports a mock of the wallet's provider for your own tests, so they run without
+the extension. It is a mock for tests, not a wallet: it holds no key and signs nothing, and its txids, signatures
+and public keys are placeholders that no verifier accepts.
+
+- `mockCairnProvider(options)` answers every provider method with the wallet's envelope (`docs/PROVIDER.md` in
+  cairn-wallet), the transaction methods with the nested `SubmitResult`. It approves by default; `next(method,
+  answer)` scripts the next answer (`approve` with a txid, `reject` with a wallet error code, `refuse` for a nested
+  refusal, or a raw `reply`), `answers` sets a standing one, `calls` records each call with its params, and
+  `emit("accountsChanged")` or `emit("disconnect", reason)` sends an event.
+- `installMockCairn(target, provider)` sets `target.cairn` and runs the wallet's discovery handshake on `target`
+  (`cairn#initialized`, then `csd:announceProvider` at install and on each `csd:requestProvider`). It touches no
+  global you do not pass, and returns the function that uninstalls it.
+
+```ts
+import { CairnError, getWallet } from "@inversealtruism/cairn-sdk";
+import { installMockCairn, mockCairnProvider } from "@inversealtruism/cairn-sdk/testing";
+
+const mock = mockCairnProvider({ address: `0x${"ab".repeat(20)}` });
+const uninstall = installMockCairn(window, mock); // the test environment's window (jsdom, happy-dom, a browser)
+
+const wallet = await getWallet();                 // detect: the mock announces itself as the wallet does
+const address = await wallet.connect();
+const post = { domain: "my-app:v1", payloadHash: `0x${"00".repeat(32)}`, uri: "my-app:post/1", expiresEpoch: 1000 };
+
+mock.next("propose", { kind: "reject", code: "USER_REJECTED" });
+try {
+  await wallet.propose(post);
+} catch (e) {
+  if (e instanceof CairnError) console.log(e.code);   // "USER_REJECTED"
+}
+
+mock.next("propose", { kind: "approve", txid: `0x${"cd".repeat(32)}` });
+const { txid } = await wallet.propose(post);          // the scripted txid
+console.log(mock.calls.map((c) => c.method));         // ["connect", "propose", "propose"]
+uninstall();
+```
+
+## Testing this repo
 
 ```bash
 pnpm build && pnpm test         # unit (offline): error mapping, client paths, content+merkle verify
