@@ -1,6 +1,6 @@
 // Wallet connector: a thin, typed, documented wrapper over the Cairn Wallet's
-// injected `window.cairn` provider. This is the source of truth for the dApp-facing
-// wallet API contract.
+// injected `window.cairn` provider. The contract is the wallet's docs/PROVIDER.md (error codes:
+// WALLET-ERROR-CODES.md) in the cairn-wallet repo; this file is the SDK's typed mirror of it.
 //
 // SECURITY MODEL (mirrors how MetaMask actually works; see the wallet's boundary):
 //   • connect()/getAddress() grant ADDRESS VISIBILITY. After the user approves an
@@ -28,9 +28,9 @@ import {
 // disables it. Override per connection via `new WalletConnection(provider, { timeoutMs })`.
 const DEFAULT_PROVIDER_TIMEOUT_MS = 10 * 60_000;
 
-// The SIWC nonce rule of csd-siwc's buildSiwcMessage and of the wallet's signInWithCsd, which checks it only after
-// the user approved and then answers INTERNAL. csd-siwc does not export it; test/connect.test.ts pins this copy
-// against buildSiwcMessage.
+// The SIWC nonce rule of csd-siwc's buildSiwcMessage and of the wallet, which refuses a bad nonce with BAD_REQUEST
+// before any window opens (wallet 0.3.3; older wallets check it only after approval). csd-siwc does not export it;
+// test/connect.test.ts pins this copy against buildSiwcMessage.
 const SIWC_NONCE_RE = /^[A-Za-z0-9]{8,}$/;
 
 /** Result of `connect()` / `getAddress()`. */
@@ -88,10 +88,10 @@ export interface SealClaimParams {
 }
 
 /**
- * CairnX fill: an Attest plus the caller-supplied payment `outputs`, settled in ONE tx (both land or both
- * revert). "Atomic" here describes only that single-tx SETTLEMENT SHAPE. It does NOT mean this SDK verifies
- * that `outputs` pay the offer's true on-chain recipient: the payment legs are RESOLVER-TRUSTED unless the
- * caller independently SPV-corroborates the offer. A lying/MITM'd resolver can return a wrong payment target,
+ * CairnX fill: an Attest plus the caller-supplied payment `outputs` in ONE tx, so the payment and the fill record
+ * land together. CairnX then decides delivery; if it refuses the fill, the payment is not returned. This SDK does
+ * NOT verify that `outputs` pay the offer's true on-chain recipient: the payment legs are RESOLVER-TRUSTED unless
+ * the caller independently SPV-corroborates the offer. A lying/MITM'd resolver can return a wrong payment target,
  * so a dApp settling real value MUST merkle-prove the offer and derive the recipient from its on-chain author
  * before building `outputs`. Payment-grade offer verification is the wallet's on-device fill-SPV path (F13;
  * added in cairn-wallet 0.2.60, which binds the fill payment/rebate/fee legs to the merkle-proven offer; see
@@ -412,8 +412,8 @@ export class WalletConnection {
   }
 
   /**
-   * CairnX fill: pay + attest in ONE tx (atomic SETTLEMENT SHAPE, both revert together). Always prompts with
-   * clear-signing. The payment recipient in `params.outputs` is RESOLVER-TRUSTED here: this SDK does NOT
+   * CairnX fill: pay + attest in ONE tx; if CairnX refuses the fill, the payment is not returned. Always prompts
+   * with clear-signing. The payment recipient in `params.outputs` is RESOLVER-TRUSTED here: this SDK does NOT
    * SPV-verify it, so a lying resolver can redirect the payment. A dApp settling real value MUST corroborate
    * the offer on-chain before building `outputs` (F13). The wallet's own fill-SPV boundary (cairn-wallet
    * 0.2.60+, which binds payment/rebate/fee to the merkle-proven offer) is the payment-grade check; see FillParams.

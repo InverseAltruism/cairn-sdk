@@ -6,8 +6,8 @@ Production hosting and operations specifics are out of scope here and maintained
 `@inversealtruism/cairn-sdk` (npm; the version is in `package.json`) is the Compute Substrate dApp kit: the single
 umbrella package a third party installs to build on CSD/Cairn. It composes the published low-level
 `@inversealtruism/csd-*` primitives (from the csd-sdk monorepo) behind one `Cairn` facade with five namespaces
-(`wallet`, `chain`, `index`, `content`, `names`); `README.md` describes them for users. It also owns the dApp-facing
-wallet API contract (`src/connect.ts` CairnProvider) and the client half of SIWC (Sign in with CSD; server
+(`wallet`, `chain`, `index`, `content`, `names`); `README.md` describes them for users. It also holds the SDK's typed
+mirror of the wallet's provider contract (`src/connect.ts` CairnProvider) and the client half of SIWC (Sign in with CSD; server
 verification is `@inversealtruism/csd-siwc`). Position: csd-sdk = chain primitives, cairn-sdk = the wallet connector
 and service clients over them. The repo doubles as the ecosystem's live browser E2E rig (the `scripts/` harnesses
 drive the production site and the wallet).
@@ -153,8 +153,8 @@ pack and then publish the tarball (`docs/release.md` says why and what the gate 
 - Depends on the published `@inversealtruism/csd-*` and `@inversealtruism/cairnx-core` packages from the csd-sdk
   monorepo (exact pins, installed from npm). Pin freshness is csd-sdk's maintainer-run
   `scripts/check-consumer-pins.mjs`; it is not wired into this repo's CI.
-- cairn-wallet's `window.cairn` provider: `src/connect.ts` is the dApp-side contract, and `WALLET-ERROR-CODES.md` in
-  the cairn-wallet repo is the error code contract.
+- cairn-wallet's `window.cairn` provider: the contract is `docs/PROVIDER.md` in the cairn-wallet repo, with the error
+  codes in its `WALLET-ERROR-CODES.md`; `src/connect.ts` is the typed mirror of it.
 - The cairn server endpoints (/api/rpc, /api/headers, /content, /explorer/api, /trade/api/cairnx/*), and the SPV
   checkpoint literal copied from cairn/public/trade/swapguard.js (each repo checks its copy against the chain).
 - The opt-in wallet-connector E2E loads a sibling ../cairn-wallet/dist (override with `WALLET_EXT`).
