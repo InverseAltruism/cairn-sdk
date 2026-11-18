@@ -13,7 +13,8 @@ import {
   CairnError,
   SubmitInFlightError,
 } from "../src/index.js";
-import type { CairnProvider, ProviderReply } from "../src/connect.js";
+import type { CairnProvider } from "../src/connect.js";
+import { mockCairnProvider } from "../src/testing.js";
 import { buildSiwcMessage, CSD_CHAIN_MAINNET, generateNonce, SIWC_VERSION } from "@inversealtruism/csd-siwc";
 
 let pass = 0, fail = 0;
@@ -35,31 +36,16 @@ function installWindow(provider?: CairnProvider) {
 }
 function clearWindow() { delete (globalThis as any).window; }
 
+// The exported /testing mock with this suite's fixed answers; `over` replaces methods, as a test may.
 function mockProvider(over: Partial<CairnProvider> = {}): CairnProvider {
-  const reply = <T>(r: ProviderReply<T>) => Promise.resolve(r);
-  const events: Record<string, ((d: any) => void)[]> = {};
-  return {
-    isCairn: true,
-    version: "0.2.7",
-    connect: () => reply({ ok: true, result: { addr: "0xabc" } }),
-    getAddress: () => reply({ ok: true, result: { addr: "0xabc" } }),
-    signIn: () => reply({ ok: true, result: { addr: "0xabc", sig64: "0xsig" } }),
-    propose: () => reply({ ok: true, result: { ok: true, txid: "0xtx" } }),
-    attest: () => reply({ ok: true, result: { ok: true, txid: "0xtx" } }),
-    send: () => reply({ ok: true, result: { ok: true, txid: "0xtx" } }),
-    fillOffer: () => reply({ ok: true, result: { ok: true, txid: "0xfill" } }),
-    signInWithCsd: () => reply({ ok: true, result: { account: "0xabc", pub33: "0xpub", sig64: "0xsig", message: "casino.example wants you to sign in with your Compute Substrate account:\n0xabc", chainId: "csd:00000052c2821f71b19c3d79dfabfb12" } }),
-    getCapabilities: () => Promise.resolve({ version: "0.2.24", siwc: "1", methods: ["connect", "signInWithCsd"] }),
-    getPermissions: () => reply({ ok: true, result: [{ invoker: "casino.example", accounts: ["0xabc"], grantedAt: 1 }] }),
-    requestPermissions: () => reply({ ok: true, result: [{ invoker: "casino.example", accounts: ["0xabc"], grantedAt: 2 }] }),
-    revokePermissions: () => reply({ ok: true, result: { revoked: true } }),
-    on(ev: string, h: (d: any) => void) { (events[ev] ||= []).push(h); },
-    removeListener(ev: string, h: (d: any) => void) { if (events[ev]) events[ev] = events[ev].filter((x) => x !== h); },
-    _emit(ev: string, d: any) { (events[ev] || []).forEach((h) => h(d)); },
-    sealClaim: () => reply({ ok: true, result: { ok: true, txid: "0xtx" } }),
-    revealClaim: () => reply({ ok: true, result: { ok: true, txid: "0xtx" } }),
-    ...over,
-  } as CairnProvider;
+  const mock = mockCairnProvider({
+    address: "0xabc", version: "0.2.7", origin: "casino.example", connected: true, txid: "0xtx",
+    answers: {
+      fillOffer: { kind: "approve", txid: "0xfill" },
+      signInWithCsd: { kind: "approve", result: { account: "0xabc", pub33: "0xpub", sig64: "0xsig", message: "casino.example wants you to sign in with your Compute Substrate account:\n0xabc", chainId: "csd:00000052c2821f71b19c3d79dfabfb12" } },
+    },
+  });
+  return Object.assign(mock, over);
 }
 
 console.log("=== connector: detection ===");
@@ -233,11 +219,11 @@ console.log("=== connector: permissions (EIP-2255-style) + events ===");
   let got: any = "none";
   const h = (d: any) => { got = d; };
   w.on("accountsChanged", h);
-  (w.provider as any)._emit("accountsChanged", []);
+  (w.provider as ReturnType<typeof mockCairnProvider>).emit("accountsChanged");
   ok("on('accountsChanged') fires with [] (lost-access signal)", Array.isArray(got) && got.length === 0);
   w.off("accountsChanged", h);
   got = "none";
-  (w.provider as any)._emit("accountsChanged", ["0xnew"]);
+  (w.provider as ReturnType<typeof mockCairnProvider>).emit("accountsChanged");
   ok("off() unsubscribes (handler no longer fires)", got === "none");
 
   // older wallet without permissions/events → graceful degradation, never throws on read/no-op

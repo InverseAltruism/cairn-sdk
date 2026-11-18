@@ -18,8 +18,13 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const fixture = JSON.parse(readFileSync(join(root, "test/fixtures/public-surface-0.6.0.json"), "utf8"));
 // Names added to an entry since 0.6.0 on purpose; anything else added or missing fails below.
-const ADDED = { chain: ["buildProposeVerified", "buildAttestVerified"] };
-const pinned = Object.fromEntries(Object.entries(fixture.entries).map(([e, names]) => [e, [...names, ...(ADDED[e] ?? [])]]));
+const ADDED = {
+  chain: ["buildProposeVerified", "buildAttestVerified"],
+  testing: ["mockCairnProvider", "installMockCairn", "MockCairnProvider", "MockCairnOptions", "MockAnswer", "MockMethod", "MockCall",
+    "MockCapabilities", "MockCairnTarget", "DisconnectReason"],
+};
+const pinned = Object.fromEntries([...new Set([...Object.keys(fixture.entries), ...Object.keys(ADDED)])]
+  .map((e) => [e, [...(fixture.entries[e] ?? []), ...(ADDED[e] ?? [])]]));
 const methods = fixture.indexerClientMethods;
 
 /** Every name the 0.6.0 build exported from the registry entry, plus RegistryClient from the root entry. */

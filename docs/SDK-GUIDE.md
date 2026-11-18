@@ -89,6 +89,46 @@ follows, and says whether the sample ran against that wallet for the release.
     approval window every time. There is no testnet ("Getting CSD for development" below), so taking a
     transaction past the approval window spends mainnet CSD.
 
+## Testing your integration
+
+Your own tests can run against `mockCairnProvider` from `@inversealtruism/cairn-sdk/testing` instead of the
+extension. It is a mock for tests, not a wallet: it holds no key, signs nothing, and returns placeholder txids and
+signatures (a sign-in from it fails `verifySiwc`). It answers with the wallet's envelopes and nested `SubmitResult`,
+approves by default and records every call in `calls`. Script an answer with `next(method, answer)`: `{ kind:
+"approve", txid }`, `{ kind: "reject", code }` for an outer refusal with a code from the wallet's
+`WALLET-ERROR-CODES.md`, `{ kind: "refuse", code, txid? }` for a refusal nested in an approved reply, or `{ kind:
+"reply", reply }` for a raw envelope. `emit("accountsChanged")` and `emit("disconnect", "locked")` send the wallet's
+events, and an approved `revokePermissions()` sends both, as the wallet does. `installMockCairn(window, mock)`
+installs it on the window you pass, with the wallet's discovery handshake, so `getWallet()` and
+`discoverProviders()` find it; it returns the uninstall function.
+
+```ts
+import { CairnError, getWallet } from "@inversealtruism/cairn-sdk";
+import { installMockCairn, mockCairnProvider } from "@inversealtruism/cairn-sdk/testing";
+
+const mock = mockCairnProvider({ address: `0x${"ab".repeat(20)}` });
+const uninstall = installMockCairn(window, mock); // the test environment's window (jsdom, happy-dom, a browser)
+
+const wallet = await getWallet();                 // detect: the mock announces itself as the wallet does
+const address = await wallet.connect();
+const post = { domain: "my-app:v1", payloadHash: `0x${"00".repeat(32)}`, uri: "my-app:post/1", expiresEpoch: 1000 };
+
+mock.next("propose", { kind: "reject", code: "USER_REJECTED" });
+try {
+  await wallet.propose(post);
+} catch (e) {
+  if (e instanceof CairnError) console.log(e.code);   // "USER_REJECTED"
+}
+
+mock.next("propose", { kind: "approve", txid: `0x${"cd".repeat(32)}` });
+const { txid } = await wallet.propose(post);          // the scripted txid
+console.log(mock.calls.map((c) => c.method));         // ["connect", "propose", "propose"]
+uninstall();
+```
+
+In this repo's tests the mock's method list must equal a snapshot of the wallet's `getCapabilities().methods`, which
+is compared with the wallet by hand at each wallet release.
+
 ## Subpath exports (tree-shakeable)
 
 | Import | What |
@@ -99,6 +139,7 @@ follows, and says whether the sample ran against that wallet for the release.
 | `…/react` | `createCairnHooks(React)`: React hooks (zero react dependency; you pass React) |
 | `…/chain` | `CsdClient`, tx builders, the verifying `LightClient` |
 | `…/indexer`, `…/content` | service clients |
+| `…/testing` | `mockCairnProvider`, `installMockCairn`: a mock of the wallet's provider for your tests (no key, signs nothing) |
 | `@inversealtruism/csd-siwc` | **server-side** SIWC verify (`verifySiwc`, `generateNonce`) |
 
 ## What the SDK verifies vs trusts (read this)
