@@ -89,8 +89,8 @@ self-hosted setups. The chain is the only source of truth; every read carries an
 
 ## The wallet contract
 
-- `src/connect.ts` is the dApp-side contract of cairn-wallet's `window.cairn` provider. The wallet error code
-  contract is `WALLET-ERROR-CODES.md` in the cairn-wallet repo.
+- `src/connect.ts` is the typed mirror of the contract of cairn-wallet's `window.cairn` provider, which is
+  `docs/PROVIDER.md` in the cairn-wallet repo; the wallet error code contract is its `WALLET-ERROR-CODES.md`.
 - mapProviderError and the write wrappers classify every code in WALLET-ERROR-CODES.md
   (`RESERVATION_UNCONFIRMED` never reaches a page) as retryable, in flight or final. Any wallet code not named in
   `src/errors.ts` is kept on the error as sent, final, so when the wallet adds a code: a retryable one goes into
