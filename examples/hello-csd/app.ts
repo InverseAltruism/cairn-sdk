@@ -14,8 +14,17 @@ async function refreshProposals() {
   const rows: Proposal[] = [];
   for (const d of domains.slice(0, 5)) rows.push(...((await cairn.index.domainProposals(d.domain)) as Proposal[]).slice(0, 5));
   rows.sort((a, b) => b.height - a.height);
-  $("proposals").innerHTML = `<b>chain tip ${tip.height}</b>, recent proposals<br>` + rows.slice(0, 8)
-    .map((p) => `• <code>${escape(p.txid.slice(0, 14))}…</code> <span class="dim">(${escape(p.domain)}, block ${p.height})</span>`).join("<br>");
+  // Served values go in as text nodes, never through innerHTML: the node and the indexer are untrusted sources.
+  const node = (tag: string, text: string, className = "") => {
+    const el = document.createElement(tag);
+    el.textContent = text;
+    if (className) el.className = className;
+    return el;
+  };
+  const box = $("proposals");
+  box.replaceChildren(node("b", `chain tip ${tip.height}`), ", recent proposals");
+  for (const p of rows.slice(0, 8))
+    box.append(document.createElement("br"), "• ", node("code", `${p.txid.slice(0, 14)}…`), " ", node("span", `(${p.domain}, block ${p.height})`, "dim"));
 }
 
 $("btn-connect").addEventListener("click", async () => {
@@ -38,8 +47,6 @@ cairn.index.streamAll({
   onAttestation: () => log("▸ new attestation"),
   onError: () => { /* reconnects automatically */ },
 });
-
-function escape(s: string) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!)); }
 
 refreshProposals().catch((e) => log("proposal load failed: " + e.message));
 log("ready: connect your wallet to see your address.");

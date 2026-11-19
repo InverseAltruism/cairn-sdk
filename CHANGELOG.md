@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.8.7
+
+### Docs and internal
+
+- Examples, guide and tests only: no file in the npm tarball changes (`files` is `dist`, `LICENSE`, `README.md`).
+- `examples/node-signer.mjs` answers a submit in the wallet's nested shape with the wallet's codes, so
+  `WalletConnection` turns them into the same errors as the wallet's. A submit that got no answer, a timeout, a 5xx,
+  or a 2xx body other than the node's explicit `{ ok: true }` (the node may hold the transaction) throws
+  `SubmitInFlightError` with code `SUBMIT_MAYBE_INFLIGHT` and the txid; it threw a plain `Error` (code `UNKNOWN`),
+  and a bot that sent again after it built a second transaction from other coins. A refusal saying "already
+  present" (a node holds these bytes, for one after the proxy fails over to a node that has them by gossip) throws
+  `SubmitInFlightError` with code `SUBMIT_DUPLICATE` and the txid, matched as the wallet's `isSubmitDuplicateErr`
+  matches it; the second of two identical concurrent payments therefore reads in flight under the first's txid. A
+  4xx or any other node refusal throws a final `CairnError` with code `SUBMIT_REJECTED`. A new
+  `provider.settle(txid)` is what a caller does instead of sending again: it waits for the txid to be mined,
+  resends the same signed bytes once if it is not, and resolves `false` when the outcome is still unknown. The
+  signed bytes live only in that provider's memory; the header says what a caller records. An accepted submit
+  resolves with the locally signed txid, not the one the proxy echoes.
+- 2026-11-19: the example repeats the submit classification, because 0.8.6 exports no function for it and the
+  example runs against the published package. `test/examples.test.mjs` requires it to agree with `Chain.send` on a
+  502, no answer, a 413 and a node refusal. The rule's single home is an exported submit classifier that both use,
+  with the next release that changes `src/` (0.8.7).
+- Known, for that release: `Chain.send` differs from the example on three answers after signing. It resolves
+  `ok: false` on the node's "already present" answer, resolves ok on a 2xx body of `{}`, `[]` or a string, and
+  throws a plain `TypeError` (code `UNKNOWN`, not in flight) on a body of `null`; the exported classifier fixes
+  all three, and the example then calls it.
+- `examples/hello-csd/app.ts` builds the proposals list from text nodes; the tip height and each proposal's height,
+  as served, went into `innerHTML` unescaped.
+- `examples/integrate-wallet/app.ts`: after `WALLET_TIMEOUT` the message tells the user to reject the request still
+  open in the wallet before checking the history, as the guide says. Guide step 8 says the same, and the "Typed
+  errors" snippet handles `SubmitInFlightError` before its `switch`.
+- `test/examples.test.mjs` runs the node-signer against a stub node, and bundles both browser samples and runs them
+  in Node against a stub DOM and fetch.
+
 ## 0.8.6
 
 Wallet contract: Cairn Wallet 0.3.3 (error codes, params and the provider method list), as in 0.8.5.

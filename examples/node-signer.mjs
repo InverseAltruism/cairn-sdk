@@ -18,22 +18,55 @@ import { MIN_FEE_ATTEST, MIN_FEE_PROPOSE } from "@inversealtruism/csd-codec";
  * Build a CairnProvider that signs with `priv` and submits through `cairn.chain`.
  * Usage:
  *   const cairn = new Cairn({ network: "mainnet" });
- *   cairn.attachWallet(new WalletConnection(makeKeyWallet(priv, cairn)));
- *   await cairn.wallet.send({ to: "0x…", amount: 100_000_000 });   // 1 CSD
+ *   const provider = makeKeyWallet(priv, cairn);
+ *   cairn.attachWallet(new WalletConnection(provider));
+ *   try { await cairn.wallet.send({ to: "0x…", amount: 100_000_000 }); }   // 1 CSD
+ *   catch (e) {
+ *     if (!(e instanceof SubmitInFlightError)) throw e;   // nothing was broadcast
+ *     if (!(await provider.settle(e.txid))) throw new Error(`${e.txid} is still unknown: decide by hand, never send anew`);
+ *   }
+ * The signed bytes live only in this provider's memory and SubmitInFlightError carries only the txid: record
+ * e.txid durably before anything else. After a restart a new provider's settle can wait for that txid but cannot
+ * resend it; it is then decided by hand, never by a new send. settle resolving true means this RPC's own answers
+ * show the txid mined with one confirmation: no proof of inclusion.
  */
 export function makeKeyWallet(priv, cairn) {
   const addr = addrFromPriv(priv);
+  // Signed transactions whose submit may have reached the node, by txid, so settle() resends the same bytes.
+  const unsettled = new Map();
 
   const verify = (inputs) => verifyInputValues(cairn.chain.client, inputs);
   async function spendable() {
     const r = await cairn.chain.utxos(addr);
     return (r.utxos || []).map((u) => ({ txid: u.txid, vout: u.vout, value: u.value, confirmations: u.confirmations, coinbase: u.coinbase }));
   }
+  // Answers in the wallet's nested SubmitResult shape, so WalletConnection classifies the outcome as it does the
+  // wallet's: SUBMIT_MAYBE_INFLIGHT and SUBMIT_DUPLICATE throw SubmitInFlightError (maybeSent, with the txid),
+  // SUBMIT_REJECTED a final CairnError. csd-client marks a 4xx answer `terminal` (nothing was broadcast); no answer, a
+  // timeout, a 5xx, or a 2xx body other than the node's explicit `{ ok: true }` can follow the node taking the
+  // transaction. A refusal whose text says "already present" means a node holds these bytes (the proxy may have
+  // failed over to one that has them by gossip); the match is the wallet's isSubmitDuplicateErr (cairn-wallet
+  // src/core/node.ts), the rule's home. Its trade: the second of two identical concurrent payments reads in flight
+  // under the first's txid. The SDK exports no function for this split, so it is repeated here;
+  // test/examples.test.mjs pins it against Chain.send for the answers both classify alike. The txid is the locally
+  // signed one: a proxy's echo is not evidence of what was signed.
   async function submit(build, kind) {
     if (!build || !build.ok) throw new Error(`${kind} build failed: ${build?.error || "unknown"}`);
-    const res = await cairn.chain.submit(build.nodeJson);
-    if (res?.ok === false || res?.err) throw new Error(`${kind} submit rejected: ${res.err || JSON.stringify(res)}`);
-    return { ok: true, result: { ok: true, txid: res?.txid || build.txid } };
+    const refused = (error) => ({ ok: true, result: { ok: false, code: "SUBMIT_REJECTED", error } });
+    const maybeHeld = (code, error) => {
+      unsettled.set(build.txid, build.nodeJson);
+      return { ok: true, result: { ok: false, code, txid: build.txid, error } };
+    };
+    let res;
+    try { res = await cairn.chain.submit(build.nodeJson); }
+    catch (e) {
+      if (e?.terminal === true) return refused(`${kind} submit refused, nothing was broadcast: ${e.message}`);
+      return maybeHeld("SUBMIT_MAYBE_INFLIGHT", `${kind} submit failed after signing (${e?.message ?? e}); the node may hold ${build.txid}`);
+    }
+    if (res?.ok === true) return { ok: true, result: { ok: true, txid: build.txid } };
+    if (res?.ok === false && /already present/i.test(String(res.err ?? ""))) return maybeHeld("SUBMIT_DUPLICATE", `${kind}: a node already holds ${build.txid} (${res.err})`);
+    if (res?.ok === false) return refused(`${kind} submit rejected by the node: ${res.err || JSON.stringify(res)}`);
+    return maybeHeld("SUBMIT_MAYBE_INFLIGHT", `${kind} submit answered without the node's verdict (${JSON.stringify(res)}); the node may hold ${build.txid}`);
   }
 
   return {
@@ -54,6 +87,23 @@ export function makeKeyWallet(priv, cairn) {
     async signIn() { return { ok: false, error: "signIn is not implemented in the node-signer" }; },
     async sealClaim() { return { ok: false, error: "sealClaim is not implemented in the node-signer" }; },
     async revealClaim() { return { ok: false, error: "revealClaim is not implemented in the node-signer" }; },
+    // Not in the wallet's provider contract: what a caller does after a SubmitInFlightError from this provider. It
+    // never builds a new transaction: spendable() hides the first one's coins while the node holds it, so a new one
+    // spends other coins and both can be mined. It waits up to `waitMs` (default 10 minutes, five blocks at the 120 s
+    // target) for the txid to be mined; if it is not, it resends the same signed bytes once (the same coins under the
+    // same txid, which cannot pay twice) and waits again. true: mined. false: still unknown; stop and decide by hand.
+    async settle(txid, { waitMs = 10 * 60_000 } = {}) {
+      const mined = () => cairn.chain.client.waitForTx(txid, { timeoutMs: waitMs }).then(() => true, () => false);
+      let done = await mined();
+      if (!done && unsettled.has(txid)) {
+        // The resend's answer does not decide ("already present" while the node holds it, a refusal if the first was
+        // mined meanwhile); the lookup after it does.
+        await submit({ ok: true, nodeJson: unsettled.get(txid), txid }, "resend");
+        done = await mined();
+      }
+      if (done) unsettled.delete(txid);
+      return done;
+    },
   };
 }
 
