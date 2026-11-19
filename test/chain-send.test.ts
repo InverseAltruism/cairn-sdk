@@ -111,10 +111,11 @@ const j200 = (text: string) => () => new Response(text, { status: 200, headers: 
   ok("\"missing utxo\" resolves ok:false with the node's answer, not in flight", !(r instanceof Error) && r.ok === false && r.submitResult?.err === "missing utxo");
 }
 {
-  const bodies = ["{}", "[]", "\"ok\"", "null", "{\"ok\":\"true\"}", "{\"ok\":\"maybe\",\"n\":9007199254740993}"];
+  const bodies = ["{}", "[]", "\"ok\"", "null", "{\"ok\":\"true\"}", "{\"ok\":\"maybe\",\"n\":9007199254740993}", "{\"ok\":false}",
+    "{\"ok\":false,\"error\":\"node unreachable\"}"];
   const out = await Promise.all(bodies.map(async (b) => ({ b, e: await grab(() => send(rpc(REAL, j200(b)).chain)) })));
   const bad = out.filter(({ e }) => !(e instanceof SubmitInFlightError && e.code === "SUBMIT_MAYBE_INFLIGHT" && /^0x[0-9a-f]{64}$/.test(e.txid ?? "") && e.nodeJson !== undefined));
-  ok("a 2xx body without the node's verdict ({}, [], a string, null, a non-boolean ok, a bigint) throws SUBMIT_MAYBE_INFLIGHT with the txid",
+  ok("a 2xx body without the node's verdict ({}, [], a string, null, a non-boolean ok, a bigint, ok:false without err) throws SUBMIT_MAYBE_INFLIGHT with the txid",
     bad.length === 0 || (console.log(`    ${bad.map(({ b, e }) => `${b}: ${e instanceof Error ? `${e.constructor.name} ${(e as CairnError).code}` : "resolved"}`).join("; ")}`), false));
 }
 {

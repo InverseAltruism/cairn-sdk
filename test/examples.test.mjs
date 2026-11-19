@@ -154,7 +154,8 @@ const oddBody = (text) => (tx, node) => { node.held.push(tx); return new Respons
 await ok("node-signer classifies every submit answer as Chain.send does (one classifier): in flight, duplicate, or sent nothing", async () => {
   const answers = [["502 after ingest", ingestThen502], ["no answer", ingestNoAnswer], ["413 body cap", bodyCap413], ["node refusal", nodeRefusal],
     ["missing utxo", missingUtxo], ["already present", duplicate], ["408", (_t, _n, json) => json(408, {})], ["429", (_t, _n, json) => json(429, {})],
-    ...["null", "{}", "[]", "\"ok\"", "{\"ok\":\"maybe\",\"n\":9007199254740993}"].map((t) => [`2xx ${t}`, oddBody(t)])];
+    ...["null", "{}", "[]", "\"ok\"", "{\"ok\":\"maybe\",\"n\":9007199254740993}", "{\"ok\":false}", "{\"ok\":false,\"error\":\"node unreachable\"}"]
+      .map((t) => [`2xx ${t}`, oddBody(t)])];
   for (const [name, answer] of answers) {
     const ex = await viaExample(answer);
     const ref = await viaChainSend(answer);

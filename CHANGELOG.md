@@ -9,13 +9,17 @@ Wallet contract: Cairn Wallet 0.3.3 (params and the provider method list); error
 
 - `classifySubmit(outcome)`, exported from the root and `/chain` entries with the types `SubmitOutcome` and
   `SubmitVerdict`: the one reading of what a submit attempt produced (`{ answer }` for a 2xx body, `{ error }` for
-  what it threw). `accepted` is the node's `ok: true`; `duplicate` is a node answer containing "already present"
-  (a node holds these bytes; matched as the wallet's `isSubmitDuplicateErr`); `rejected` is the node's `ok: false`
-  with any other text, or HTTP 400, 413 or 429 (a proxy's body cap and rate limit, answered before forwarding);
-  `inflight` is everything else: no answer, a timeout, a 5xx, any other status (408 included), and a 2xx body
-  without the node's boolean `ok` (`{}`, `[]`, a string, `null`). A refused answer to a resend of stored bytes
-  decides nothing ("missing utxo" when the first copy was mined meanwhile); look the txid up. It never throws,
-  also on a body holding an integer above 2^53.
+  what it threw; a parsed body, not a fetch `Response`). `accepted` is the body's own `ok: true`; `duplicate` is
+  `ok: false` whose `err` contains "already present" (a node holds these bytes; matched as the wallet's
+  `isSubmitDuplicateErr`); `rejected` is `ok: false` with the node's `err` text otherwise ("missing utxo",
+  "mempool conflict: ..."), or HTTP 400, 413 or 429 from any sender (cairn-substrate.com answers 400 and 429
+  before it forwards a submit, nginx or Cloudflare a body cap with 413; behind a front of your own that can answer
+  them after forwarding, treat a `rejected` verdict with a `status` as in flight); `inflight` is everything else:
+  no answer, a timeout, a 5xx, any other status (3xx and 408 included), a 2xx body without its own boolean `ok`
+  (`{}`, `[]`, a string, a number, `true`, `null`, a `Response`), and `ok: false` without the node's `err` text
+  (the hosted proxy's own `{ ok: false, error }` bodies, handed on at 200 by a relay). A refused answer to a resend
+  of stored bytes decides nothing ("missing utxo" when the first copy was mined meanwhile); look the txid up. It
+  does not throw, whatever the body, the thrown value or the argument.
 - Two wallet codes in `CairnErrorCode`, both final (`retryable: false`, kept as sent, as 0.8.6 already kept them):
   `SEAL_UNKNOWN` (the wallet after 0.3.3: `revealClaim` for a txid this account holds no sealed claim for) and
   `FILL_ALREADY_SENT` (the wallet's next release: this account's earlier fill of the same target was sent less
@@ -28,20 +32,28 @@ Wallet contract: Cairn Wallet 0.3.3 (params and the provider method list); error
 
 ### Changed
 
-What a `Chain.send` caller sees after signing, against 0.8.6:
+What a `Chain.send` caller sees after signing, against 0.8.6. The rule: every answer `classifySubmit` reads as
+`inflight` or `duplicate` now throws `SubmitInFlightError` with the txid and `nodeJson`, whatever 0.8.6 did with
+it; the cases that changed are these:
 
 - The node's "already present" answer throws `SubmitInFlightError` with code `SUBMIT_DUPLICATE`, the signed
   `txid` and `nodeJson`; it resolved `ok: false`, which a caller could read as a failure and send again from
   other coins.
-- A 2xx body without the node's verdict (`{}`, `[]`, a string, `ok` not a boolean) throws `SubmitInFlightError`
-  with code `SUBMIT_MAYBE_INFLIGHT`; it resolved `ok: true`. A body of `null` throws the same; it threw a plain
-  `TypeError` (code `UNKNOWN`).
-- HTTP 408 and every 4xx other than 400, 413 and 429 throw `SubmitInFlightError` (`SUBMIT_MAYBE_INFLIGHT`); they
-  threw a final `CairnError` `SUBMIT_REJECTED`. csd-client marks every status below 500 `terminal`, and a front
-  that answers 408 may have forwarded the transaction.
+- A 2xx body without the node's verdict (`{}`, `[]`, a string, a number, `true`, `false`, `ok` not a boolean)
+  throws `SubmitInFlightError` with code `SUBMIT_MAYBE_INFLIGHT`; it resolved `ok: true`. A body of `null` throws
+  the same; it threw a plain `TypeError` (code `UNKNOWN`).
+- `ok: false` without the node's `err` text (`{ ok: false }`, `{ ok: false, error: "node unreachable" }`, an `err`
+  that is `null`, empty or not a string) throws `SUBMIT_MAYBE_INFLIGHT`; it resolved `ok: false`.
+- HTTP 300, 304, 408 and every 4xx other than 400, 413 and 429 throw `SubmitInFlightError`
+  (`SUBMIT_MAYBE_INFLIGHT`); they threw a final `CairnError` `SUBMIT_REJECTED`. csd-client marks every status
+  below 500 `terminal`, and a front that answers 408 may have forwarded the transaction. (fetch follows 301, 302,
+  303, 307 and 308 itself.)
 - Unchanged: the node's `ok: true` resolves `ok: true` with the locally signed `txid`; the node's refusal resolves
   `ok: false` with `submitResult`; a 400, 413 or 429 throws `SUBMIT_REJECTED`; no answer, a timeout or a 5xx
   throws `SUBMIT_MAYBE_INFLIGHT`. The result type is the same.
+- What a caller edits: handle `SubmitInFlightError` with either code by looking `e.txid` up (and resending
+  `e.nodeJson` only once the chain shows it did not land); the `ok: false` branch no longer sees "already present"
+  or a body without the node's `err`.
 
 Dependencies: csd-light 0.1.26 to 0.1.27 (registry shasum `f7940f4bb8fcfbf1c40ad1a6d3abe0a23de84453`); nothing
 else moves, since 0.1.27 depends on csd-codec 0.1.18 and csd-client 0.1.20, this package's pins, and the tree keeps

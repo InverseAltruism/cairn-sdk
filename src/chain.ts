@@ -132,8 +132,9 @@ export class Chain {
    * if any source can't be verified it signs nothing. Prefer this over the pure `buildSend`. Pass
    * `broadcast:false` to get the signed tx back without submitting. The submit's outcome is read by
    * `classifySubmit`: the node's `ok: true` resolves `ok: true`; the node's refusal resolves `ok: false` with
-   * `submitResult`; a proxy's 400, 413 or 429 broadcast nothing and throws a final `CairnError` with code
-   * `SUBMIT_REJECTED`. Every other outcome throws a `SubmitInFlightError` carrying the signed `txid` and
+   * `submitResult`; HTTP 400, 413 or 429 throws a final `CairnError` with code `SUBMIT_REJECTED` (cairn-substrate.com
+   * answers 400 and 429 before it forwards; behind a front that can answer them after forwarding, use
+   * `broadcast: false`, `submit` and `classifySubmit` to keep the signed bytes). Every other outcome throws a `SubmitInFlightError` carrying the signed `txid` and
    * `nodeJson`: code `SUBMIT_DUPLICATE` when a node already holds these bytes, `SUBMIT_MAYBE_INFLIGHT` when no
    * verdict came (no answer, a timeout, a 5xx, another status, a 2xx body without the node's `ok`). Check the
    * txid before resending, and resend that `nodeJson` with `submit` rather than a new send.

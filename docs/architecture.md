@@ -21,7 +21,8 @@ contract couplings and the integration notes. `AGENTS.md` keeps the rules; this 
 - `chain.ts`: tip/utxos/submit/light(); Chain.send() = key-backed send via buildSendVerified + verifyInputValues
   (fail-closed). It reads the submit with `classifySubmit` and throws SubmitInFlightError with the signed txid and
   the signed tx as `nodeJson` for a duplicate or an outcome without a verdict, a final CairnError `SUBMIT_REJECTED`
-  for a proxy's 400, 413 or 429, and resolves `ok: false` on the node's refusal (`test/chain-send.test.ts`).
+  for HTTP 400, 413 or 429 (answered before forwarding by cairn-substrate.com, 400 and 429, and by nginx or
+  Cloudflare, 413), and resolves `ok: false` on the node's refusal (`test/chain-send.test.ts`).
 - `submit.ts`: `classifySubmit`, the one reading of a submit attempt (accepted, duplicate, rejected, in flight),
   exported from the root and `/chain` entries and used by Chain.send and `examples/node-signer.mjs`
   (`test/submit-classify.test.ts`). csd-client marks every status below 500 `terminal` and puts the status only in
