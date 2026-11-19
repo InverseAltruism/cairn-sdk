@@ -86,6 +86,9 @@ for (const [code, error] of [["SEAL_UNKNOWN", "no sealed claim for this txid in 
     ok(`${code} -> final, code and message kept, not maybe-sent`, e.code === code && e.retryable === false && e.shortMessage === error && !(e instanceof SubmitInFlightError));
   }
 }
+ok("wallet 0.3.3's codeless reveal refusal reads UNKNOWN, final (the guide says so)",
+  mapSubmitResultError({ ok: false, error: "no sealed claim with that txid in this account" }).code === "UNKNOWN"
+  && mapSubmitResultError({ ok: false, error: "no sealed claim with that txid in this account" }).retryable === false);
 ok("the repeated-fill refusal from an older wallet (VERIFY_UNAVAILABLE) stays retryable",
   mapSubmitResultError({ ok: false, code: "VERIFY_UNAVAILABLE", error: "an earlier fill of this offer was sent" }).retryable === true);
 // WALLET_UNAVAILABLE is transient for a call that sends nothing and in flight on a write.

@@ -21,11 +21,13 @@ Wallet contract: Cairn Wallet 0.3.3 (params and the provider method list); error
   of stored bytes decides nothing ("missing utxo" when the first copy was mined meanwhile); look the txid up. It
   does not throw, whatever the body, the thrown value or the argument.
 - Two wallet codes in `CairnErrorCode`, both final (`retryable: false`, kept as sent, as 0.8.6 already kept them):
-  `SEAL_UNKNOWN` (the wallet after 0.3.3: `revealClaim` for a txid this account holds no sealed claim for) and
-  `FILL_ALREADY_SENT` (the wallet's next release: this account's earlier fill of the same target was sent less
-  than 30 minutes ago and is not seen applied; nothing was signed; do not ask again on a timer, look the earlier
-  fill up). Until that wallet release the repeated-fill refusal arrives as `VERIFY_UNAVAILABLE`, which this SDK
-  marks retryable. Compared with the wallet's whole `WALLET-ERROR-CODES.md` (master `f695b6f`): no other code is
+  `SEAL_UNKNOWN` (sent from the wallet release after 0.3.3: `revealClaim` for a txid this account holds no sealed
+  claim for; 0.3.3 sends that refusal without a code, which reads `UNKNOWN`) and `FILL_ALREADY_SENT` (the wallet's
+  next release: this account's earlier fill of the same target was sent less than 30 minutes ago and is not seen
+  applied; nothing was signed; do not ask again on a timer, look the earlier fill up). Wallets 0.3.2 and 0.3.3
+  refuse only the partial offer-id case of a repeated fill, as `VERIFY_UNAVAILABLE`, which this SDK marks
+  retryable; they sign a repeated whole-offer or reservation fill, and the wider refusal comes with the next
+  wallet release. Compared with the wallet's whole `WALLET-ERROR-CODES.md` (master `f695b6f`): no other code is
   missing; `UNKNOWN_KIND` is reported as `UNSUPPORTED_METHOD` and `RESERVATION_UNCONFIRMED` never reaches a page.
   `test/types/wallet-codes.ts` snapshots the table, and `pnpm typecheck` fails on a code `src/errors.ts` does not
   name.
@@ -63,6 +65,9 @@ are not in the node's text form; bodies a node serves are unaffected.
 
 ### Docs and internal
 
+- `docs/SDK-GUIDE.md`: under CommonJS an error thrown by a `Chain` from `/chain` is not `instanceof` the root entry's
+  classes (each CommonJS entry carries its own copy; 0.8.6 is the same): branch on `e.code` and `e.maybeSent`.
+  `test/cjs-chain-errors.test.mjs` pins it on `dist/`.
 - `docs/SDK-GUIDE.md`: `outputPlan` values are `bigint`; the guide says how to pass them to `fillOffer`'s
   safe-integer `number` values (`Number(value)` after a `Number.MAX_SAFE_INTEGER` check), where a decimal string is
   taken (`value.toString()`), and not to `JSON.stringify` the plan. `docs/architecture.md` counts 8 entry points.

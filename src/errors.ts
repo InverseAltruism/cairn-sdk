@@ -63,11 +63,12 @@ export type KnownCode =
   | "RPC_BLOCK_MISMATCH"
   // wallet 0.3.2: another fill request holds this fill target; nothing was signed for this one
   | "FILL_IN_PROGRESS"
-  // the wallet after 0.3.3, final: revealClaim for a txid this account holds no sealed claim for; nothing published
+  // the wallet after 0.3.3, final: revealClaim for a txid this account holds no sealed claim for; nothing published.
+  // 0.3.3 sends that refusal without a code (reads UNKNOWN).
   | "SEAL_UNKNOWN"
   // the wallet's next release, final: this account's earlier fill of the same target was sent less than 30 minutes
   // ago and is not seen applied; nothing was signed. Do not ask again on a timer: look the earlier fill up. Wallets
-  // before it send this refusal as VERIFY_UNAVAILABLE, which this SDK marks retryable.
+  // 0.3.2 and 0.3.3 refuse only the partial offer-id case, as VERIFY_UNAVAILABLE (retryable here), and sign the rest.
   | "FILL_ALREADY_SENT"
   // the wallet was updated or reloaded under the page (the wallet's code-less `WALLET_RELOADED:` reply); refresh
   | "WALLET_RELOADED"

@@ -241,7 +241,8 @@ fail-closed on a positive mismatch; `transient` on a lagging chain view, where a
 reason naming the anchor, for an offer mined below the SPV checkpoint (pass an older `spvCheckpoint` to
 verify it). Build EXACTLY the `outputPlan`, never the resolver-served outputs a lying
 resolver could redirect. Its values are `bigint` base units, while each output `value` of `fillOffer` is a
-`number` the wallet requires to be a positive safe integer (`BAD_REQUEST` otherwise): pass `Number(value)` after
+`number` the wallet requires to be a positive safe integer (refused otherwise: wallet 0.3.3 answers the nested
+`BAD_OUTPUTS` at signing, the release after it `BAD_REQUEST` before any window opens): pass `Number(value)` after
 checking `value <= BigInt(Number.MAX_SAFE_INTEGER)`. Where a param takes a decimal string, `value.toString()` is
 exact. Never `JSON.stringify` the plan: it throws on a `bigint`. This is best-effort corroboration, not the payment-grade boundary (the Cairn
 Wallet's own on-device fill-SPV in 0.2.60+ is what fails-closed before signing), but a dApp settling real
@@ -310,11 +311,17 @@ wallet code below.
 > `OFFER_SOURCE_CONFLICT`, `FILL_LEGACY_SUNSET`, `VERIFY_HORIZON`, `VERIFY_UNREPRESENTABLE`,
 > `RESERVATION_DENIED`, `RPC_BLOCK_MISMATCH`, `FILL_IN_PROGRESS`, `SEAL_UNKNOWN` and `FILL_ALREADY_SENT`;
 > `retryable: false`). `SEAL_UNKNOWN`: `revealClaim` named a txid this account holds no sealed claim for; reveal
-> from the account that sealed it. `FILL_ALREADY_SENT`: this account's earlier fill of the same offer or
-> reservation was sent less than 30 minutes ago and is not seen applied; nothing was signed. Do not ask again on a
-> timer: look the earlier fill up, and let the user ask again once it confirms or after the 30 minutes. The wallet
-> sends it from its next release; until then that refusal arrives as `VERIFY_UNAVAILABLE`, which this SDK marks
-> retryable, so a program that retries `VERIFY_UNAVAILABLE` meets it again on each try. `FILL_IN_PROGRESS`
+> from the account that sealed it. The wallet sends that code from its release after 0.3.3; 0.3.3 sends the same
+> refusal without a code, which reads `UNKNOWN`. `FILL_ALREADY_SENT` comes with the wallet's next release: this
+> account's earlier fill of the same offer or reservation was sent less than 30 minutes ago and is not seen
+> applied; nothing was signed. Do not ask again on a timer: look the earlier fill up, and let the user ask again
+> once it confirms, or after the 30 minutes if it did not go through (the earlier fill can still be mined after
+> them). Wallets 0.3.2 and 0.3.3 refuse only the partial offer-id case of a repeated fill, as
+> `VERIFY_UNAVAILABLE`, which this SDK marks retryable, so a program that retries `VERIFY_UNAVAILABLE` meets it
+> again on each try; they sign a repeated whole-offer or reservation fill. The wider refusal comes with the next
+> wallet release. Under CommonJS, an error thrown by a `Chain` taken from `@inversealtruism/cairn-sdk/chain` is not
+> `instanceof` the root entry's classes (each CommonJS entry carries its own copy): branch on `e.code` and
+> `e.maybeSent`, or take `Chain` and the error classes from the same entry. `FILL_IN_PROGRESS`
 > means another fill request for the same offer or reservation is open in the wallet, queued or being sent; this
 > one was not queued and nothing was signed for it. Ask again only after the first is answered, and if the first
 > was sent, check that purchase before paying again. An in-flight error is a `SubmitInFlightError` (`maybeSent: true`, `retryable: false`)
