@@ -24,10 +24,10 @@ import { preverifyOffer, type OfferFillCheck } from "./fillverify.js";
 export interface CairnBaseUrls {
   /** Cairn server (/api/rpc proxy, /api/headers, /content origin, /trade/api names reads). Default https://cairn-substrate.com */
   cairn?: string;
-  /** Node RPC base. Default `${cairn}/api/rpc` (the public proxy — no local node needed). */
+  /** Node RPC base. Default `${cairn}/api/rpc` (the public proxy; no local node needed). */
   rpc?: string;
   /**
-   * csd-indexer base. Default `${cairn}/explorer/api` — the cairn server's existing
+   * csd-indexer base. Default `${cairn}/explorer/api`: the cairn server's existing
    * hardened, read-only, rate-limited reverse proxy to the localhost indexer (the
    * same one the block explorer uses). SSE works through it; WebSocket subscribe()
    * needs a direct indexer endpoint (set this to a localhost/private indexer URL).
@@ -49,7 +49,7 @@ export interface CairnConfig {
   WebSocketImpl?: typeof WebSocket;
   /**
    * SPV trust anchor for genuine "verified-inclusion" (audit M3). A merkle inclusion proof is only
-   * "verified-inclusion" when its block header is PoW-verified — otherwise a lying node can serve a
+   * "verified-inclusion" when its block header is PoW-verified; otherwise a lying node can serve a
    * fake header whose merkle matches a fake proof. The light client verifies the header chain
    * (PoW + LWMA + chainwork) forward from this pinned checkpoint; inclusion at a height ≥ the
    * checkpoint is then trust-minimized. Defaults to the ecosystem checkpoint (same hash swapguard
@@ -137,7 +137,7 @@ export class Cairn {
   wallet?: WalletConnection;
 
   private readonly cairnHttp: Http;
-  // Lazily-seeded SPV light client + its checkpoint (audit M3 — PoW-verified header source).
+  // Lazily-seeded SPV light client + its checkpoint (audit M3: PoW-verified header source).
   private _spvLight: LightClient | null = null;
   // MF-14: the in-flight seed promise. Concurrent first callers share ONE seed instead of racing two
   // syncFromCheckpoint calls onto the same client (the loser would hit "seedTrusted must be called on a
@@ -183,10 +183,10 @@ export class Cairn {
   }
 
   /**
-   * PoW-VERIFIED header merkle at a height (audit M3 — the no-PoW half). Lazily seeds a light
+   * PoW-VERIFIED header merkle at a height (audit M3: the no-PoW half). Lazily seeds a light
    * client from the pinned SPV checkpoint and verifies the header chain FORWARD (PoW + LWMA +
    * chainwork) to `height`, then returns that header's merkle root. THROWS for a height below the
-   * checkpoint (can't verify backward) or if verification fails — the IndexerClient then degrades
+   * checkpoint (can't verify backward) or if verification fails; the IndexerClient then degrades
    * to the honest "proof-consistent" instead of over-claiming "verified-inclusion". The verified
    * header chain is cached across calls; the first call near tip syncs the post-checkpoint span.
    * MF-03: a STRUCTURAL forward-sync break (a reorg orphaned the cached tip) reseeds ONCE via
@@ -339,7 +339,7 @@ export class Cairn {
   }
 
   /**
-   * F13 — corroborate an offer ON-CHAIN before building a `fillOffer` payment's `outputs`. Merkle-proves the
+   * F13: corroborate an offer ON-CHAIN before building a `fillOffer` payment's `outputs`. Merkle-proves the
    * offer into the PoW-verified header chain (from the pinned SPV checkpoint), binds the record to its on-chain
    * commitment, derives the payment recipient + seller from the offer's on-chain AUTHOR (the funding input's
    * prevout owner, txid-committed, NOT the malleable scriptSig), and, if you pass the resolver-SERVED `offer`

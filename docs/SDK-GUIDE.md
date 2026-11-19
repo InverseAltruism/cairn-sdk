@@ -240,7 +240,10 @@ blockHeight, expiresEpoch, expiresAt, outputPlan, sized, planBound, planReason, 
 fail-closed on a positive mismatch; `transient` on a lagging chain view, where a retry can help; final, with a
 reason naming the anchor, for an offer mined below the SPV checkpoint (pass an older `spvCheckpoint` to
 verify it). Build EXACTLY the `outputPlan`, never the resolver-served outputs a lying
-resolver could redirect. This is best-effort corroboration, not the payment-grade boundary (the Cairn
+resolver could redirect. Its values are `bigint` base units, while each output `value` of `fillOffer` is a
+`number` the wallet requires to be a positive safe integer (`BAD_REQUEST` otherwise): pass `Number(value)` after
+checking `value <= BigInt(Number.MAX_SAFE_INTEGER)`. Where a param takes a decimal string, `value.toString()` is
+exact. Never `JSON.stringify` the plan: it throws on a `bigint`. This is best-effort corroboration, not the payment-grade boundary (the Cairn
 Wallet's own on-device fill-SPV in 0.2.60+ is what fails-closed before signing), but a dApp settling real
 value should clear it first. The standalone `preverifyOffer({ light, client, offerId, servedOffer, pay,
 plannedOutputs, me, tip, fillTargetId })` takes an injected light client + tx reader for custom wiring; `bindOfferTerms` / `feeBpsAt`

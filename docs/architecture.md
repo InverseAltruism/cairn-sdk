@@ -6,7 +6,7 @@ contract couplings and the integration notes. `AGENTS.md` keeps the rules; this 
 
 ## Modules
 
-`src/` is built by tsup to esm+cjs+dts with 7 entry points (the `build` script in `package.json` lists them).
+`src/` is built by tsup to esm+cjs+dts with 8 entry points (the `build` script in `package.json` lists them).
 
 - `index.ts`: Cairn facade, CairnConfig, DEFAULT_SPV_CHECKPOINT (height and hash are in the source), and the lazy
   PoW-verified header wiring into the indexer via `seededSpvLight`. See "SPV header sync" below.

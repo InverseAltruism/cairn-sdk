@@ -171,7 +171,7 @@ checks).
 - `README.md`: what the package is, install, quick start.
 - `docs/SDK-GUIDE.md`: the third-party developer guide; the one description of the trust levels.
 - `docs/architecture.md`: modules, SPV header sync, the fill-verify surface, the wallet contract, integration notes.
-- `docs/release.md`: why pack-then-publish, what verify-tarball checks, the pin gates.
+- `docs/release.md`: why pack-then-publish, what the release gate and verify-tarball check, the pin gates.
 - `CHANGELOG.md`: one entry per release; every SPV checkpoint move names the affected band; "Notes moved from
   AGENTS.md" maps the audit-ID markers in `src/` comments to the guards they explain.
 - `test/e2e/README.md`: the test layers, the unit runner and the live harnesses.

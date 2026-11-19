@@ -2,6 +2,9 @@
 
 ## 0.8.7
 
+Wallet contract: Cairn Wallet 0.3.3 (params and the provider method list); error codes as listed in the wallet's
+`WALLET-ERROR-CODES.md` at master `f695b6f`, plus `FILL_ALREADY_SENT` from its next release.
+
 ### Added
 
 - `classifySubmit(outcome)`, exported from the root and `/chain` entries with the types `SubmitOutcome` and
@@ -48,6 +51,9 @@ are not in the node's text form; bodies a node serves are unaffected.
 
 ### Docs and internal
 
+- `docs/SDK-GUIDE.md`: `outputPlan` values are `bigint`; the guide says how to pass them to `fillOffer`'s
+  safe-integer `number` values (`Number(value)` after a `Number.MAX_SAFE_INTEGER` check), where a decimal string is
+  taken (`value.toString()`), and not to `JSON.stringify` the plan. `docs/architecture.md` counts 8 entry points.
 - `scripts/release-gate.mjs` (repo-only, not in the tarball) ties a release to a commit; `verify-tarball.mjs` ties
   a tarball to the tree on disk and calls git 0 times. Before the publish it refuses a tree with any local change,
   a HEAD off the first-parent line of `origin/master` and a version already on the registry, runs the repo's whole
