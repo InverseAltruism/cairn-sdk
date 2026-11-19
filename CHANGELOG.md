@@ -72,12 +72,17 @@ are not in the node's text form; bodies a node serves are unaffected.
   safe-integer `number` values (`Number(value)` after a `Number.MAX_SAFE_INTEGER` check), where a decimal string is
   taken (`value.toString()`), and not to `JSON.stringify` the plan. `docs/architecture.md` counts 8 entry points.
 - `scripts/release-gate.mjs` (repo-only, not in the tarball) ties a release to a commit; `verify-tarball.mjs` ties
-  a tarball to the tree on disk and calls git 0 times. Before the publish it refuses a tree with any local change,
-  a HEAD off the first-parent line of `origin/master` and a version already on the registry, runs the repo's whole
-  check, packs, runs `verify-tarball.mjs` on that tarball and prints its digests; `--compare <tgz>` after the
-  publish requires the registry's `dist.shasum` and `dist.integrity` to equal the tarball's. `docs/release.md` and
-  the release steps of `AGENTS.md` describe that path. `test/release-gate.test.mjs` runs each guard in scratch git
-  repositories with the registry stood in; each fails with its guard removed.
+  a tarball to the tree on disk and calls git 0 times. Before the publish it refuses a tree with any local change
+  (untracked files counted whatever `status.showUntrackedFiles` says, and no file marked assume-unchanged or
+  skip-worktree), a HEAD off the first-parent line of `refs/remotes/origin/master` and a version already on the
+  registry, runs the repo's whole check, packs, runs `verify-tarball.mjs` on that tarball, requires the tree clean
+  and HEAD unchanged after it, and writes `<dir>/release-gate.json` with the commit and the digests;
+  `--compare <dir>` after the publish requires the registry's `dist.shasum` and `dist.integrity` to equal the
+  recorded digests. It runs when started through a symlinked path, and refuses an `--out` inside the checkout.
+  `docs/release.md` and the release steps of `AGENTS.md` describe that path, including where the package-age
+  exemption goes (the re-pin, not the gate's frozen install). `test/release-gate.test.mjs` runs each guard in
+  scratch git repositories with the registry stood in, and starts the script as a command by its real path and
+  through symlinks.
 - `examples/node-signer.mjs` answers a submit in the wallet's nested shape with the wallet's codes, so
   `WalletConnection` turns them into the same errors as the wallet's, and decides with `classifySubmit`; it no
   longer repeats the rule. An in-flight or duplicate verdict throws `SubmitInFlightError` (`SUBMIT_MAYBE_INFLIGHT`,

@@ -22,27 +22,42 @@ was never reviewed passes it and ships. The release gate ties the tarball to a c
 fresh worktree at the release commit after `git fetch origin`; CI does not run it (it reads the registry), and it
 publishes nothing.
 
-`node scripts/release-gate.mjs --out <dir>` (`<dir>` new or empty) runs every check below, lists each as pass or
-FAIL, and exits 1 if any failed:
+`node scripts/release-gate.mjs --out <dir>` (`<dir>` new or empty, outside the checkout; inside it the gate stops
+and says so) runs every check below, lists each as pass or FAIL, and exits 1 if any failed:
 
-- `git status --porcelain` is empty: no tracked change and no untracked file outside `.gitignore`.
-- HEAD is on the first-parent line of `origin/master` as last fetched (`git rev-list --first-parent origin/master`
-  lists it): a merge commit or a direct commit of master. A commit inside a merged pull request is an ancestor of
-  master but not on that line, and can predate the branch's last fix, so `merge-base --is-ancestor` is not this
-  check.
+- `git status --porcelain --untracked-files=all` is empty, whatever `status.showUntrackedFiles` says: no tracked
+  change and no untracked file outside `.gitignore`; and `git ls-files -v` shows no file marked assume-unchanged
+  or skip-worktree, which `git status` does not compare.
+- HEAD is on the first-parent line of `origin/master` as last fetched
+  (`git rev-list --first-parent refs/remotes/origin/master` lists it; the full ref name, since a local branch
+  called `origin/master` would win): a merge commit or a direct commit of master. A commit inside a merged pull
+  request is an ancestor of master but not on that line, and can predate the branch's last fix, so
+  `merge-base --is-ancestor` is not this check.
 - package.json's version is not on the registry: only a 404 for `name@version` passes; a 200, any other status or
   an unreachable registry refuses.
 - The repo's check: `pnpm install --frozen-lockfile`, `typecheck`, `lint`, `check:dashes-paths`, `build`, `test`.
 - `pnpm pack` into `<dir>` (its `prepack` builds), then `verify-tarball.mjs` on that tarball.
-- `git status --porcelain` is still empty after the check.
+- After the check the tree is still clean and HEAD is still the commit the gate started at.
 
-On success it prints the tarball's path, sha1 (npm's `dist.shasum`), sha512 integrity (`dist.integrity`) and
-sha256. After `npm publish <tgz>`, `node scripts/release-gate.mjs --compare <tgz>` reads the registry's entry for
-package.json's version and exits 0 only when both `dist.shasum` and `dist.integrity` equal the tarball's.
+On success it writes `<dir>/release-gate.json` (name, version, the full commit id, the tarball's path, sha1,
+integrity and sha256) and prints the commit, the tarball's path, sha1 (npm's `dist.shasum`), sha512 integrity
+(`dist.integrity`) and sha256; a refused run writes no record. After `npm publish <dir>/<tgz>`,
+`node scripts/release-gate.mjs --compare <dir>` reads the registry's entry for the version in that record and
+exits 0 only when both `dist.shasum` and `dist.integrity` equal the recorded digests, so the compare is against the
+bytes the gate checked, not against whatever file is at hand.
+
+The gate's `pnpm install --frozen-lockfile` needs no package-age exemption: pnpm applies `minimum-release-age` when
+it resolves versions, and a frozen install from the lockfile fetched csd-light 0.1.27, then 0 days old, from an
+empty store with this host's 14-day setting on (pnpm 10.32.1, 2026-11-19). The exemption belongs to the
+preparation step, when a re-pin to a younger `@inversealtruism/*` version rewrites the lockfile:
+`pnpm install --config.minimum-release-age-exclude='@inversealtruism/*'`. The cooldown stays on for every other
+package.
 
 `test/release-gate.test.mjs` runs each guard in scratch git repositories it makes (a bare origin, a clone with a
 merged pull request), with the registry, pnpm and verify-tarball stood in: each refusal, and the honest release
-passing. The gate does not check the tag; step 5 of the release steps in `AGENTS.md` tags the commit it ran on.
+passing; it also starts a copy of the script as a command, by its real path and through symlinks to the file and to
+its directory, and reads the exit codes. The gate does not check the tag; step 5 of the release steps in
+`AGENTS.md` tags the commit it ran on.
 
 ## What `scripts/verify-tarball.mjs` checks
 

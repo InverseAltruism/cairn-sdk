@@ -142,17 +142,19 @@ pack, check and then publish the tarball from the release commit (`docs/release.
 checks).
 
 1. Prepare: bump `version` and `SDK_VERSION` (`src/errors.ts`) together, re-pin csd-*/cairnx-core to published
-   versions, add the CHANGELOG entry, and merge it to `master` through a pull request.
+   versions, add the CHANGELOG entry, and merge it to `master` through a pull request. A re-pin to an
+   `@inversealtruism/*` version younger than the host's package-age cooldown installs with
+   `--config.minimum-release-age-exclude='@inversealtruism/*'` (`docs/release.md`).
 2. Gate: `git fetch origin`, then from a fresh worktree at the release commit run
-   `node scripts/release-gate.mjs --out <new dir>`. It refuses a tree with any local change, a HEAD that is not on
-   the first-parent line of `origin/master` and a version already on the registry; runs the check (frozen install,
-   typecheck, lint, dashes and paths, build, unit suites); packs (`prepack` builds `dist/`); runs
-   `scripts/verify-tarball.mjs` on that tarball; and prints its sha1, integrity and sha256. Do not publish unless
-   it exits 0.
+   `node scripts/release-gate.mjs --out <new dir outside the checkout>`. It refuses a tree with any local change,
+   a HEAD that is not on the first-parent line of `origin/master` and a version already on the registry; runs the
+   check (frozen install, typecheck, lint, dashes and paths, build, unit suites); packs (`prepack` builds `dist/`);
+   runs `scripts/verify-tarball.mjs` on that tarball; checks the tree and HEAD again; writes
+   `<dir>/release-gate.json`; and prints the commit, sha1, integrity and sha256. Do not publish unless it exits 0.
 3. Publish that tarball with a transient npm token in a `mktemp --userconfig` file, deleted right after; tokens are
    never stored.
-4. Compare: `node scripts/release-gate.mjs --compare <tgz>` exits 0 only when the registry's `dist.shasum` and
-   `dist.integrity` equal the tarball's.
+4. Compare: `node scripts/release-gate.mjs --compare <dir>` exits 0 only when the registry's `dist.shasum` and
+   `dist.integrity` equal the digests the gate recorded in `<dir>/release-gate.json`.
 5. Tag `vX.Y.Z` at that commit and push. The version history is the CHANGELOG and the `v*` tags.
 
 ## Cross-repo contract
