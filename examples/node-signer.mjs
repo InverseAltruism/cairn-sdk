@@ -25,6 +25,10 @@ import { MIN_FEE_ATTEST, MIN_FEE_PROPOSE } from "@inversealtruism/csd-codec";
  *     if (!(e instanceof SubmitInFlightError)) throw e;   // nothing was broadcast
  *     if (!(await provider.settle(e.txid))) throw new Error(`${e.txid} is still unknown: decide by hand, never send anew`);
  *   }
+ * The signed bytes live only in this provider's memory and SubmitInFlightError carries only the txid: record
+ * e.txid durably before anything else. After a restart a new provider's settle can wait for that txid but cannot
+ * resend it; it is then decided by hand, never by a new send. settle resolving true means this RPC's own answers
+ * show the txid mined with one confirmation: no proof of inclusion.
  */
 export function makeKeyWallet(priv, cairn) {
   const addr = addrFromPriv(priv);
@@ -37,24 +41,32 @@ export function makeKeyWallet(priv, cairn) {
     return (r.utxos || []).map((u) => ({ txid: u.txid, vout: u.vout, value: u.value, confirmations: u.confirmations, coinbase: u.coinbase }));
   }
   // Answers in the wallet's nested SubmitResult shape, so WalletConnection classifies the outcome as it does the
-  // wallet's: SUBMIT_MAYBE_INFLIGHT throws SubmitInFlightError (maybeSent, with the txid), SUBMIT_REJECTED a final
-  // CairnError. The split is Chain.send's: csd-client marks a 4xx answer `terminal` (nothing was broadcast), while no
-  // answer, a timeout, a 5xx or an unreadable body can follow the node taking the transaction. The SDK exports no
-  // function for that split (Chain.send inlines it, and send is all it builds), so it is repeated here;
-  // test/examples.test.mjs requires the two to agree. The txid is the locally signed one: a proxy's echo is not
-  // evidence of what was signed.
+  // wallet's: SUBMIT_MAYBE_INFLIGHT and SUBMIT_DUPLICATE throw SubmitInFlightError (maybeSent, with the txid),
+  // SUBMIT_REJECTED a final CairnError. csd-client marks a 4xx answer `terminal` (nothing was broadcast); no answer, a
+  // timeout, a 5xx, or a 2xx body other than the node's explicit `{ ok: true }` can follow the node taking the
+  // transaction. A refusal whose text says "already present" means a node holds these bytes (the proxy may have
+  // failed over to one that has them by gossip); the match is the wallet's isSubmitDuplicateErr (cairn-wallet
+  // src/core/node.ts), the rule's home. Its trade: the second of two identical concurrent payments reads in flight
+  // under the first's txid. The SDK exports no function for this split, so it is repeated here;
+  // test/examples.test.mjs pins it against Chain.send for the answers both classify alike. The txid is the locally
+  // signed one: a proxy's echo is not evidence of what was signed.
   async function submit(build, kind) {
     if (!build || !build.ok) throw new Error(`${kind} build failed: ${build?.error || "unknown"}`);
     const refused = (error) => ({ ok: true, result: { ok: false, code: "SUBMIT_REJECTED", error } });
+    const maybeHeld = (code, error) => {
+      unsettled.set(build.txid, build.nodeJson);
+      return { ok: true, result: { ok: false, code, txid: build.txid, error } };
+    };
     let res;
     try { res = await cairn.chain.submit(build.nodeJson); }
     catch (e) {
       if (e?.terminal === true) return refused(`${kind} submit refused, nothing was broadcast: ${e.message}`);
-      unsettled.set(build.txid, build.nodeJson);
-      return { ok: true, result: { ok: false, code: "SUBMIT_MAYBE_INFLIGHT", txid: build.txid, error: `${kind} submit failed after signing (${e?.message ?? e}); the node may hold ${build.txid}` } };
+      return maybeHeld("SUBMIT_MAYBE_INFLIGHT", `${kind} submit failed after signing (${e?.message ?? e}); the node may hold ${build.txid}`);
     }
-    if (res?.ok === false || res?.err) return refused(`${kind} submit rejected by the node: ${res.err || JSON.stringify(res)}`);
-    return { ok: true, result: { ok: true, txid: build.txid } };
+    if (res?.ok === true) return { ok: true, result: { ok: true, txid: build.txid } };
+    if (res?.ok === false && /already present/i.test(String(res.err ?? ""))) return maybeHeld("SUBMIT_DUPLICATE", `${kind}: a node already holds ${build.txid} (${res.err})`);
+    if (res?.ok === false) return refused(`${kind} submit rejected by the node: ${res.err || JSON.stringify(res)}`);
+    return maybeHeld("SUBMIT_MAYBE_INFLIGHT", `${kind} submit answered without the node's verdict (${JSON.stringify(res)}); the node may hold ${build.txid}`);
   }
 
   return {

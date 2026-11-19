@@ -178,6 +178,48 @@ await ok("node-signer: an accepted submit resolves with the locally signed txid,
   assert.equal(ex.node.submitted.length, 1);
 });
 
+await ok("node-signer: an HTTP 200 \"already present\" answer is in flight (the proxy failed over to a node that holds it by gossip), and the caller pays once", async () => {
+  // The first backend admitted the transaction and gossiped it, then answered too late; the proxy relays the second
+  // backend's duplicate answer. Any later, different transaction is accepted.
+  let first = true;
+  const failoverDuplicate = (tx, node, json) => {
+    node.held.push(tx);
+    if (!first) return json(200, { ok: true, txid: ECHO });
+    first = false;
+    return json(200, { ok: false, txid: ECHO, mempool_len: 1, err: "already present in mempool" });
+  };
+  const { node, provider, wallet, e } = await viaExample(failoverDuplicate);
+  let mined = null;
+  if (e instanceof SubmitInFlightError) {
+    node.mineOnResend = e.txid;
+    mined = await provider.settle(e.txid, { waitMs: 10 });
+  } else await wallet.send(PAY).catch(() => null);
+  const held = node.held.map((t) => t.inputs.map((i) => Buffer.from(i.prevout.txid).toString("hex")).join(","));
+  assert.equal(new Set(held).size, 1, `the node holds ${held.length} transactions spending different coins (first error: ${String(e?.message).split("\n")[0]}, code ${errorCode(e)})`);
+  assert.ok(e instanceof SubmitInFlightError && e.maybeSent === true && e.code === "SUBMIT_DUPLICATE");
+  assert.equal(e.txid, (await viaChainSend(ingestThen502)).e.txid, "the txid is the locally signed one");
+  assert.equal(mined, true);
+});
+
+await ok("node-signer: settle resolves false when the transaction never appears, builds nothing new, and keeps the bytes for a later call", async () => {
+  const { node, provider, e } = await viaExample(ingestThen502);
+  assert.ok(e instanceof SubmitInFlightError, String(e?.message));
+  assert.equal(await provider.settle(e.txid, { waitMs: 10 }), false);
+  assert.equal(node.submitted.length, 2, "the first submit and one resend");
+  assert.equal(await provider.settle(e.txid, { waitMs: 10 }), false);
+  assert.equal(node.submitted.length, 3, "a later settle resends again: the bytes were kept");
+  assert.equal(new Set(node.submitted.map((t) => JSON.stringify(t))).size, 1, "every submit is the same signed transaction");
+});
+
+await ok("node-signer: a 2xx body that is not the node's explicit success (null, {}, [], a string) is in flight, not accepted", async () => {
+  for (const body of [null, {}, [], "ok"]) {
+    const odd = (tx, node, json) => { node.held.push(tx); return json(200, body); };
+    const ex = await viaExample(odd);
+    assert.ok(ex.e instanceof SubmitInFlightError && ex.e.code === "SUBMIT_MAYBE_INFLIGHT" && /^0x[0-9a-f]{64}$/.test(ex.e.txid),
+      `${JSON.stringify(body)}: ${ex.e ? errorCode(ex.e) : `resolved txid ${ex.r?.txid}`}`);
+  }
+});
+
 console.log("sample server, Sign in with CSD:");
 const server = spawn(process.execPath, [join(root, "examples/integrate-wallet/server.mjs")], { env: { ...process.env, PORT: "0" }, stdio: ["ignore", "pipe", "inherit"] });
 try {
