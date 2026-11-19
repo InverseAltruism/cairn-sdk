@@ -40,6 +40,12 @@ What a `Chain.send` caller sees after signing, against 0.8.6:
   `ok: false` with `submitResult`; a 400, 413 or 429 throws `SUBMIT_REJECTED`; no answer, a timeout or a 5xx
   throws `SUBMIT_MAYBE_INFLIGHT`. The result type is the same.
 
+Dependencies: csd-light 0.1.26 to 0.1.27 (registry shasum `f7940f4bb8fcfbf1c40ad1a6d3abe0a23de84453`); nothing
+else moves, since 0.1.27 depends on csd-codec 0.1.18 and csd-client 0.1.20, this package's pins, and the tree keeps
+one csd-codec and one csd-crypto. csd-light 0.1.27's change, as its CHANGELOG states it: `verifyTxInclusion`
+(which `verifyOfferForFill` and `preverifyOffer` run) refuses as a body mismatch a served transaction whose fields
+are not in the node's text form; bodies a node serves are unaffected.
+
 ### Docs and internal
 
 - `scripts/release-gate.mjs` (repo-only, not in the tarball) ties a release to a commit; `verify-tarball.mjs` ties
