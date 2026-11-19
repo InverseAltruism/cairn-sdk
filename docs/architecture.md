@@ -100,6 +100,10 @@ self-hosted setups. The chain is the only source of truth; every read carries an
   `src/errors.ts` is kept on the error as sent, final, so when the wallet adds a code: a retryable one goes into
   `NESTED_TRANSIENT`, a maybe-sent one into the in-flight pair, and a final one needs only its `CairnErrorCode` entry
   and a test in `test/errors.test.ts`. A reply naming a code only the SDK assigns (`SDK_ONLY_CODES`) reads `UNKNOWN`.
+- `test/types/wallet-codes.ts` is a hand-written snapshot of the codes in the wallet's `WALLET-ERROR-CODES.md` (its
+  header names the wallet commit it was read from); `pnpm typecheck` fails when one is missing from `KnownCode` in
+  `src/errors.ts`, which no package entry exports. At each wallet release, compare it with the wallet's table by
+  hand, add each new code to it, and classify the code as above.
 - `test/types/wallet-params.ts` is a hand-written snapshot of the params the wallet accepts (its header names the
   wallet version it was read from); `pnpm typecheck` fails when a param type in `src/connect.ts` differs from it. It
   does not read the wallet: at each wallet release, compare the snapshot with the wallet's handlers by hand and

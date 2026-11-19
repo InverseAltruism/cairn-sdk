@@ -13,6 +13,15 @@
   without the node's boolean `ok` (`{}`, `[]`, a string, `null`). A refused answer to a resend of stored bytes
   decides nothing ("missing utxo" when the first copy was mined meanwhile); look the txid up. It never throws,
   also on a body holding an integer above 2^53.
+- Two wallet codes in `CairnErrorCode`, both final (`retryable: false`, kept as sent, as 0.8.6 already kept them):
+  `SEAL_UNKNOWN` (the wallet after 0.3.3: `revealClaim` for a txid this account holds no sealed claim for) and
+  `FILL_ALREADY_SENT` (the wallet's next release: this account's earlier fill of the same target was sent less
+  than 30 minutes ago and is not seen applied; nothing was signed; do not ask again on a timer, look the earlier
+  fill up). Until that wallet release the repeated-fill refusal arrives as `VERIFY_UNAVAILABLE`, which this SDK
+  marks retryable. Compared with the wallet's whole `WALLET-ERROR-CODES.md` (master `f695b6f`): no other code is
+  missing; `UNKNOWN_KIND` is reported as `UNSUPPORTED_METHOD` and `RESERVATION_UNCONFIRMED` never reaches a page.
+  `test/types/wallet-codes.ts` snapshots the table, and `pnpm typecheck` fails on a code `src/errors.ts` does not
+  name.
 
 ### Changed
 

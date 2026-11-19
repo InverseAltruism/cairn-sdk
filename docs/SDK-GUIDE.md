@@ -299,13 +299,19 @@ wallet code below.
 > **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the
 > source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error (except
 > `UNKNOWN_KIND`, which throws `UnsupportedMethodError` with `UNSUPPORTED_METHOD`, and `APPROVAL_CLOSED`, which
-> throws `UserRejectedError` with `USER_REJECTED`) and classify every code listed there as of wallet 0.3.2 except
+> throws `UserRejectedError` with `USER_REJECTED`) and classify every code listed there as of the wallet after 0.3.3 except
 > `RESERVATION_UNCONFIRMED`, which the wallet returns to its approval window only: retryable (`VERIFY_UNAVAILABLE`, `OFFER_UNKNOWN`, `REVIEW_REQUIRED`,
 > `SEAL_NOT_MINED`, and `WALLET_UNAVAILABLE` on `connect` and `getAddress`: nothing was sent), in flight
 > (`SUBMIT_MAYBE_INFLIGHT`, `SUBMIT_DUPLICATE`, and `WALLET_UNAVAILABLE` on a write method: `send`,
 > `fillOffer`, `propose`, `attest`, `sealClaim`, `revealClaim`), and final (every other code, including
 > `OFFER_SOURCE_CONFLICT`, `FILL_LEGACY_SUNSET`, `VERIFY_HORIZON`, `VERIFY_UNREPRESENTABLE`,
-> `RESERVATION_DENIED`, `RPC_BLOCK_MISMATCH` and `FILL_IN_PROGRESS`; `retryable: false`). `FILL_IN_PROGRESS`
+> `RESERVATION_DENIED`, `RPC_BLOCK_MISMATCH`, `FILL_IN_PROGRESS`, `SEAL_UNKNOWN` and `FILL_ALREADY_SENT`;
+> `retryable: false`). `SEAL_UNKNOWN`: `revealClaim` named a txid this account holds no sealed claim for; reveal
+> from the account that sealed it. `FILL_ALREADY_SENT`: this account's earlier fill of the same offer or
+> reservation was sent less than 30 minutes ago and is not seen applied; nothing was signed. Do not ask again on a
+> timer: look the earlier fill up, and let the user ask again once it confirms or after the 30 minutes. The wallet
+> sends it from its next release; until then that refusal arrives as `VERIFY_UNAVAILABLE`, which this SDK marks
+> retryable, so a program that retries `VERIFY_UNAVAILABLE` meets it again on each try. `FILL_IN_PROGRESS`
 > means another fill request for the same offer or reservation is open in the wallet, queued or being sent; this
 > one was not queued and nothing was signed for it. Ask again only after the first is answered, and if the first
 > was sent, check that purchase before paying again. An in-flight error is a `SubmitInFlightError` (`maybeSent: true`, `retryable: false`)

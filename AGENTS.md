@@ -129,9 +129,10 @@ at another front door) and the wallet connector (`pnpm test:live:wallet`).
 - `test/spv-transient-parity.test.mjs` checks the built `dist/` and fails without one, so build before `pnpm test`.
 - The `scripts/*.mjs` live harnesses are maintainer-run only, and some spend CSD. `scripts/live-wallet-ui.mjs` is the
   read-only one: it approves only the non-spend Connect and rejects every fund- or fee-bearing clear-sign popup.
-- When the wallet adds an error code, classify it in `src/errors.ts` as retryable, in flight or final; at each
-  wallet release, compare `test/types/wallet-params.ts` with the wallet's handlers by hand and update it and the
-  types in `src/connect.ts` together. The steps for both are in `docs/architecture.md` ("The wallet contract").
+- When the wallet adds an error code, add it to `test/types/wallet-codes.ts` and classify it in `src/errors.ts` as
+  retryable, in flight or final; at each wallet release, compare `test/types/wallet-params.ts` with the wallet's
+  handlers by hand and update it and the types in `src/connect.ts` together. The steps for both are in
+  `docs/architecture.md` ("The wallet contract").
 - `scripts/build-example.mjs` uses the esbuild JS API (the CLI shim ELF-errors under pnpm); keep it that way.
 
 ## Release and publish

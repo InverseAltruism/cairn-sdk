@@ -78,6 +78,16 @@ for (const code of ["VERIFY_UNAVAILABLE", "OFFER_UNKNOWN", "REVIEW_REQUIRED"]) {
     ok(`${code} -> final, code kept (was UNKNOWN)`, e.code === code && e.retryable === false && !(e instanceof SubmitInFlightError));
   }
 }
+// SEAL_UNKNOWN (the wallet after 0.3.3) and FILL_ALREADY_SENT (its next release): nothing was signed, final. A wallet
+// before that release sends the repeated-fill refusal as VERIFY_UNAVAILABLE, which stays retryable.
+for (const [code, error] of [["SEAL_UNKNOWN", "no sealed claim for this txid in this account"],
+  ["FILL_ALREADY_SENT", "an earlier fill of this offer was sent and is not applied yet"]] as const) {
+  for (const e of [mapSubmitResultError({ ok: false, code, error }), mapProviderError(error, code)]) {
+    ok(`${code} -> final, code and message kept, not maybe-sent`, e.code === code && e.retryable === false && e.shortMessage === error && !(e instanceof SubmitInFlightError));
+  }
+}
+ok("the repeated-fill refusal from an older wallet (VERIFY_UNAVAILABLE) stays retryable",
+  mapSubmitResultError({ ok: false, code: "VERIFY_UNAVAILABLE", error: "an earlier fill of this offer was sent" }).retryable === true);
 // WALLET_UNAVAILABLE is transient for a call that sends nothing and in flight on a write.
 ok("mapProviderError: WALLET_UNAVAILABLE (connect, getAddress) -> retryable, not maybe-sent",
   mapProviderError("x", "WALLET_UNAVAILABLE").retryable === true && !(mapProviderError("x", "WALLET_UNAVAILABLE") instanceof SubmitInFlightError));

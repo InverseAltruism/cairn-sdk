@@ -6,9 +6,10 @@
 
 import type { NodeTxJson } from "@inversealtruism/csd-tx";
 
-// The codes this release lists. Not exported: the SDK's own tables are typed with it so a misspelt code fails
-// typecheck; callers get CairnErrorCode, which also admits a code the wallet adds later.
-type KnownCode =
+// The codes this release lists. No package entry exports it: the SDK's own tables are typed with it so a misspelt
+// code fails typecheck, and test/types/wallet-codes.ts checks the wallet's table against it. Callers get
+// CairnErrorCode, which also admits a code the wallet adds later.
+export type KnownCode =
   | "NOT_INSTALLED"
   | "USER_REJECTED"
   | "WALLET_LOCKED"
@@ -62,6 +63,12 @@ type KnownCode =
   | "RPC_BLOCK_MISMATCH"
   // wallet 0.3.2: another fill request holds this fill target; nothing was signed for this one
   | "FILL_IN_PROGRESS"
+  // the wallet after 0.3.3, final: revealClaim for a txid this account holds no sealed claim for; nothing published
+  | "SEAL_UNKNOWN"
+  // the wallet's next release, final: this account's earlier fill of the same target was sent less than 30 minutes
+  // ago and is not seen applied; nothing was signed. Do not ask again on a timer: look the earlier fill up. Wallets
+  // before it send this refusal as VERIFY_UNAVAILABLE, which this SDK marks retryable.
+  | "FILL_ALREADY_SENT"
   // the wallet was updated or reloaded under the page (the wallet's code-less `WALLET_RELOADED:` reply); refresh
   | "WALLET_RELOADED"
   // SDK-side: a write method that outlasted the connection timeout (the wallet may still send it)
