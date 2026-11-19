@@ -39,8 +39,8 @@ Outside `src/`:
 - `examples/` (integrate-wallet, read-only, wallet-connect, siwc-login, node-signer, hello-csd): each imports the
   package by its name, which resolves to dist/ through the exports map; `test/examples.test.mjs` typechecks them,
   loads the modules, bundles the browser sample and runs the sample server's sign-in.
-- `scripts/`: the esbuild example build (`build-example.mjs`), the release gates (`verify-tarball.mjs`,
-  `check-consumer-types.mjs`), `check-dashes-paths.mjs`, and 6 maintainer-run live E2E harnesses
+- `scripts/`: the esbuild example build (`build-example.mjs`), the release gates (`release-gate.mjs`,
+  `verify-tarball.mjs`, `check-consumer-types.mjs`), `check-dashes-paths.mjs`, and 6 maintainer-run live E2E harnesses
   (`live-wallet-ui.mjs`, `names-e2e.mjs`, `names-buy-e2e.mjs`, `ux-live-readonly.mjs`, `ux-openlane-buy.mjs`,
   `wallet-send-spv-e2e.mjs`); `test/e2e/README.md` describes them.
 

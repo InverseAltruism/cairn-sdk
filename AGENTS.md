@@ -138,16 +138,22 @@ at another front door) and the wallet connector (`pnpm test:live:wallet`).
 ## Release and publish
 
 Maintainers publish to npm (public access) by hand; CI has no publish job, on purpose. The sanctioned path is to
-pack and then publish the tarball (`docs/release.md` says why and what the gate checks).
+pack, check and then publish the tarball from the release commit (`docs/release.md` says why and what each gate
+checks).
 
 1. Prepare: bump `version` and `SDK_VERSION` (`src/errors.ts`) together, re-pin csd-*/cairnx-core to published
-   versions, and add the CHANGELOG entry.
-2. Pack: `pnpm pack`. `prepack` runs the build; without it the pack could ship stale bytes from the untracked
-   `dist/`, because no other hook fires on this path.
-3. Verify: `node scripts/verify-tarball.mjs [tgz]`, the authoritative gate. Do not publish unless it exits 0.
-4. Publish the verified tarball with a transient npm token in a `mktemp --userconfig` file, deleted right after;
-   tokens are never stored.
-5. Tag `vX.Y.Z` and push. The version history is the CHANGELOG and the `v*` tags.
+   versions, add the CHANGELOG entry, and merge it to `master` through a pull request.
+2. Gate: `git fetch origin`, then from a fresh worktree at the release commit run
+   `node scripts/release-gate.mjs --out <new dir>`. It refuses a tree with any local change, a HEAD that is not on
+   the first-parent line of `origin/master` and a version already on the registry; runs the check (frozen install,
+   typecheck, lint, dashes and paths, build, unit suites); packs (`prepack` builds `dist/`); runs
+   `scripts/verify-tarball.mjs` on that tarball; and prints its sha1, integrity and sha256. Do not publish unless
+   it exits 0.
+3. Publish that tarball with a transient npm token in a `mktemp --userconfig` file, deleted right after; tokens are
+   never stored.
+4. Compare: `node scripts/release-gate.mjs --compare <tgz>` exits 0 only when the registry's `dist.shasum` and
+   `dist.integrity` equal the tarball's.
+5. Tag `vX.Y.Z` at that commit and push. The version history is the CHANGELOG and the `v*` tags.
 
 ## Cross-repo contract
 

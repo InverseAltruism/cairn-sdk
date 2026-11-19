@@ -42,6 +42,13 @@ What a `Chain.send` caller sees after signing, against 0.8.6:
 
 ### Docs and internal
 
+- `scripts/release-gate.mjs` (repo-only, not in the tarball) ties a release to a commit; `verify-tarball.mjs` ties
+  a tarball to the tree on disk and calls git 0 times. Before the publish it refuses a tree with any local change,
+  a HEAD off the first-parent line of `origin/master` and a version already on the registry, runs the repo's whole
+  check, packs, runs `verify-tarball.mjs` on that tarball and prints its digests; `--compare <tgz>` after the
+  publish requires the registry's `dist.shasum` and `dist.integrity` to equal the tarball's. `docs/release.md` and
+  the release steps of `AGENTS.md` describe that path. `test/release-gate.test.mjs` runs each guard in scratch git
+  repositories with the registry stood in; each fails with its guard removed.
 - `examples/node-signer.mjs` answers a submit in the wallet's nested shape with the wallet's codes, so
   `WalletConnection` turns them into the same errors as the wallet's, and decides with `classifySubmit`; it no
   longer repeats the rule. An in-flight or duplicate verdict throws `SubmitInFlightError` (`SUBMIT_MAYBE_INFLIGHT`,
