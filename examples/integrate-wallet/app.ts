@@ -26,6 +26,11 @@ function explain(e: unknown): string {
   // Not a CairnError: this page failed before the wallet was asked (a record that does not validate, a failed read).
   if (!(e instanceof CairnError)) return `Not sent to the wallet: ${String((e as Error)?.message ?? e).split("\n")[0]}`;
   if (e instanceof SubmitInFlightError) {
+    // A timed-out request can still be open in the wallet: approving it after a resend sends twice, and the chain
+    // shows nothing until it is approved.
+    if (e.code === "WALLET_TIMEOUT") {
+      return "The wallet did not answer in time, and the request may still be open in it. Reject that request in the wallet first, then check your history before you send again: approving it after a new send sends twice.";
+    }
     return `The transaction may have been sent${e.txid ? ` (txid ${e.txid})` : ""}. Check your history before you send again.`;
   }
   switch (errorCode(e)) {

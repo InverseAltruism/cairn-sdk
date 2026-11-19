@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.8.7
+
+### Docs and internal
+
+- Examples, guide and tests only: no file in the npm tarball changes (`files` is `dist`, `LICENSE`, `README.md`).
+- `examples/node-signer.mjs` answers a submit in the wallet's nested shape, so `WalletConnection` classifies it as
+  it does the wallet's. A submit that got no answer, a timeout, a 5xx or an unreadable body (the node may hold the
+  transaction) throws `SubmitInFlightError` with code `SUBMIT_MAYBE_INFLIGHT` and the txid; it threw a plain
+  `Error` (code `UNKNOWN`), and a bot that sent again after it built a second transaction from other coins. A 4xx
+  or a node refusal throws a final `CairnError` with code `SUBMIT_REJECTED`. A new `provider.settle(txid)` is what
+  a caller does instead of sending again: it waits for the txid to be mined, resends the same signed bytes once if
+  it is not, and resolves `false` when the outcome is still unknown. An accepted submit resolves with the locally
+  signed txid, not the one the proxy echoes.
+- 2026-11-19: the example repeats `Chain.send`'s split between in flight and `SUBMIT_REJECTED` (csd-client's
+  `terminal` mark on a 4xx), because 0.8.6 exports no function for it and the example runs against the published
+  package. `test/examples.test.mjs` requires the two to agree on a 502, no answer, a 413 and a node refusal. The
+  rule's single home is an exported helper that both use, with the next release that changes `src/`.
+- `examples/hello-csd/app.ts` builds the proposals list from text nodes; the tip height and each proposal's height,
+  as served, went into `innerHTML` unescaped.
+- `examples/integrate-wallet/app.ts`: after `WALLET_TIMEOUT` the message tells the user to reject the request still
+  open in the wallet before checking the history, as the guide says. Guide step 8 says the same, and the "Typed
+  errors" snippet handles `SubmitInFlightError` before its `switch`.
+- `test/examples.test.mjs` runs the node-signer against a stub node, and bundles both browser samples and runs them
+  in Node against a stub DOM and fetch.
+
 ## 0.8.6
 
 Wallet contract: Cairn Wallet 0.3.3 (error codes, params and the provider method list), as in 0.8.5.

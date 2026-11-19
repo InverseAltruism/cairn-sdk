@@ -78,9 +78,11 @@ follows, and says whether the sample ran against that wallet for the release.
    user closes the approval window), `WALLET_LOCKED`, `ACCOUNT_CHANGED` (the account changed while the request was
    open), `WALLET_RELOADED` (reload the page), `RATE_LIMITED` (too many requests wait in the wallet). A
    `SubmitInFlightError` means the transaction may have been sent: check before sending again ("Typed errors"
-   below). A failed read never involved the wallet: an HTTP status from the indexer, content or names routes
-   throws an `HttpError` with code `HTTP_ERROR`; a chain read (`cairn.chain.*`) that fails, or a request that got
-   no answer, rejects with a plain `Error`, for which `errorCode` gives `UNKNOWN`.
+   below). With code `WALLET_TIMEOUT` the request may still be open in the wallet: have the user reject it there
+   first, then check, since approving it after a new send sends twice. A failed read never involved the wallet: an
+   HTTP status from the indexer, content or names routes throws an `HttpError` with code `HTTP_ERROR`; a chain read
+   (`cairn.chain.*`) that fails, or a request that got no answer, rejects with a plain `Error`, for which
+   `errorCode` gives `UNKNOWN`.
 9. Account changes: `wallet.on("accountsChanged", (accounts) => ...)` fires with `[]` when the site loses access
    (the wallet locked, switched account or revoked the site). It never carries the new address; call
    `connect()` again.
@@ -274,10 +276,11 @@ Every SDK error is a `CairnError` with a stable `code` (branch on this, not the 
 `shortMessage`, a `docsPath`, the `version`, and `.walk()` for the cause chain.
 
 ```ts
-import { errorCode } from "@inversealtruism/cairn-sdk";
+import { SubmitInFlightError, errorCode } from "@inversealtruism/cairn-sdk";
 try { await wallet.send({ to, amount }); }
 catch (e) {
-  switch (errorCode(e)) {
+  if (e instanceof SubmitInFlightError) reconcile(e);   // may have been sent: never resend blindly (see below)
+  else switch (errorCode(e)) {
     case "USER_REJECTED": break;                        // user closed the prompt
     case "WALLET_LOCKED": promptUnlock(); break;
     case "NOT_INSTALLED": promptInstall(); break;
