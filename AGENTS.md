@@ -129,24 +129,33 @@ at another front door) and the wallet connector (`pnpm test:live:wallet`).
 - `test/spv-transient-parity.test.mjs` checks the built `dist/` and fails without one, so build before `pnpm test`.
 - The `scripts/*.mjs` live harnesses are maintainer-run only, and some spend CSD. `scripts/live-wallet-ui.mjs` is the
   read-only one: it approves only the non-spend Connect and rejects every fund- or fee-bearing clear-sign popup.
-- When the wallet adds an error code, classify it in `src/errors.ts` as retryable, in flight or final; at each
-  wallet release, compare `test/types/wallet-params.ts` with the wallet's handlers by hand and update it and the
-  types in `src/connect.ts` together. The steps for both are in `docs/architecture.md` ("The wallet contract").
+- When the wallet adds an error code, add it to `test/types/wallet-codes.ts` and classify it in `src/errors.ts` as
+  retryable, in flight or final; at each wallet release, compare `test/types/wallet-params.ts` with the wallet's
+  handlers by hand and update it and the types in `src/connect.ts` together. The steps for both are in
+  `docs/architecture.md` ("The wallet contract").
 - `scripts/build-example.mjs` uses the esbuild JS API (the CLI shim ELF-errors under pnpm); keep it that way.
 
 ## Release and publish
 
 Maintainers publish to npm (public access) by hand; CI has no publish job, on purpose. The sanctioned path is to
-pack and then publish the tarball (`docs/release.md` says why and what the gate checks).
+pack, check and then publish the tarball from the release commit (`docs/release.md` says why and what each gate
+checks).
 
 1. Prepare: bump `version` and `SDK_VERSION` (`src/errors.ts`) together, re-pin csd-*/cairnx-core to published
-   versions, and add the CHANGELOG entry.
-2. Pack: `pnpm pack`. `prepack` runs the build; without it the pack could ship stale bytes from the untracked
-   `dist/`, because no other hook fires on this path.
-3. Verify: `node scripts/verify-tarball.mjs [tgz]`, the authoritative gate. Do not publish unless it exits 0.
-4. Publish the verified tarball with a transient npm token in a `mktemp --userconfig` file, deleted right after;
-   tokens are never stored.
-5. Tag `vX.Y.Z` and push. The version history is the CHANGELOG and the `v*` tags.
+   versions, add the CHANGELOG entry, and merge it to `master` through a pull request. A re-pin to an
+   `@inversealtruism/*` version younger than the host's package-age cooldown installs with
+   `--config.minimum-release-age-exclude='@inversealtruism/*'` (`docs/release.md`).
+2. Gate: `git fetch origin`, then from a fresh worktree at the release commit run
+   `node scripts/release-gate.mjs --out <new dir outside the checkout>`. It refuses a tree with any local change,
+   a HEAD that is not on the first-parent line of `origin/master` and a version already on the registry; runs the
+   check (frozen install, typecheck, lint, dashes and paths, build, unit suites); packs (`prepack` builds `dist/`);
+   runs `scripts/verify-tarball.mjs` on that tarball; checks the tree and HEAD again; writes
+   `<dir>/release-gate.json`; and prints the commit, sha1, integrity and sha256. Do not publish unless it exits 0.
+3. Publish that tarball with a transient npm token in a `mktemp --userconfig` file, deleted right after; tokens are
+   never stored.
+4. Compare: `node scripts/release-gate.mjs --compare <dir>` exits 0 only when the registry's `dist.shasum` and
+   `dist.integrity` equal the digests the gate recorded in `<dir>/release-gate.json`.
+5. Tag `vX.Y.Z` at that commit and push. The version history is the CHANGELOG and the `v*` tags.
 
 ## Cross-repo contract
 
@@ -164,7 +173,7 @@ pack and then publish the tarball (`docs/release.md` says why and what the gate 
 - `README.md`: what the package is, install, quick start.
 - `docs/SDK-GUIDE.md`: the third-party developer guide; the one description of the trust levels.
 - `docs/architecture.md`: modules, SPV header sync, the fill-verify surface, the wallet contract, integration notes.
-- `docs/release.md`: why pack-then-publish, what verify-tarball checks, the pin gates.
+- `docs/release.md`: why pack-then-publish, what the release gate and verify-tarball check, the pin gates.
 - `CHANGELOG.md`: one entry per release; every SPV checkpoint move names the affected band; "Notes moved from
   AGENTS.md" maps the audit-ID markers in `src/` comments to the guards they explain.
 - `test/e2e/README.md`: the test layers, the unit runner and the live harnesses.

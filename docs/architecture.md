@@ -6,7 +6,7 @@ contract couplings and the integration notes. `AGENTS.md` keeps the rules; this 
 
 ## Modules
 
-`src/` is built by tsup to esm+cjs+dts with 7 entry points (the `build` script in `package.json` lists them).
+`src/` is built by tsup to esm+cjs+dts with 8 entry points (the `build` script in `package.json` lists them).
 
 - `index.ts`: Cairn facade, CairnConfig, DEFAULT_SPV_CHECKPOINT (height and hash are in the source), and the lazy
   PoW-verified header wiring into the indexer via `seededSpvLight`. See "SPV header sync" below.
@@ -19,9 +19,14 @@ contract couplings and the integration notes. `AGENTS.md` keeps the rules; this 
 - `content.ts`: prepare/put/hash, verified get/getBytes from the cairn origin, hash format gated against path-walk.
 - `names.ts`: NamesClient over /trade/api/cairnx/*; inputs pre-validated with cairnx-core NAME_RE + RESERVED_NAMES.
 - `chain.ts`: tip/utxos/submit/light(); Chain.send() = key-backed send via buildSendVerified + verifyInputValues
-  (fail-closed); a submit that fails after signing throws SubmitInFlightError with the signed txid and the signed tx
-  as `nodeJson`, except a 4xx answer (csd-client's `terminal` flag), which broadcast nothing and throws a final
-  CairnError `SUBMIT_REJECTED` (`test/chain-send.test.ts`).
+  (fail-closed). It reads the submit with `classifySubmit` and throws SubmitInFlightError with the signed txid and
+  the signed tx as `nodeJson` for a duplicate or an outcome without a verdict, a final CairnError `SUBMIT_REJECTED`
+  for HTTP 400, 413 or 429 (answered before forwarding by cairn-substrate.com, 400 and 429, and by nginx or
+  Cloudflare, 413), and resolves `ok: false` on the node's refusal (`test/chain-send.test.ts`).
+- `submit.ts`: `classifySubmit`, the one reading of a submit attempt (accepted, duplicate, rejected, in flight),
+  exported from the root and `/chain` entries and used by Chain.send and `examples/node-signer.mjs`
+  (`test/submit-classify.test.ts`). csd-client marks every status below 500 `terminal` and puts the status only in
+  its message, so the classifier reads the status from that message and ignores the flag.
 - `controller.ts`: framework-agnostic reactive store; spoofed-accountsChanged adoption guard.
 - `react.ts`: createCairnHooks(React), zero react dependency.
 - `errors.ts`: CairnError hierarchy with stable codes; SDK_VERSION manually kept == package.json, test-enforced
@@ -35,8 +40,8 @@ Outside `src/`:
 - `examples/` (integrate-wallet, read-only, wallet-connect, siwc-login, node-signer, hello-csd): each imports the
   package by its name, which resolves to dist/ through the exports map; `test/examples.test.mjs` typechecks them,
   loads the modules, bundles the browser sample and runs the sample server's sign-in.
-- `scripts/`: the esbuild example build (`build-example.mjs`), the release gates (`verify-tarball.mjs`,
-  `check-consumer-types.mjs`), `check-dashes-paths.mjs`, and 6 maintainer-run live E2E harnesses
+- `scripts/`: the esbuild example build (`build-example.mjs`), the release gates (`release-gate.mjs`,
+  `verify-tarball.mjs`, `check-consumer-types.mjs`), `check-dashes-paths.mjs`, and 6 maintainer-run live E2E harnesses
   (`live-wallet-ui.mjs`, `names-e2e.mjs`, `names-buy-e2e.mjs`, `ux-live-readonly.mjs`, `ux-openlane-buy.mjs`,
   `wallet-send-spv-e2e.mjs`); `test/e2e/README.md` describes them.
 
@@ -96,6 +101,10 @@ self-hosted setups. The chain is the only source of truth; every read carries an
   `src/errors.ts` is kept on the error as sent, final, so when the wallet adds a code: a retryable one goes into
   `NESTED_TRANSIENT`, a maybe-sent one into the in-flight pair, and a final one needs only its `CairnErrorCode` entry
   and a test in `test/errors.test.ts`. A reply naming a code only the SDK assigns (`SDK_ONLY_CODES`) reads `UNKNOWN`.
+- `test/types/wallet-codes.ts` is a hand-written snapshot of the codes in the wallet's `WALLET-ERROR-CODES.md` (its
+  header names the wallet commit it was read from); `pnpm typecheck` fails when one is missing from `KnownCode` in
+  `src/errors.ts`, which no package entry exports. At each wallet release, compare it with the wallet's table by
+  hand, add each new code to it, and classify the code as above.
 - `test/types/wallet-params.ts` is a hand-written snapshot of the params the wallet accepts (its header names the
   wallet version it was read from); `pnpm typecheck` fails when a param type in `src/connect.ts` differs from it. It
   does not read the wallet: at each wallet release, compare the snapshot with the wallet's handlers by hand and

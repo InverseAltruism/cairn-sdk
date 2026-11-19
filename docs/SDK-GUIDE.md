@@ -240,7 +240,11 @@ blockHeight, expiresEpoch, expiresAt, outputPlan, sized, planBound, planReason, 
 fail-closed on a positive mismatch; `transient` on a lagging chain view, where a retry can help; final, with a
 reason naming the anchor, for an offer mined below the SPV checkpoint (pass an older `spvCheckpoint` to
 verify it). Build EXACTLY the `outputPlan`, never the resolver-served outputs a lying
-resolver could redirect. This is best-effort corroboration, not the payment-grade boundary (the Cairn
+resolver could redirect. Its values are `bigint` base units, while each output `value` of `fillOffer` is a
+`number` the wallet requires to be a positive safe integer (refused otherwise: wallet 0.3.3 answers the nested
+`BAD_OUTPUTS` at signing, the release after it `BAD_REQUEST` before any window opens): pass `Number(value)` after
+checking `value <= BigInt(Number.MAX_SAFE_INTEGER)`. Where a param takes a decimal string, `value.toString()` is
+exact. Never `JSON.stringify` the plan: it throws on a `bigint`. This is best-effort corroboration, not the payment-grade boundary (the Cairn
 Wallet's own on-device fill-SPV in 0.2.60+ is what fails-closed before signing), but a dApp settling real
 value should clear it first. The standalone `preverifyOffer({ light, client, offerId, servedOffer, pay,
 plannedOutputs, me, tip, fillTargetId })` takes an injected light client + tx reader for custom wiring; `bindOfferTerms` / `feeBpsAt`
@@ -299,13 +303,25 @@ wallet code below.
 > **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the
 > source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error (except
 > `UNKNOWN_KIND`, which throws `UnsupportedMethodError` with `UNSUPPORTED_METHOD`, and `APPROVAL_CLOSED`, which
-> throws `UserRejectedError` with `USER_REJECTED`) and classify every code listed there as of wallet 0.3.2 except
+> throws `UserRejectedError` with `USER_REJECTED`) and classify every code listed there as of the wallet after 0.3.3 except
 > `RESERVATION_UNCONFIRMED`, which the wallet returns to its approval window only: retryable (`VERIFY_UNAVAILABLE`, `OFFER_UNKNOWN`, `REVIEW_REQUIRED`,
 > `SEAL_NOT_MINED`, and `WALLET_UNAVAILABLE` on `connect` and `getAddress`: nothing was sent), in flight
 > (`SUBMIT_MAYBE_INFLIGHT`, `SUBMIT_DUPLICATE`, and `WALLET_UNAVAILABLE` on a write method: `send`,
 > `fillOffer`, `propose`, `attest`, `sealClaim`, `revealClaim`), and final (every other code, including
 > `OFFER_SOURCE_CONFLICT`, `FILL_LEGACY_SUNSET`, `VERIFY_HORIZON`, `VERIFY_UNREPRESENTABLE`,
-> `RESERVATION_DENIED`, `RPC_BLOCK_MISMATCH` and `FILL_IN_PROGRESS`; `retryable: false`). `FILL_IN_PROGRESS`
+> `RESERVATION_DENIED`, `RPC_BLOCK_MISMATCH`, `FILL_IN_PROGRESS`, `SEAL_UNKNOWN` and `FILL_ALREADY_SENT`;
+> `retryable: false`). `SEAL_UNKNOWN`: `revealClaim` named a txid this account holds no sealed claim for; reveal
+> from the account that sealed it. The wallet sends that code from its release after 0.3.3; 0.3.3 sends the same
+> refusal without a code, which reads `UNKNOWN`. `FILL_ALREADY_SENT` comes with the wallet's next release: this
+> account's earlier fill of the same offer or reservation was sent less than 30 minutes ago and is not seen
+> applied; nothing was signed. Do not ask again on a timer: look the earlier fill up, and let the user ask again
+> once it confirms, or after the 30 minutes if it did not go through (the earlier fill can still be mined after
+> them). Wallets 0.3.2 and 0.3.3 refuse only the partial offer-id case of a repeated fill, as
+> `VERIFY_UNAVAILABLE`, which this SDK marks retryable, so a program that retries `VERIFY_UNAVAILABLE` meets it
+> again on each try; they sign a repeated whole-offer or reservation fill. The wider refusal comes with the next
+> wallet release. Under CommonJS, an error thrown by a `Chain` taken from `@inversealtruism/cairn-sdk/chain` is not
+> `instanceof` the root entry's classes (each CommonJS entry carries its own copy): branch on `e.code` and
+> `e.maybeSent`, or take `Chain` and the error classes from the same entry. `FILL_IN_PROGRESS`
 > means another fill request for the same offer or reservation is open in the wallet, queued or being sent; this
 > one was not queued and nothing was signed for it. Ask again only after the first is answered, and if the first
 > was sent, check that purchase before paying again. An in-flight error is a `SubmitInFlightError` (`maybeSent: true`, `retryable: false`)
@@ -315,11 +331,21 @@ wallet code below.
 > default; `new WalletConnection(provider, { timeoutMs })`) rejects the same way with code `WALLET_TIMEOUT` and
 > no txid, since the request may still be open in the wallet and be sent if the user approves it. Have the user
 > reject it in the wallet before you send again: checking the chain alone leaves it open, and approving it and a
-> resend sends twice. The key-backed `cairn.chain.send` throws the same error (code `SUBMIT_MAYBE_INFLIGHT`) when its submit request fails after
-> signing, carrying the signed transaction as `nodeJson`: once the chain shows it did not land, resend it with
+> resend sends twice. The key-backed `cairn.chain.send` reads its submit with the exported `classifySubmit`
+> and throws the same error, carrying the signed transaction as `nodeJson`, when
+> no verdict came (code `SUBMIT_MAYBE_INFLIGHT`: no answer, a timeout, a 5xx or any status other than 400, 413
+> and 429, a 2xx body without the node's own `ok`, or an `ok: false` without the node's `err` text) and when the
+> node answers "already present" (code
+> `SUBMIT_DUPLICATE`: a node holds these bytes). Once the chain shows it did not land, resend it with
 > `cairn.chain.submit(e.nodeJson)` (the same coins under the same txid, so it cannot pay twice) rather than a new
-> send, which may select other coins. A 4xx answer to that submit (a proxy's 400 or 413 request body cap, a 429
-> rate limit) broadcast nothing and throws a final `CairnError` with code `SUBMIT_REJECTED` instead. A code the
+> send, which may select other coins. A refused answer to that resend decides nothing (if the first copy was mined
+> in between, the node answers "missing utxo"): look the txid up. HTTP 400, 413 or 429 throws a final `CairnError`
+> with code `SUBMIT_REJECTED` and no `nodeJson`: cairn-substrate.com answers 400 (its body cap) and 429 (its rate
+> limit) before it forwards a submit, and nginx or Cloudflare answer a body cap with 413, so nothing was broadcast.
+> Behind a front of your own that can answer one of these after forwarding, keep the bytes yourself: build with
+> `cairn.chain.send({ ..., broadcast: false })`, submit with `cairn.chain.submit(nodeJson)`, read the outcome with
+> `classifySubmit`, and treat a `rejected` verdict that carries `status` as in flight. The node's own refusal
+> resolves `ok: false` with the node's answer in `submitResult`. A code the
 > wallet sends that this SDK release does not list yet is kept on the error as sent (`errorCode(e)` returns it),
 > final, with the wallet's message, so you can branch on a newer wallet's code before the SDK lists it; the
 > `CairnErrorCode` type admits any string for that reason. A reply that names a code only the SDK assigns

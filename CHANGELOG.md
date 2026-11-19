@@ -2,30 +2,99 @@
 
 ## 0.8.7
 
+Wallet contract: Cairn Wallet 0.3.3 (params and the provider method list); error codes as listed in the wallet's
+`WALLET-ERROR-CODES.md` at master `f695b6f`, plus `FILL_ALREADY_SENT` from its next release.
+
+### Added
+
+- `classifySubmit(outcome)`, exported from the root and `/chain` entries with the types `SubmitOutcome` and
+  `SubmitVerdict`: the one reading of what a submit attempt produced (`{ answer }` for a 2xx body, `{ error }` for
+  what it threw; a parsed body, not a fetch `Response`). `accepted` is the body's own `ok: true`; `duplicate` is
+  `ok: false` whose `err` contains "already present" (a node holds these bytes; matched as the wallet's
+  `isSubmitDuplicateErr`); `rejected` is `ok: false` with the node's `err` text otherwise ("missing utxo",
+  "mempool conflict: ..."), or HTTP 400, 413 or 429 from any sender (cairn-substrate.com answers 400 and 429
+  before it forwards a submit, nginx or Cloudflare a body cap with 413; behind a front of your own that can answer
+  them after forwarding, treat a `rejected` verdict with a `status` as in flight); `inflight` is everything else:
+  no answer, a timeout, a 5xx, any other status (3xx and 408 included), a 2xx body without its own boolean `ok`
+  (`{}`, `[]`, a string, a number, `true`, `null`, a `Response`), and `ok: false` without the node's `err` text
+  (the hosted proxy's own `{ ok: false, error }` bodies, handed on at 200 by a relay). A refused answer to a resend
+  of stored bytes decides nothing ("missing utxo" when the first copy was mined meanwhile); look the txid up. It
+  does not throw, whatever the body, the thrown value or the argument.
+- Two wallet codes in `CairnErrorCode`, both final (`retryable: false`, kept as sent, as 0.8.6 already kept them):
+  `SEAL_UNKNOWN` (sent from the wallet release after 0.3.3: `revealClaim` for a txid this account holds no sealed
+  claim for; 0.3.3 sends that refusal without a code, which reads `UNKNOWN`) and `FILL_ALREADY_SENT` (the wallet's
+  next release: this account's earlier fill of the same target was sent less than 30 minutes ago and is not seen
+  applied; nothing was signed; do not ask again on a timer, look the earlier fill up). Wallets 0.3.2 and 0.3.3
+  refuse only the partial offer-id case of a repeated fill, as `VERIFY_UNAVAILABLE`, which this SDK marks
+  retryable; they sign a repeated whole-offer or reservation fill, and the wider refusal comes with the next
+  wallet release. Compared with the wallet's whole `WALLET-ERROR-CODES.md` (master `f695b6f`): no other code is
+  missing; `UNKNOWN_KIND` is reported as `UNSUPPORTED_METHOD` and `RESERVATION_UNCONFIRMED` never reaches a page.
+  `test/types/wallet-codes.ts` snapshots the table, and `pnpm typecheck` fails on a code `src/errors.ts` does not
+  name.
+
+### Changed
+
+What a `Chain.send` caller sees after signing, against 0.8.6. The rule: every answer `classifySubmit` reads as
+`inflight` or `duplicate` now throws `SubmitInFlightError` with the txid and `nodeJson`, whatever 0.8.6 did with
+it; the cases that changed are these:
+
+- The node's "already present" answer throws `SubmitInFlightError` with code `SUBMIT_DUPLICATE`, the signed
+  `txid` and `nodeJson`; it resolved `ok: false`, which a caller could read as a failure and send again from
+  other coins.
+- A 2xx body without the node's verdict (`{}`, `[]`, a string, a number, `true`, `false`, `ok` not a boolean)
+  throws `SubmitInFlightError` with code `SUBMIT_MAYBE_INFLIGHT`; it resolved `ok: true`. A body of `null` throws
+  the same; it threw a plain `TypeError` (code `UNKNOWN`).
+- `ok: false` without the node's `err` text (`{ ok: false }`, `{ ok: false, error: "node unreachable" }`, an `err`
+  that is `null`, empty or not a string) throws `SUBMIT_MAYBE_INFLIGHT`; it resolved `ok: false`.
+- HTTP 300, 304, 408 and every 4xx other than 400, 413 and 429 throw `SubmitInFlightError`
+  (`SUBMIT_MAYBE_INFLIGHT`); they threw a final `CairnError` `SUBMIT_REJECTED`. csd-client marks every status
+  below 500 `terminal`, and a front that answers 408 may have forwarded the transaction. (fetch follows 301, 302,
+  303, 307 and 308 itself.)
+- Unchanged: the node's `ok: true` resolves `ok: true` with the locally signed `txid`; the node's refusal resolves
+  `ok: false` with `submitResult`; a 400, 413 or 429 throws `SUBMIT_REJECTED`; no answer, a timeout or a 5xx
+  throws `SUBMIT_MAYBE_INFLIGHT`. The result type is the same.
+- What a caller edits: handle `SubmitInFlightError` with either code by looking `e.txid` up (and resending
+  `e.nodeJson` only once the chain shows it did not land); the `ok: false` branch no longer sees "already present"
+  or a body without the node's `err`.
+
+Dependencies: csd-light 0.1.26 to 0.1.27 (registry shasum `f7940f4bb8fcfbf1c40ad1a6d3abe0a23de84453`); nothing
+else moves, since 0.1.27 depends on csd-codec 0.1.18 and csd-client 0.1.20, this package's pins, and the tree keeps
+one csd-codec and one csd-crypto. csd-light 0.1.27's change, as its CHANGELOG states it: `verifyTxInclusion`
+(which `verifyOfferForFill` and `preverifyOffer` run) refuses as a body mismatch a served transaction whose fields
+are not in the node's text form; bodies a node serves are unaffected.
+
 ### Docs and internal
 
-- Examples, guide and tests only: no file in the npm tarball changes (`files` is `dist`, `LICENSE`, `README.md`).
+- `docs/SDK-GUIDE.md`: under CommonJS an error thrown by a `Chain` from `/chain` is not `instanceof` the root entry's
+  classes (each CommonJS entry carries its own copy; 0.8.6 is the same): branch on `e.code` and `e.maybeSent`.
+  `test/cjs-chain-errors.test.mjs` pins it on `dist/`.
+- `docs/SDK-GUIDE.md`: `outputPlan` values are `bigint`; the guide says how to pass them to `fillOffer`'s
+  safe-integer `number` values (`Number(value)` after a `Number.MAX_SAFE_INTEGER` check), where a decimal string is
+  taken (`value.toString()`), and not to `JSON.stringify` the plan. `docs/architecture.md` counts 8 entry points.
+- `scripts/release-gate.mjs` (repo-only, not in the tarball) ties a release to a commit; `verify-tarball.mjs` ties
+  a tarball to the tree on disk and calls git 0 times. Before the publish it refuses a tree with any local change
+  (untracked files counted whatever `status.showUntrackedFiles` says, and no file marked assume-unchanged or
+  skip-worktree), a HEAD off the first-parent line of `refs/remotes/origin/master` and a version already on the
+  registry, runs the repo's whole check, packs, runs `verify-tarball.mjs` on that tarball, requires the tree clean
+  and HEAD unchanged after it, and writes `<dir>/release-gate.json` with the commit and the digests;
+  `--compare <dir>` after the publish requires the registry's `dist.shasum` and `dist.integrity` to equal the
+  recorded digests. It runs when started through a symlinked path, and refuses an `--out` inside the checkout.
+  `docs/release.md` and the release steps of `AGENTS.md` describe that path, including where the package-age
+  exemption goes (the re-pin, not the gate's frozen install). `test/release-gate.test.mjs` runs each guard in
+  scratch git repositories with the registry stood in, and starts the script as a command by its real path and
+  through symlinks.
 - `examples/node-signer.mjs` answers a submit in the wallet's nested shape with the wallet's codes, so
-  `WalletConnection` turns them into the same errors as the wallet's. A submit that got no answer, a timeout, a 5xx,
-  or a 2xx body other than the node's explicit `{ ok: true }` (the node may hold the transaction) throws
-  `SubmitInFlightError` with code `SUBMIT_MAYBE_INFLIGHT` and the txid; it threw a plain `Error` (code `UNKNOWN`),
-  and a bot that sent again after it built a second transaction from other coins. A refusal saying "already
-  present" (a node holds these bytes, for one after the proxy fails over to a node that has them by gossip) throws
-  `SubmitInFlightError` with code `SUBMIT_DUPLICATE` and the txid, matched as the wallet's `isSubmitDuplicateErr`
-  matches it; the second of two identical concurrent payments therefore reads in flight under the first's txid. A
-  4xx or any other node refusal throws a final `CairnError` with code `SUBMIT_REJECTED`. A new
-  `provider.settle(txid)` is what a caller does instead of sending again: it waits for the txid to be mined,
-  resends the same signed bytes once if it is not, and resolves `false` when the outcome is still unknown. The
-  signed bytes live only in that provider's memory; the header says what a caller records. An accepted submit
-  resolves with the locally signed txid, not the one the proxy echoes.
-- 2026-11-19: the example repeats the submit classification, because 0.8.6 exports no function for it and the
-  example runs against the published package. `test/examples.test.mjs` requires it to agree with `Chain.send` on a
-  502, no answer, a 413 and a node refusal. The rule's single home is an exported submit classifier that both use,
-  with the next release that changes `src/` (0.8.7).
-- Known, for that release: `Chain.send` differs from the example on three answers after signing. It resolves
-  `ok: false` on the node's "already present" answer, resolves ok on a 2xx body of `{}`, `[]` or a string, and
-  throws a plain `TypeError` (code `UNKNOWN`, not in flight) on a body of `null`; the exported classifier fixes
-  all three, and the example then calls it.
+  `WalletConnection` turns them into the same errors as the wallet's, and decides with `classifySubmit`; it no
+  longer repeats the rule. An in-flight or duplicate verdict throws `SubmitInFlightError` (`SUBMIT_MAYBE_INFLIGHT`,
+  `SUBMIT_DUPLICATE`) with the txid, a rejected one a final `CairnError` `SUBMIT_REJECTED`. The 0.8.6 example threw
+  a plain `Error` (code `UNKNOWN`), and a bot that sent again after it built a second transaction from other coins.
+  Its message for a body without a verdict is no longer built with `JSON.stringify`, which threw on a body holding
+  an integer above 2^53 before the signed bytes were kept. A new `provider.settle(txid)` is what a caller does
+  instead of sending again: it waits for the txid to be mined, resends the same signed bytes once if it is not,
+  and resolves `false` when the outcome is still unknown. The signed bytes live only in that provider's memory;
+  the header says what a caller records. An accepted submit resolves with the locally signed txid, not the one
+  the proxy echoes. `test/examples.test.mjs` requires the example to agree with `Chain.send` on every answer in
+  its table and to hold no copy of the rule.
 - `examples/hello-csd/app.ts` builds the proposals list from text nodes; the tip height and each proposal's height,
   as served, went into `innerHTML` unescaped.
 - `examples/integrate-wallet/app.ts`: after `WALLET_TIMEOUT` the message tells the user to reject the request still

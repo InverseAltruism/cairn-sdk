@@ -1,4 +1,4 @@
-// Chain layer — re-exports the published csd-* primitives and provides a `Chain`
+// Chain layer: re-exports the published csd-* primitives and provides a `Chain`
 // helper wired to a Compute Substrate node RPC (defaults to the public Cairn proxy
 // at /api/rpc, so a dApp needs no local node).
 //
@@ -80,11 +80,16 @@ import { CsdClient, verifyInputValues } from "@inversealtruism/csd-client";
 import { LightClient } from "@inversealtruism/csd-light";
 import { buildSendVerified, type Utxo, type BuildResult } from "@inversealtruism/csd-tx";
 import { addrFromPriv } from "@inversealtruism/csd-crypto";
+import type { RpcSubmit } from "@inversealtruism/csd-client";
 import { CairnError, SubmitInFlightError } from "./errors.js";
 import type { FetchLike } from "./http.js";
+import { classifySubmit, type SubmitVerdict } from "./submit.js";
+
+export { classifySubmit } from "./submit.js";
+export type { SubmitOutcome, SubmitVerdict } from "./submit.js";
 
 export interface ChainOptions {
-  /** Node RPC base URL — defaults to the public Cairn proxy (no local node needed). */
+  /** Node RPC base URL; defaults to the public Cairn proxy (no local node needed). */
   rpcUrl: string;
   fetch?: FetchLike;
   timeoutMs?: number;
@@ -123,15 +128,18 @@ export class Chain {
    * Build + sign (+ optionally broadcast) a transfer with INPUT-VALUE VERIFICATION (the H2-safe send).
    * Fetches the signer's UTXOs, selects, then re-verifies each selected input's REAL value against the
    * chain (`verifyInputValues` recomputes each source tx's txid, so a lying RPC can't under-report) and
-   * computes change from the VERIFIED total — closing the UTXO-VALUE-1 implicit-fee-burn. Fail-closed:
+   * computes change from the VERIFIED total, closing the UTXO-VALUE-1 implicit-fee-burn. Fail-closed:
    * if any source can't be verified it signs nothing. Prefer this over the pure `buildSend`. Pass
-   * `broadcast:false` to get the signed tx back without submitting. A submit request that fails after signing
-   * throws a `SubmitInFlightError` carrying the signed `txid` and `nodeJson`: the node may have taken it, so check
-   * before resending, and resend that `nodeJson` with `submit` rather than a new send. A 4xx answer (a proxy's
-   * body cap or rate limit, or the node refusing the request) broadcast nothing and throws a final `CairnError`
-   * with code `SUBMIT_REJECTED`.
+   * `broadcast:false` to get the signed tx back without submitting. The submit's outcome is read by
+   * `classifySubmit`: the node's `ok: true` resolves `ok: true`; the node's refusal resolves `ok: false` with
+   * `submitResult`; HTTP 400, 413 or 429 throws a final `CairnError` with code `SUBMIT_REJECTED` (cairn-substrate.com
+   * answers 400 and 429 before it forwards; behind a front that can answer them after forwarding, use
+   * `broadcast: false`, `submit` and `classifySubmit` to keep the signed bytes). Every other outcome throws a `SubmitInFlightError` carrying the signed `txid` and
+   * `nodeJson`: code `SUBMIT_DUPLICATE` when a node already holds these bytes, `SUBMIT_MAYBE_INFLIGHT` when no
+   * verdict came (no answer, a timeout, a 5xx, another status, a 2xx body without the node's `ok`). Check the
+   * txid before resending, and resend that `nodeJson` with `submit` rather than a new send.
    */
-  async send(p: { priv: string; outputs: { to: string; value: number }[]; fee: number; maxFee?: number; broadcast?: boolean }): Promise<BuildResult & { submitResult?: import("@inversealtruism/csd-client").RpcSubmit }> {
+  async send(p: { priv: string; outputs: { to: string; value: number }[]; fee: number; maxFee?: number; broadcast?: boolean }): Promise<BuildResult & { submitResult?: RpcSubmit }> {
     const from = addrFromPriv(p.priv);
     const u = await this.client.utxos(from);
     const built = await buildSendVerified({
@@ -139,20 +147,28 @@ export class Chain {
       verify: (inputs) => verifyInputValues(this.client, inputs),
     });
     if (!built.ok || p.broadcast === false) return built;
-    let submitResult: import("@inversealtruism/csd-client").RpcSubmit;
-    try { submitResult = await this.client.submit(built.nodeJson); }
-    catch (e) {
-      const what = (e as Error)?.message ?? String(e);
-      // csd-client marks a 4xx answer terminal: a proxy's body cap or rate limit, or the node refusing the request
-      // before its handler runs. No answer, a timeout or a 5xx can follow the node taking the transaction.
-      if ((e as { terminal?: unknown })?.terminal === true)
-        throw new CairnError(`the submit request was refused (${what}), so nothing was broadcast; a 400 or 413 from a proxy is usually its request body cap (a transaction with many inputs), a 429 its rate limit`, { code: "SUBMIT_REJECTED", cause: e });
-      throw new SubmitInFlightError(`the submit request failed after signing (${what}); the node may have taken the transaction, so check ${built.txid} before sending again`, "SUBMIT_MAYBE_INFLIGHT", built.txid, e, built.nodeJson);
+    let submitResult: RpcSubmit | undefined;
+    let thrown: unknown;
+    let v: SubmitVerdict;
+    try {
+      submitResult = await this.client.submit(built.nodeJson);
+      v = classifySubmit({ answer: submitResult });
+    } catch (e) {
+      thrown = e;
+      v = classifySubmit({ error: e });
     }
-    // CAIRNSDK-VP-4: reflect the node's accept/reject in the top-level `ok`. The node returns {ok:false} at
-    // HTTP 200 on rejection (fee floor / double-spend / malformed) WITH a populated txid; without this a
-    // caller doing `if (r.ok) use(r.txid)` would read a build-level ok + a computed txid for a REJECTED tx.
-    return { ...built, ok: built.ok && submitResult.ok !== false, submitResult };
+    switch (v.verdict) {
+      case "accepted":
+        return { ...built, ok: true, submitResult };
+      case "rejected":
+        // The node's {ok:false} comes at HTTP 200 with its txid populated: `ok` follows the node, not the build.
+        if (submitResult) return { ...built, ok: false, submitResult };
+        throw new CairnError(`the submit request was refused (${v.detail}), so nothing was broadcast; a 400 or 413 from a proxy is usually its request body cap (a transaction with many inputs), a 429 its rate limit`, { code: "SUBMIT_REJECTED", cause: thrown });
+      case "duplicate":
+        throw new SubmitInFlightError(`a node already holds ${built.txid} (${v.detail}); it is pending, so check it before sending again`, "SUBMIT_DUPLICATE", built.txid, thrown, built.nodeJson);
+      case "inflight":
+        throw new SubmitInFlightError(`the submit request failed after signing (${v.detail}); the node may have taken the transaction, so check ${built.txid} before sending again`, "SUBMIT_MAYBE_INFLIGHT", built.txid, thrown, built.nodeJson);
+    }
   }
 
   /** A light client over the same RPC (built once, reused), with no checkpoint and no batch header provider: it proves
