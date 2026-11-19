@@ -94,6 +94,37 @@ console.log("Chain.send:");
     resent?.ok === true && posted.length === 2 && posted[1] === posted[0] && JSON.stringify(JSON.parse(posted[0]!).tx) === JSON.stringify(signed.nodeJson));
 }
 
+console.log("Chain.send reads the submit through classifySubmit:");
+const j200 = (text: string) => () => new Response(text, { status: 200, headers: { "content-type": "application/json" } });
+{
+  // A node already holds these bytes (a proxy failed over to a node that has them by gossip): pending, not refused.
+  const { chain } = rpc(REAL, j200(JSON.stringify({ ok: false, txid: "x", err: "already present in mempool" })));
+  const signed = await chain.send({ priv: PRIV, outputs: [{ to: TO, value: 100_000_000 }], fee: 1_000_000, broadcast: false });
+  const e = await grab(() => send(chain));
+  ok("\"already present\" throws SubmitInFlightError SUBMIT_DUPLICATE with the signed txid and nodeJson",
+    e instanceof SubmitInFlightError && e.code === "SUBMIT_DUPLICATE" && e.txid === signed.txid && JSON.stringify(e.nodeJson) === JSON.stringify(signed.nodeJson));
+}
+{
+  // A resend of a transaction mined in between is refused "missing utxo": a refusal, never read as a duplicate.
+  const { chain } = rpc(REAL, j200(JSON.stringify({ ok: false, txid: "x", err: "missing utxo" })));
+  const r = await grab(() => send(chain)) as { ok?: boolean; submitResult?: { err?: string } };
+  ok("\"missing utxo\" resolves ok:false with the node's answer, not in flight", !(r instanceof Error) && r.ok === false && r.submitResult?.err === "missing utxo");
+}
+{
+  const bodies = ["{}", "[]", "\"ok\"", "null", "{\"ok\":\"true\"}", "{\"ok\":\"maybe\",\"n\":9007199254740993}"];
+  const out = await Promise.all(bodies.map(async (b) => ({ b, e: await grab(() => send(rpc(REAL, j200(b)).chain)) })));
+  const bad = out.filter(({ e }) => !(e instanceof SubmitInFlightError && e.code === "SUBMIT_MAYBE_INFLIGHT" && /^0x[0-9a-f]{64}$/.test(e.txid ?? "") && e.nodeJson !== undefined));
+  ok("a 2xx body without the node's verdict ({}, [], a string, null, a non-boolean ok, a bigint) throws SUBMIT_MAYBE_INFLIGHT with the txid",
+    bad.length === 0 || (console.log(`    ${bad.map(({ b, e }) => `${b}: ${e instanceof Error ? `${e.constructor.name} ${(e as CairnError).code}` : "resolved"}`).join("; ")}`), false));
+}
+{
+  const r429 = await grab(() => send(rpc(REAL, () => new Response("slow down", { status: 429 })).chain));
+  ok("a proxy's 429 is a final SUBMIT_REJECTED", r429 instanceof CairnError && !(r429 instanceof SubmitInFlightError) && r429.code === "SUBMIT_REJECTED");
+  const out = await Promise.all([408, 404].map(async (status) => ({ status, e: await grab(() => send(rpc(REAL, () => new Response("x", { status })).chain)) })));
+  ok("a 408 (a front that gave up waiting, maybe after forwarding) or another 4xx is in flight, not refused",
+    out.every(({ status, e }) => e instanceof SubmitInFlightError && e.code === "SUBMIT_MAYBE_INFLIGHT" && e.shortMessage.includes(`HTTP ${status}`)));
+}
+
 console.log("the verified propose and attest builders on the /chain subpath:");
 {
   const chainSubpath = await import("../src/chain.js") as Record<string, unknown>;

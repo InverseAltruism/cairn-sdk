@@ -421,7 +421,8 @@ export class Cairn {
 // Re-export the building blocks for direct use.
 export { Http } from "./http.js";
 export type { FetchLike, HttpOptions } from "./http.js";
-export { Chain } from "./chain.js";
+export { Chain, classifySubmit } from "./chain.js";
+export type { SubmitOutcome, SubmitVerdict } from "./chain.js";
 export { NamesClient } from "./names.js";
 export type { NameResolution, NameDetail, TokenInfo, PrimaryName, NameHistory, NameHistoryEntry } from "./names.js";
 export { IndexerClient } from "./indexer.js";

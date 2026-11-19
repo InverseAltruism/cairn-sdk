@@ -148,8 +148,14 @@ await ok("node-signer: after a 502 the node took, a caller on the SDK's contract
   assert.equal(mined, true);
 });
 
-await ok("node-signer classifies a submit answer as Chain.send does: no answer or a 5xx is in flight, a 4xx or a node refusal sent nothing", async () => {
-  for (const [name, answer] of [["502 after ingest", ingestThen502], ["no answer", ingestNoAnswer], ["413 body cap", bodyCap413], ["node refusal", nodeRefusal]]) {
+const duplicate = (tx, node, json) => { node.held.push(tx); return json(200, { ok: false, txid: ECHO, err: "already present in mempool" }); };
+const missingUtxo = (_tx, _node, json) => json(200, { ok: false, err: "missing utxo", txid: ECHO });
+const oddBody = (text) => (tx, node) => { node.held.push(tx); return new Response(text, { status: 200, headers: { "content-type": "application/json" } }); };
+await ok("node-signer classifies every submit answer as Chain.send does (one classifier): in flight, duplicate, or sent nothing", async () => {
+  const answers = [["502 after ingest", ingestThen502], ["no answer", ingestNoAnswer], ["413 body cap", bodyCap413], ["node refusal", nodeRefusal],
+    ["missing utxo", missingUtxo], ["already present", duplicate], ["408", (_t, _n, json) => json(408, {})], ["429", (_t, _n, json) => json(429, {})],
+    ...["null", "{}", "[]", "\"ok\"", "{\"ok\":\"maybe\",\"n\":9007199254740993}"].map((t) => [`2xx ${t}`, oddBody(t)])];
+  for (const [name, answer] of answers) {
     const ex = await viaExample(answer);
     const ref = await viaChainSend(answer);
     const inFlight = ref.e instanceof SubmitInFlightError;
@@ -158,7 +164,7 @@ await ok("node-signer classifies a submit answer as Chain.send does: no answer o
       assert.equal(ex.e.code, ref.e.code, name);
       assert.equal(ex.e.txid, ref.e.txid, name);
     } else {
-      // Chain.send throws SUBMIT_REJECTED on a 4xx and resolves ok:false on a node refusal: neither broadcast anything.
+      // Chain.send throws SUBMIT_REJECTED on a proxy refusal and resolves ok:false on a node refusal: neither broadcast anything.
       assert.ok(errorCode(ref.e) === "SUBMIT_REJECTED" || ref.r?.ok === false, `${name}: Chain.send`);
       assert.ok(ex.e instanceof CairnError && ex.e.maybeSent === undefined && ex.e.code === "SUBMIT_REJECTED", `${name}: the example threw ${errorCode(ex.e)}`);
     }
@@ -167,6 +173,21 @@ await ok("node-signer classifies a submit answer as Chain.send does: no answer o
   const post = { domain: "my-app:v1", payloadHash: `0x${"ab".repeat(32)}`, uri: "my-app:post/1", expiresEpoch: 10_000 };
   const pr = await viaExample(ingestThen502, (w) => w.propose(post));
   assert.ok(pr.e instanceof SubmitInFlightError && /^0x[0-9a-f]{64}$/.test(pr.e.txid), `propose: ${String(pr.e?.message).split("\n")[0]}`);
+});
+
+await ok("node-signer keeps no copy of the classification: it imports classifySubmit and matches no answer text itself", () => {
+  const src = readFileSync(join(root, "examples", "node-signer.mjs"), "utf8");
+  assert.match(src, /import \{[^}]*\bclassifySubmit\b[^}]*\} from "@inversealtruism\/cairn-sdk\/chain"/);
+  assert.doesNotMatch(src, /\/already present\/|\.terminal\b|JSON\.stringify/);
+});
+
+await ok("node-signer: a 2xx body without a verdict that holds an integer above 2^53 is in flight, and settle resends the kept bytes", async () => {
+  const { node, provider, e } = await viaExample(oddBody("{\"ok\":\"maybe\",\"n\":9007199254740993}"));
+  assert.ok(e instanceof SubmitInFlightError && e.code === "SUBMIT_MAYBE_INFLIGHT", `${e?.constructor?.name}: ${String(e?.message).split("\n")[0]}`);
+  node.mineOnResend = e.txid;
+  assert.equal(await provider.settle(e.txid, { waitMs: 10 }), true);
+  assert.equal(node.submitted.length, 2, "the first submit and one resend of the kept bytes");
+  assert.equal(JSON.stringify(node.submitted[1]), JSON.stringify(node.submitted[0]));
 });
 
 await ok("node-signer: an accepted submit resolves with the locally signed txid, not the proxy's echo", async () => {

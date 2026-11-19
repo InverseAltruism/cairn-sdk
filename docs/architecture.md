@@ -19,9 +19,13 @@ contract couplings and the integration notes. `AGENTS.md` keeps the rules; this 
 - `content.ts`: prepare/put/hash, verified get/getBytes from the cairn origin, hash format gated against path-walk.
 - `names.ts`: NamesClient over /trade/api/cairnx/*; inputs pre-validated with cairnx-core NAME_RE + RESERVED_NAMES.
 - `chain.ts`: tip/utxos/submit/light(); Chain.send() = key-backed send via buildSendVerified + verifyInputValues
-  (fail-closed); a submit that fails after signing throws SubmitInFlightError with the signed txid and the signed tx
-  as `nodeJson`, except a 4xx answer (csd-client's `terminal` flag), which broadcast nothing and throws a final
-  CairnError `SUBMIT_REJECTED` (`test/chain-send.test.ts`).
+  (fail-closed). It reads the submit with `classifySubmit` and throws SubmitInFlightError with the signed txid and
+  the signed tx as `nodeJson` for a duplicate or an outcome without a verdict, a final CairnError `SUBMIT_REJECTED`
+  for a proxy's 400, 413 or 429, and resolves `ok: false` on the node's refusal (`test/chain-send.test.ts`).
+- `submit.ts`: `classifySubmit`, the one reading of a submit attempt (accepted, duplicate, rejected, in flight),
+  exported from the root and `/chain` entries and used by Chain.send and `examples/node-signer.mjs`
+  (`test/submit-classify.test.ts`). csd-client marks every status below 500 `terminal` and puts the status only in
+  its message, so the classifier reads the status from that message and ignores the flag.
 - `controller.ts`: framework-agnostic reactive store; spoofed-accountsChanged adoption guard.
 - `react.ts`: createCairnHooks(React), zero react dependency.
 - `errors.ts`: CairnError hierarchy with stable codes; SDK_VERSION manually kept == package.json, test-enforced

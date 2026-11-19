@@ -315,11 +315,16 @@ wallet code below.
 > default; `new WalletConnection(provider, { timeoutMs })`) rejects the same way with code `WALLET_TIMEOUT` and
 > no txid, since the request may still be open in the wallet and be sent if the user approves it. Have the user
 > reject it in the wallet before you send again: checking the chain alone leaves it open, and approving it and a
-> resend sends twice. The key-backed `cairn.chain.send` throws the same error (code `SUBMIT_MAYBE_INFLIGHT`) when its submit request fails after
-> signing, carrying the signed transaction as `nodeJson`: once the chain shows it did not land, resend it with
+> resend sends twice. The key-backed `cairn.chain.send` reads its submit with the exported `classifySubmit`
+> and throws the same error, carrying the signed transaction as `nodeJson`, when
+> no verdict came (code `SUBMIT_MAYBE_INFLIGHT`: no answer, a timeout, a 5xx or any status other than 400, 413
+> and 429, or a 2xx body without the node's `ok`) and when the node answers "already present" (code
+> `SUBMIT_DUPLICATE`: a node holds these bytes). Once the chain shows it did not land, resend it with
 > `cairn.chain.submit(e.nodeJson)` (the same coins under the same txid, so it cannot pay twice) rather than a new
-> send, which may select other coins. A 4xx answer to that submit (a proxy's 400 or 413 request body cap, a 429
-> rate limit) broadcast nothing and throws a final `CairnError` with code `SUBMIT_REJECTED` instead. A code the
+> send, which may select other coins. A refused answer to that resend decides nothing (if the first copy was mined
+> in between, the node answers "missing utxo"): look the txid up. A proxy's 400 or 413 (its request body cap) or
+> 429 (its rate limit) broadcast nothing and throws a final `CairnError` with code `SUBMIT_REJECTED`; the node's
+> own refusal resolves `ok: false` with the node's answer in `submitResult`. A code the
 > wallet sends that this SDK release does not list yet is kept on the error as sent (`errorCode(e)` returns it),
 > final, with the wallet's message, so you can branch on a newer wallet's code before the SDK lists it; the
 > `CairnErrorCode` type admits any string for that reason. A reply that names a code only the SDK assigns

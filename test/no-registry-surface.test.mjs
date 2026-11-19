@@ -19,7 +19,8 @@ const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const fixture = JSON.parse(readFileSync(join(root, "test/fixtures/public-surface-0.6.0.json"), "utf8"));
 // Names added to an entry since 0.6.0 on purpose; anything else added or missing fails below.
 const ADDED = {
-  chain: ["buildProposeVerified", "buildAttestVerified"],
+  chain: ["buildProposeVerified", "buildAttestVerified", "classifySubmit", "SubmitOutcome", "SubmitVerdict"],
+  index: ["classifySubmit", "SubmitOutcome", "SubmitVerdict"],
   testing: ["mockCairnProvider", "installMockCairn", "MockCairnProvider", "MockCairnOptions", "MockAnswer", "MockMethod", "MockCall",
     "MockCapabilities", "MockCairnTarget", "DisconnectReason"],
 };

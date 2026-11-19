@@ -2,30 +2,49 @@
 
 ## 0.8.7
 
+### Added
+
+- `classifySubmit(outcome)`, exported from the root and `/chain` entries with the types `SubmitOutcome` and
+  `SubmitVerdict`: the one reading of what a submit attempt produced (`{ answer }` for a 2xx body, `{ error }` for
+  what it threw). `accepted` is the node's `ok: true`; `duplicate` is a node answer containing "already present"
+  (a node holds these bytes; matched as the wallet's `isSubmitDuplicateErr`); `rejected` is the node's `ok: false`
+  with any other text, or HTTP 400, 413 or 429 (a proxy's body cap and rate limit, answered before forwarding);
+  `inflight` is everything else: no answer, a timeout, a 5xx, any other status (408 included), and a 2xx body
+  without the node's boolean `ok` (`{}`, `[]`, a string, `null`). A refused answer to a resend of stored bytes
+  decides nothing ("missing utxo" when the first copy was mined meanwhile); look the txid up. It never throws,
+  also on a body holding an integer above 2^53.
+
+### Changed
+
+What a `Chain.send` caller sees after signing, against 0.8.6:
+
+- The node's "already present" answer throws `SubmitInFlightError` with code `SUBMIT_DUPLICATE`, the signed
+  `txid` and `nodeJson`; it resolved `ok: false`, which a caller could read as a failure and send again from
+  other coins.
+- A 2xx body without the node's verdict (`{}`, `[]`, a string, `ok` not a boolean) throws `SubmitInFlightError`
+  with code `SUBMIT_MAYBE_INFLIGHT`; it resolved `ok: true`. A body of `null` throws the same; it threw a plain
+  `TypeError` (code `UNKNOWN`).
+- HTTP 408 and every 4xx other than 400, 413 and 429 throw `SubmitInFlightError` (`SUBMIT_MAYBE_INFLIGHT`); they
+  threw a final `CairnError` `SUBMIT_REJECTED`. csd-client marks every status below 500 `terminal`, and a front
+  that answers 408 may have forwarded the transaction.
+- Unchanged: the node's `ok: true` resolves `ok: true` with the locally signed `txid`; the node's refusal resolves
+  `ok: false` with `submitResult`; a 400, 413 or 429 throws `SUBMIT_REJECTED`; no answer, a timeout or a 5xx
+  throws `SUBMIT_MAYBE_INFLIGHT`. The result type is the same.
+
 ### Docs and internal
 
-- Examples, guide and tests only: no file in the npm tarball changes (`files` is `dist`, `LICENSE`, `README.md`).
 - `examples/node-signer.mjs` answers a submit in the wallet's nested shape with the wallet's codes, so
-  `WalletConnection` turns them into the same errors as the wallet's. A submit that got no answer, a timeout, a 5xx,
-  or a 2xx body other than the node's explicit `{ ok: true }` (the node may hold the transaction) throws
-  `SubmitInFlightError` with code `SUBMIT_MAYBE_INFLIGHT` and the txid; it threw a plain `Error` (code `UNKNOWN`),
-  and a bot that sent again after it built a second transaction from other coins. A refusal saying "already
-  present" (a node holds these bytes, for one after the proxy fails over to a node that has them by gossip) throws
-  `SubmitInFlightError` with code `SUBMIT_DUPLICATE` and the txid, matched as the wallet's `isSubmitDuplicateErr`
-  matches it; the second of two identical concurrent payments therefore reads in flight under the first's txid. A
-  4xx or any other node refusal throws a final `CairnError` with code `SUBMIT_REJECTED`. A new
-  `provider.settle(txid)` is what a caller does instead of sending again: it waits for the txid to be mined,
-  resends the same signed bytes once if it is not, and resolves `false` when the outcome is still unknown. The
-  signed bytes live only in that provider's memory; the header says what a caller records. An accepted submit
-  resolves with the locally signed txid, not the one the proxy echoes.
-- 2026-11-19: the example repeats the submit classification, because 0.8.6 exports no function for it and the
-  example runs against the published package. `test/examples.test.mjs` requires it to agree with `Chain.send` on a
-  502, no answer, a 413 and a node refusal. The rule's single home is an exported submit classifier that both use,
-  with the next release that changes `src/` (0.8.7).
-- Known, for that release: `Chain.send` differs from the example on three answers after signing. It resolves
-  `ok: false` on the node's "already present" answer, resolves ok on a 2xx body of `{}`, `[]` or a string, and
-  throws a plain `TypeError` (code `UNKNOWN`, not in flight) on a body of `null`; the exported classifier fixes
-  all three, and the example then calls it.
+  `WalletConnection` turns them into the same errors as the wallet's, and decides with `classifySubmit`; it no
+  longer repeats the rule. An in-flight or duplicate verdict throws `SubmitInFlightError` (`SUBMIT_MAYBE_INFLIGHT`,
+  `SUBMIT_DUPLICATE`) with the txid, a rejected one a final `CairnError` `SUBMIT_REJECTED`. The 0.8.6 example threw
+  a plain `Error` (code `UNKNOWN`), and a bot that sent again after it built a second transaction from other coins.
+  Its message for a body without a verdict is no longer built with `JSON.stringify`, which threw on a body holding
+  an integer above 2^53 before the signed bytes were kept. A new `provider.settle(txid)` is what a caller does
+  instead of sending again: it waits for the txid to be mined, resends the same signed bytes once if it is not,
+  and resolves `false` when the outcome is still unknown. The signed bytes live only in that provider's memory;
+  the header says what a caller records. An accepted submit resolves with the locally signed txid, not the one
+  the proxy echoes. `test/examples.test.mjs` requires the example to agree with `Chain.send` on every answer in
+  its table and to hold no copy of the rule.
 - `examples/hello-csd/app.ts` builds the proposals list from text nodes; the tip height and each proposal's height,
   as served, went into `innerHTML` unescaped.
 - `examples/integrate-wallet/app.ts`: after `WALLET_TIMEOUT` the message tells the user to reject the request still

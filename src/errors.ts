@@ -191,8 +191,8 @@ export class ContentVerificationError extends CairnError {
  * the nested `SUBMIT_MAYBE_INFLIGHT` (request threw / timed out / 5xx gateway / unreadable body) and
  * `SUBMIT_DUPLICATE` (node answered "already present or mempool conflict") codes, for `WALLET_UNAVAILABLE` on a
  * write (the page lost the wallet's reply, which may come after the submit), for `WALLET_TIMEOUT` (the call
- * outlasted the connection timeout while the request stays open in the wallet), and by `Chain.send` when the
- * submit request fails after signing without a 4xx answer (a 4xx is `SUBMIT_REJECTED`). It CARRIES the
+ * outlasted the connection timeout while the request stays open in the wallet), and by `Chain.send` when
+ * `classifySubmit` reads its submit as a duplicate or as in flight. It CARRIES the
  * locally-computed consensus `txid` when one is known so a dApp can RECONCILE (check the explorer / balance)
  * instead of blindly re-broadcasting, which would re-invite the double-broadcast this contract exists to prevent
  * (F14). It is NOT retryable (`retryable === false`);

@@ -11,7 +11,7 @@
 // Install: @inversealtruism/cairn-sdk and @inversealtruism/csd-codec (the fee floors; cairn-sdk depends on it, but
 // an app that imports it must declare it).
 // chain primitives live under the /chain subpath (tree-shakeable away from browser dApps)
-import { buildProposeVerified, buildAttestVerified, buildSendVerified, verifyInputValues, addrFromPriv } from "@inversealtruism/cairn-sdk/chain";
+import { buildProposeVerified, buildAttestVerified, buildSendVerified, classifySubmit, verifyInputValues, addrFromPriv } from "@inversealtruism/cairn-sdk/chain";
 import { MIN_FEE_ATTEST, MIN_FEE_PROPOSE } from "@inversealtruism/csd-codec";
 
 /**
@@ -42,31 +42,21 @@ export function makeKeyWallet(priv, cairn) {
   }
   // Answers in the wallet's nested SubmitResult shape, so WalletConnection classifies the outcome as it does the
   // wallet's: SUBMIT_MAYBE_INFLIGHT and SUBMIT_DUPLICATE throw SubmitInFlightError (maybeSent, with the txid),
-  // SUBMIT_REJECTED a final CairnError. csd-client marks a 4xx answer `terminal` (nothing was broadcast); no answer, a
-  // timeout, a 5xx, or a 2xx body other than the node's explicit `{ ok: true }` can follow the node taking the
-  // transaction. A refusal whose text says "already present" means a node holds these bytes (the proxy may have
-  // failed over to one that has them by gossip); the match is the wallet's isSubmitDuplicateErr (cairn-wallet
-  // src/core/node.ts), the rule's home. Its trade: the second of two identical concurrent payments reads in flight
-  // under the first's txid. The SDK exports no function for this split, so it is repeated here;
-  // test/examples.test.mjs pins it against Chain.send for the answers both classify alike. The txid is the locally
-  // signed one: a proxy's echo is not evidence of what was signed.
+  // SUBMIT_REJECTED a final CairnError. The verdict is the SDK's classifySubmit, the one Chain.send reads. Its trade
+  // on "already present": the second of two identical concurrent payments reads in flight under the first's txid.
+  // The txid is the locally signed one: a proxy's echo is not evidence of what was signed.
   async function submit(build, kind) {
     if (!build || !build.ok) throw new Error(`${kind} build failed: ${build?.error || "unknown"}`);
-    const refused = (error) => ({ ok: true, result: { ok: false, code: "SUBMIT_REJECTED", error } });
-    const maybeHeld = (code, error) => {
-      unsettled.set(build.txid, build.nodeJson);
-      return { ok: true, result: { ok: false, code, txid: build.txid, error } };
-    };
-    let res;
-    try { res = await cairn.chain.submit(build.nodeJson); }
-    catch (e) {
-      if (e?.terminal === true) return refused(`${kind} submit refused, nothing was broadcast: ${e.message}`);
-      return maybeHeld("SUBMIT_MAYBE_INFLIGHT", `${kind} submit failed after signing (${e?.message ?? e}); the node may hold ${build.txid}`);
-    }
-    if (res?.ok === true) return { ok: true, result: { ok: true, txid: build.txid } };
-    if (res?.ok === false && /already present/i.test(String(res.err ?? ""))) return maybeHeld("SUBMIT_DUPLICATE", `${kind}: a node already holds ${build.txid} (${res.err})`);
-    if (res?.ok === false) return refused(`${kind} submit rejected by the node: ${res.err || JSON.stringify(res)}`);
-    return maybeHeld("SUBMIT_MAYBE_INFLIGHT", `${kind} submit answered without the node's verdict (${JSON.stringify(res)}); the node may hold ${build.txid}`);
+    let answer;
+    let v;
+    try { answer = await cairn.chain.submit(build.nodeJson); }
+    catch (e) { v = classifySubmit({ error: e }); }
+    v ??= classifySubmit({ answer });
+    if (v.verdict === "accepted") return { ok: true, result: { ok: true, txid: build.txid } };
+    if (v.verdict === "rejected") return { ok: true, result: { ok: false, code: "SUBMIT_REJECTED", error: `${kind} submit refused, nothing was broadcast: ${v.detail}` } };
+    unsettled.set(build.txid, build.nodeJson);
+    const code = v.verdict === "duplicate" ? "SUBMIT_DUPLICATE" : "SUBMIT_MAYBE_INFLIGHT";
+    return { ok: true, result: { ok: false, code, txid: build.txid, error: `${kind} submit after signing: ${v.detail}; the node may hold ${build.txid}` } };
   }
 
   return {
@@ -96,8 +86,8 @@ export function makeKeyWallet(priv, cairn) {
       const mined = () => cairn.chain.client.waitForTx(txid, { timeoutMs: waitMs }).then(() => true, () => false);
       let done = await mined();
       if (!done && unsettled.has(txid)) {
-        // The resend's answer does not decide ("already present" while the node holds it, a refusal if the first was
-        // mined meanwhile); the lookup after it does.
+        // The resend's answer does not decide ("already present" while the node holds it, "missing utxo" if the first
+        // was mined meanwhile); the lookup after it does.
         await submit({ ok: true, nodeJson: unsettled.get(txid), txid }, "resend");
         done = await mined();
       }
