@@ -70,8 +70,8 @@ console.log("Chain.send:");
   ok("the failed submit was sent once (no retry of a POST)", submits(seen) === 1);
 }
 {
-  // A 4xx answer is a refusal before the node took anything: a proxy's 400 or 413 body cap (a send with many inputs)
-  // reaches no node, and every resend of the same transaction meets the same cap. Final, never "may be in flight".
+  // A body cap answered before forwarding (cairn-substrate.com's 400, nginx's or Cloudflare's 413) reaches no node, and
+  // every resend of the same transaction meets the same cap: final SUBMIT_REJECTED, not "may be in flight".
   const refusals = await Promise.all([400, 413].map(async (status) => {
     const { chain, seen } = rpc(REAL, () => new Response("request entity too large", { status }));
     return { status, e: await grab(() => send(chain)), sent: submits(seen) };
