@@ -90,7 +90,8 @@ export function consumerTypeChecks(packageDir, repo = here) {
   return results;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Real path: started through a symlinked checkout, argv[1] is the link and import.meta.url the target.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const pkg = JSON.parse(readFileSync(join(here, "package.json"), "utf8"));
   const tgz = resolve(process.argv[2] ?? join(here, `inversealtruism-cairn-sdk-${pkg.version}.tgz`));
   if (!existsSync(tgz)) {

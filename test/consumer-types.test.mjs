@@ -2,7 +2,8 @@
 // and over the same package with the exports map of 0.8.2, which gave `require` the ESM .d.ts files: a CommonJS
 // consumer under node16 resolution then fails with TS1479. Needs a build (`pnpm build`). Offline.
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +49,33 @@ try {
   ok("the 0.8.2 map: the ESM and bundler consumers still pass (the check is not failing on everything)", () => {
     assert.ok(old["node16-esm"].ok, show(old["node16-esm"]));
     assert.ok(old.bundler.ok, show(old.bundler));
+  });
+
+  // Started as a command through a symlink to the checkout: Node gives import.meta.url the real path, so a start guard
+  // that compares argv[1] unresolved prints nothing and exits 0, a green for a tarball nothing checked.
+  console.log("check-consumer-types, started as a command:");
+  const pack = (pkgJson) => {
+    const stage = join(work, `stage-${n++}`);
+    cpSync(join(root, "dist"), join(stage, "package", "dist"), { recursive: true });
+    writeFileSync(join(stage, "package", "package.json"), JSON.stringify(pkgJson, null, 2));
+    const tgz = join(work, `pkg-${n}.tgz`);
+    execFileSync("tar", ["czf", tgz, "-C", stage, "package"]);
+    return tgz;
+  };
+  symlinkSync(root, join(work, "root-link"));
+  const start = join(work, "root-link", "scripts", "check-consumer-types.mjs");
+  const run = (tgz) => spawnSync(process.execPath, [start, tgz], { cwd: work, encoding: "utf8" });
+  ok("symlinked checkout: this package's tarball passes (exit 0, 4 passed, 0 failed)", () => {
+    const r = run(pack(pkg));
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /^check-consumer-types: 4 passed, 0 failed$/m);
+  });
+  ok("symlinked checkout: the 0.8.2 map is refused (exit 1, the node16 CommonJS consumer fails with TS1479)", () => {
+    const r = run(pack({ ...pkg, exports: flat }));
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stdout, /^ {2}FAIL a node16-cjs consumer typechecks against every subpath$/m);
+    assert.match(r.stdout, /error TS1479/);
+    assert.match(r.stdout, /^check-consumer-types: 3 passed, 1 failed$/m);
   });
 } finally {
   rmSync(work, { recursive: true, force: true });
