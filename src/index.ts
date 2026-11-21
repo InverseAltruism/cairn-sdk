@@ -63,7 +63,7 @@ export interface CairnConfig {
 // cairn/public/trade/swapguard.js's CP in the same cycle, never bumped here alone. test/spv-checkpoint.test.ts
 // checks it is a real block against a committed header capture; the cairn copies (swapguard.js and
 // `deploy/spv-checkpoint`) are checked in the cairn repo. Pin a newer one via config.spvCheckpoint.
-export const DEFAULT_SPV_CHECKPOINT = { height: 131996, hash: "0x00000000000004a739bc4251993bc0a3b425d8cb1bee686f6d70bbd500a9fcc3" };
+export const DEFAULT_SPV_CHECKPOINT = { height: 145564, hash: "0x00000000000038e17eda58d8bf92a5a908f14af63ea84515a7844bfe0c55f9b4" };
 
 const DEFAULT_CAIRN = "https://cairn-substrate.com";
 
@@ -425,6 +425,8 @@ export { Chain, classifySubmit } from "./chain.js";
 export type { SubmitOutcome, SubmitVerdict } from "./chain.js";
 export { NamesClient } from "./names.js";
 export type { NameResolution, NameDetail, TokenInfo, PrimaryName, NameHistory, NameHistoryEntry } from "./names.js";
+export { parseCsdLink, formatCsdLink, csdLinkToHttps } from "./csdlink.js";
+export type { CsdLink, CsdLinkCode, CsdLinkParse } from "./csdlink.js";
 export { IndexerClient } from "./indexer.js";
 export type { MerkleProof, InclusionResult, IndexEvent, StreamHandlers, StreamHandle, TrustLevel } from "./indexer.js";
 export { ContentClient } from "./content.js";

@@ -20,7 +20,8 @@ const fixture = JSON.parse(readFileSync(join(root, "test/fixtures/public-surface
 // Names added to an entry since 0.6.0 on purpose; anything else added or missing fails below.
 const ADDED = {
   chain: ["buildProposeVerified", "buildAttestVerified", "classifySubmit", "SubmitOutcome", "SubmitVerdict"],
-  index: ["classifySubmit", "SubmitOutcome", "SubmitVerdict"],
+  index: ["classifySubmit", "SubmitOutcome", "SubmitVerdict",
+    "parseCsdLink", "formatCsdLink", "csdLinkToHttps", "CsdLink", "CsdLinkCode", "CsdLinkParse"],
   testing: ["mockCairnProvider", "installMockCairn", "MockCairnProvider", "MockCairnOptions", "MockAnswer", "MockMethod", "MockCall",
     "MockCapabilities", "MockCairnTarget", "DisconnectReason"],
 };

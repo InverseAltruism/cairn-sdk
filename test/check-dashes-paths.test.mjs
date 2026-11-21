@@ -1,8 +1,8 @@
 // scripts/check-dashes-paths.mjs on a throwaway git sandbox (one file per case) and on this repo.
 // Run: pnpm exec tsx test/check-dashes-paths.test.mjs   (offline)
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,6 +45,43 @@ try {
   ok("a sibling read names the path it matched", () => assert.ok(offences(dir).includes("src/reads-sdk.mjs: reads a sibling checkout (../csd-sdk)")));
 } finally {
   rmSync(dir, { recursive: true, force: true });
+}
+
+// Started as a command: by its real path, through a symlink to the file and through a symlink to the checkout. Node
+// gives import.meta.url the real path, so a start guard that compares argv[1] unresolved prints nothing and exits 0.
+console.log("check-dashes-paths, started as a command:");
+const cmd = mkdtempSync(join(tmpdir(), "cairnsdk-dashes-cmd-"));
+try {
+  const sandbox = (name, text) => {
+    const d = join(cmd, name);
+    mkdirSync(d);
+    execFileSync("git", ["init", "-q"], { cwd: d });
+    writeFileSync(join(d, "README.md"), text);
+    execFileSync("git", ["add", "README.md"], { cwd: d });
+    return d;
+  };
+  const dirty = sandbox("dirty", `a ${EM} b\n`);
+  const clean = sandbox("clean", "a - b\n");
+  const script = join(root, "scripts", "check-dashes-paths.mjs");
+  symlinkSync(script, join(cmd, "script-link.mjs"));
+  symlinkSync(root, join(cmd, "root-link"));
+  const starts = { "real path": script, "symlinked file": join(cmd, "script-link.mjs"), "symlinked checkout": join(cmd, "root-link", "scripts", "check-dashes-paths.mjs") };
+  const run = (start, target) => spawnSync(process.execPath, [start, target], { cwd: cmd, encoding: "utf8" });
+  for (const [how, start] of Object.entries(starts)) {
+    ok(`${how}: a tree with an em dash is refused (exit 1, the file named)`, () => {
+      const r = run(start, dirty);
+      assert.equal(r.status, 1, r.stdout + r.stderr);
+      assert.match(r.stderr, /^README\.md: em dash \(U\+2014\)$/m);
+      assert.match(r.stdout, /^check-dashes-paths: 1 offence\(s\)$/m);
+    });
+    ok(`${how}: a clean tree passes (exit 0, "clean")`, () => {
+      const r = run(start, clean);
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      assert.match(r.stdout, /^check-dashes-paths: clean$/m);
+    });
+  }
+} finally {
+  rmSync(cmd, { recursive: true, force: true });
 }
 
 console.log(`\ncheck-dashes-paths: ${pass} passed, ${fail} failed`);

@@ -74,6 +74,14 @@ export type KnownCode =
   | "WALLET_RELOADED"
   // SDK-side: a write method that outlasted the connection timeout (the wallet may still send it)
   | "WALLET_TIMEOUT"
+  // SDK-side: a `web+csd:` link, link object or site origin refused by src/csdlink.ts (docs/SDK-GUIDE.md, "Links")
+  | "LINK_SCHEME"
+  | "LINK_AUTHORITY"
+  | "LINK_QUERY"
+  | "LINK_NAME"
+  | "LINK_PATH"
+  | "LINK_TOO_LONG"
+  | "LINK_ORIGIN"
   | "UNKNOWN";
 
 /** Stable machine-readable error codes (branch on these, not the message text). A code the wallet sent that this
@@ -82,7 +90,7 @@ export type CairnErrorCode = KnownCode | (string & {});
 
 // Kept in sync with package.json `version` (the build has no JSON import; bump both together). SDK-VERSION-DRIFT:
 // errors.test.ts now asserts SDK_VERSION === package.json.version (the old test compared the constant to itself).
-export const SDK_VERSION = "0.8.7";
+export const SDK_VERSION = "0.8.8";
 const DOCS_BASE = "https://cairn-substrate.com/docs/sdk";
 
 export interface CairnErrorOptions {

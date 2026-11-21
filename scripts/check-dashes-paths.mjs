@@ -4,7 +4,7 @@
 // name those paths; only code is checked for them. Run: node scripts/check-dashes-paths.mjs [repo root]
 // The same checks as csd-sdk's scripts/check-dashes-paths.mjs; this repo keeps its own copy, exceptions inline.
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -38,7 +38,8 @@ export function offences(root) {
   return out;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Real path: started through a symlinked checkout, argv[1] is the link and import.meta.url the target.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const found = offences(resolve(process.argv[2] ?? "."));
   for (const line of found) console.error(line);
   console.log(found.length === 0 ? "check-dashes-paths: clean" : `check-dashes-paths: ${found.length} offence(s)`);
