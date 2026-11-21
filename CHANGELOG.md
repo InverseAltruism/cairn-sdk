@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.8 (2026-11-21)
 
 ### Added
 
@@ -20,10 +20,23 @@
 
 ### Changed
 
+- **`DEFAULT_SPV_CHECKPOINT` moves from height 131,996 to 145,564**
+  (`0x00000000000038e17eda58d8bf92a5a908f14af63ea84515a7844bfe0c55f9b4`), copied from cairn's
+  `public/trade/swapguard.js` (cairn `cdb79bbc`, release 0.5.50, where the site's anchor is this one). The header the site
+  serves at 145,564 has that hash. A cold checkpoint-to-tip seed is 13,568 headers shorter. What a caller sees
+  differently for **heights 131,996 to 145,563**:
+  - `index.verifyInclusion(txid)` returns `trustLevel: "proof-consistent"`, `included: false`, where 0.8.7
+    returned `"verified-inclusion"`, `included: true`. The `reason` reads `indexer proof only, header at <h>
+    not verified (height <h> is below the SPV checkpoint 145564 (cannot PoW-verify backward))`.
+  - `verifyOfferForFill` for an offer mined at 131,996 to 145,518 returns `ok: false, trust: "unverified"`
+    (not transient) with a reason naming the checkpoint window base 145,519 and `config.spvCheckpoint`. Offers
+    mined at 145,519 to 145,563 sit inside the 46-header seed window and still verify on this path.
+  - Pass `config.spvCheckpoint: { height: 131996, hash: "0x00000000000004a739bc4251993bc0a3b425d8cb1bee686f6d70bbd500a9fcc3" }`
+    to keep the old anchor.
 - `@inversealtruism/cairnx-core` 0.2.4 to 0.2.8. Its root exports only grow (event, hash, reason-code, gate and
   forward-resolution exports); `isName`, `NAME_RE`, the fill predicates and the types this SDK re-exports keep their
   declarations. It now declares `@noble/hashes` 1.8.0, which csd-codec already pins, so no package enters an install.
-  The built `dist/` is byte-identical to the 0.2.4 build (cairnx-core stays external).
+  Alone, this re-pin leaves the built `dist/` byte-identical to the 0.2.4 build (cairnx-core stays external).
 
 ## 0.8.7
 
