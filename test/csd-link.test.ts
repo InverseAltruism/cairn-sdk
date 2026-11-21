@@ -104,7 +104,7 @@ for (let i = 0; i < N; i++) {
   if (r.ok) {
     accepted++;
     const link: CsdLink = r.path === undefined ? { name: r.name } : { name: r.name, path: r.path };
-    if (!same(parseCsdLink(formatCsdLink(link)), r)) roundTripBad++;
+    if (thrownCode(() => formatCsdLink(link)) !== "returned" || !same(parseCsdLink(formatCsdLink(link)), r)) roundTripBad++;
   } else if (fold(s.slice(0, 8)) === "web+csd:") {
     // The same name (ASCII-folded) and path handed to format: parse refused the string, so format must refuse them.
     const rest = s.slice(8), slash = rest.indexOf("/");
