@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `web+csd:` links: `parseCsdLink(input)`, `formatCsdLink({ name, path? })` and `csdLinkToHttps(link, origin)` from the
+  root entry, with the types `CsdLink`, `CsdLinkParse` and `CsdLinkCode` (`src/csdlink.ts`). Grammar
+  `web+csd:<name>[/<path>]`: the scheme and the name read ASCII case-insensitively, the name returned lowercase and
+  checked with cairnx-core's `isName` (non-ASCII refused, never folded onto an ASCII name), the path RFC 3986
+  unreserved characters in non-empty segments that are not only dots, at most 256 characters, no percent-encoding,
+  no `//` form, no query or fragment, the input at most 297 characters. A link opens a name page and authorizes
+  nothing. `parseCsdLink` returns `{ ok: false, code, reason }` and does not throw; `formatCsdLink` and
+  `csdLinkToHttps` throw a `CairnError`. New codes `LINK_SCHEME`, `LINK_AUTHORITY`, `LINK_QUERY`, `LINK_NAME`,
+  `LINK_PATH`, `LINK_TOO_LONG`, `LINK_ORIGIN`. `csdLinkToHttps` gives `<origin>/names#/name/<name>[/<path>]` for an
+  https origin the caller passes. The ABNF and the codes are in the guide ("Links"); `test/vectors/csd-link.json`
+  and `test/csd-link.test.ts` (the vectors and a seeded property loop) pin them.
+  An https link with a path opens the right page only once the site splits that route at the first `/`; the site
+  reads everything after `#/name/` as the name today, so this release follows that site change.
+
+### Changed
+
+- `@inversealtruism/cairnx-core` 0.2.4 to 0.2.8. Its root exports only grow (event, hash, reason-code, gate and
+  forward-resolution exports); `isName`, `NAME_RE`, the fill predicates and the types this SDK re-exports keep their
+  declarations. It now declares `@noble/hashes` 1.8.0, which csd-codec already pins, so no package enters an install.
+  The built `dist/` is byte-identical to the 0.2.4 build (cairnx-core stays external).
+
 ## 0.8.7
 
 Wallet contract: Cairn Wallet 0.3.3 (params and the provider method list); error codes as listed in the wallet's

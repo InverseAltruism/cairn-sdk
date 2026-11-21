@@ -297,8 +297,8 @@ Codes: `NOT_INSTALLED`, `USER_REJECTED`, `WALLET_LOCKED`, `UNSUPPORTED_METHOD`, 
 a 2xx body whose shape is wrong, such as a names list read that is not an array), `CONTENT_VERIFICATION`,
 `CONTENT_NOT_JSON` (`content.get()` on verified bytes that are not JSON), `WALLET_TIMEOUT` (a write method
 outlasted the connection timeout; see below), `WALLET_RELOADED` (the wallet was updated or reloaded under the
-page; the request never reached it, and the page must reload to reach the wallet again), `UNKNOWN`, and every
-wallet code below.
+page; the request never reached it, and the page must reload to reach the wallet again), `UNKNOWN`, the `LINK_*`
+codes of [Links](#links-webcsd), and every wallet code below.
 
 > **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the
 > source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error (except
@@ -352,6 +352,62 @@ wallet code below.
 > (`WALLET_TIMEOUT`, `NOT_INSTALLED`, `HTTP_ERROR`, `CONTENT_VERIFICATION`, `CONTENT_NOT_JSON`, `UNKNOWN`) is
 > not the wallet's and reads `UNKNOWN`. The wallet's `WALLET_RELOADED:` reply becomes code `WALLET_RELOADED`
 > whether it carries that code or none (wallet 0.3.2 sends none).
+
+## Links (`web+csd:`)
+
+A `web+csd:` link names a CNS name, optionally with a path: `web+csd:alice` or `web+csd:alice/blog/post-1`. A link
+opens that name's page and authorizes nothing: it carries no action, amount, address, query or fragment, and a
+handler must not read one into it. Nothing in this section makes a request.
+
+```ts
+import { parseCsdLink, formatCsdLink, csdLinkToHttps } from "@inversealtruism/cairn-sdk";
+const r = parseCsdLink(input);              // { ok: true, name, path? } or { ok: false, code, reason }; it does not throw
+if (r.ok) open(csdLinkToHttps(r, "https://cairn-substrate.com"));  // https://cairn-substrate.com/names#/name/alice
+formatCsdLink({ name: "alice", path: "blog" });                     // "web+csd:alice/blog"
+```
+
+Grammar (ABNF, RFC 5234; the quoted scheme is case-insensitive):
+
+```
+csd-link   = "web+csd:" name [ "/" path ]
+name       = 1*32( ALPHA / DIGIT / "-" )   ; ASCII-lowercased, then cairnx-core's isName
+path       = segment *( "/" segment )      ; at most 256 characters, case kept
+segment    = *"." safe *( safe / "." )     ; not empty and not made only of dots
+safe       = ALPHA / DIGIT / "-" / "_" / "~"
+```
+
+- The name is checked with cairnx-core's `isName` (lowercase ASCII letters, digits and inner hyphens, 1 to 32
+  characters, not reserved) after only A-Z is folded to lowercase, so a non-ASCII look-alike (U+212A KELVIN SIGN,
+  Cyrillic letters) is refused, never mapped onto an ASCII name. `parseCsdLink` returns the name lowercase.
+- The path holds only RFC 3986 unreserved characters, so it is valid as it stands in a URL path or fragment and has
+  nothing to decode. Percent-encoding, an empty segment (a leading, doubled or trailing slash) and a `.` or `..`
+  segment are refused.
+- The `web+csd://` form is refused. The whole input is at most 297 characters (8 + 32 + 1 + 256), checked first.
+- White space is refused anywhere, including around the link. A browser strips it before a handler sees the link;
+  a page that parses pasted or scanned text trims it first.
+- A browser's `registerProtocolHandler` hands the link percent-encoded in place of `%s`; decode it once (for example
+  with `URLSearchParams`) and pass the result to `parseCsdLink`.
+- `formatCsdLink` takes the name in the lowercase form `parseCsdLink` returns, so `parseCsdLink(formatCsdLink(x))`
+  gives back `x`; it throws a `CairnError` with the code below for anything `parseCsdLink` would not return. It
+  reads `name` and `path` once and writes the values it checked.
+- `csdLinkToHttps(link, origin)` is the https page of the same name and path, to show beside every `web+csd:` link:
+  `<origin>/names#/name/<name>[/<path>]`. There is no default origin. `origin` is read with `new URL(String(origin))`
+  and refused with `LINK_ORIGIN` unless that URL is https with no credentials, no path other than `/` and no query
+  or fragment; a form URL parsing reduces to that is taken (surrounding white space, backslashes, an empty `?` or
+  `#`, a path such as `/a/..`). The output is that URL's origin followed by `/names#/name/...`. An `http://` base,
+  such as a local front door at `http://127.0.0.1`, is refused.
+
+| Code | Refused |
+|---|---|
+| `LINK_SCHEME` | not a string, or not starting with `web+csd:` |
+| `LINK_AUTHORITY` | `web+csd://...` |
+| `LINK_QUERY` | a `?` or `#` anywhere after the scheme |
+| `LINK_NAME` | a name `isName` refuses after the fold (empty, too long, a character outside a-z 0-9 -, reserved) |
+| `LINK_PATH` | a path outside the grammar or over 256 characters |
+| `LINK_TOO_LONG` | an input over 297 characters |
+| `LINK_ORIGIN` | `csdLinkToHttps` with an origin that is not https, or carries a path, query, fragment or credentials |
+
+`test/vectors/csd-link.json` holds the accepted and refused cases, each refusal with its code.
 
 ## Versioning & dependency hygiene
 

@@ -68,6 +68,8 @@ Module detail, the SPV header sync, the fill-verify surface and the integration 
 - `src/connect.ts`: the CairnProvider contract, provider discovery, WalletConnection.
 - `src/indexer.ts`, `content.ts`, `names.ts`, `chain.ts`: the service clients (indexer REST, SSE and
   `verifyInclusion`; verified content; names reads; tip, utxos, submit and the key-backed `Chain.send`).
+- `src/csdlink.ts`: `web+csd:` links (`parseCsdLink`, `formatCsdLink`, `csdLinkToHttps`); the grammar is in
+  `docs/SDK-GUIDE.md` ("Links").
 - `src/fillverify.ts`: `preverifyOffer`, the merkle-proven pre-verify of a fill, over cairnx-core's predicates.
 - `src/controller.ts`, `react.ts`: the reactive store and the React hooks. `src/errors.ts`: the CairnError codes and
   SDK_VERSION. `src/http.ts`: timeout, byte cap, retries.
@@ -166,6 +168,8 @@ checks).
   codes in its `WALLET-ERROR-CODES.md`; `src/connect.ts` is the typed mirror of it.
 - The cairn server endpoints (/api/rpc, /api/headers, /content, /explorer/api, /trade/api/cairnx/*), and the SPV
   checkpoint literal copied from cairn/public/trade/swapguard.js (each repo checks its copy against the chain).
+- The site's names page route `/names#/name/<name>[/<path>]` (read by cairn `public/names/route.js`), which
+  `csdLinkToHttps` builds.
 - The opt-in wallet-connector E2E loads a sibling ../cairn-wallet/dist (override with `WALLET_EXT`).
 
 ## Docs

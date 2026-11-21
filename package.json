@@ -108,7 +108,7 @@
     "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
-    "@inversealtruism/cairnx-core": "0.2.4",
+    "@inversealtruism/cairnx-core": "0.2.8",
     "@inversealtruism/csd-client": "0.1.20",
     "@inversealtruism/csd-codec": "0.1.18",
     "@inversealtruism/csd-crypto": "0.1.21",

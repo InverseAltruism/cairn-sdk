@@ -425,6 +425,8 @@ export { Chain, classifySubmit } from "./chain.js";
 export type { SubmitOutcome, SubmitVerdict } from "./chain.js";
 export { NamesClient } from "./names.js";
 export type { NameResolution, NameDetail, TokenInfo, PrimaryName, NameHistory, NameHistoryEntry } from "./names.js";
+export { parseCsdLink, formatCsdLink, csdLinkToHttps } from "./csdlink.js";
+export type { CsdLink, CsdLinkCode, CsdLinkParse } from "./csdlink.js";
 export { IndexerClient } from "./indexer.js";
 export type { MerkleProof, InclusionResult, IndexEvent, StreamHandlers, StreamHandle, TrustLevel } from "./indexer.js";
 export { ContentClient } from "./content.js";
