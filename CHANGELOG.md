@@ -16,6 +16,13 @@
   https origin the caller passes. The ABNF and the codes are in the guide ("Links"); `test/vectors/csd-link.json`
   and `test/csd-link.test.ts` (the vectors and a seeded property loop) pin them.
 
+### Changed
+
+- `@inversealtruism/cairnx-core` 0.2.4 to 0.2.8. Its root exports only grow (event, hash, reason-code, gate and
+  forward-resolution exports); `isName`, `NAME_RE`, the fill predicates and the types this SDK re-exports keep their
+  declarations. It now declares `@noble/hashes` 1.8.0, which csd-codec already pins, so no package enters an install.
+  The built `dist/` is byte-identical to the 0.2.4 build (cairnx-core stays external).
+
 ## 0.8.7
 
 Wallet contract: Cairn Wallet 0.3.3 (params and the provider method list); error codes as listed in the wallet's
