@@ -41,15 +41,22 @@ function pathProblem(path: string): Refusal | null {
 
 const NAME_REFUSAL: Refusal = { code: "LINK_NAME", reason: "the name is not a claimable CNS name (lowercase ASCII letters, digits and inner hyphens, 1 to 32 characters, not reserved)" };
 
-// The canonical form only: the name exactly as parseCsdLink returns it, so parse(format(x)) equals x.
-function linkProblem(link: unknown): Refusal | null {
-  if (!link || typeof link !== "object") return NAME_REFUSAL;
+// The canonical form only: the name exactly as parseCsdLink returns it, so parse(format(x)) equals x. `name` and
+// `path` are read once and the caller builds from the returned values, so a getter that changes its answer between
+// reads cannot put unchecked text into an output (test/csd-link.test.ts, "flipping getters").
+function checkedLink(link: unknown): CsdLink {
+  const refuse = (r: Refusal) => new CairnError(r.reason, { code: r.code });
+  if (!link || typeof link !== "object") throw refuse(NAME_REFUSAL);
   const { name, path } = link as { name?: unknown; path?: unknown };
-  if (!isName(name)) return NAME_REFUSAL;
-  if (path === undefined) return null;
-  if (typeof path !== "string") return { code: "LINK_PATH", reason: "the path is not a string" };
-  return pathProblem(path);
+  if (!isName(name)) throw refuse(NAME_REFUSAL);
+  if (path === undefined) return { name };
+  if (typeof path !== "string") throw refuse({ code: "LINK_PATH", reason: "the path is not a string" });
+  const bad = pathProblem(path);
+  if (bad) throw refuse(bad);
+  return { name, path };
 }
+
+const linkBody = (l: CsdLink): string => l.name + (l.path === undefined ? "" : `/${l.path}`);
 
 /**
  * Read a `web+csd:<name>[/<path>]` link. The scheme and the name are read ASCII case-insensitively and the name is
@@ -78,20 +85,18 @@ export function parseCsdLink(input: unknown): CsdLinkParse {
  * `CairnError` with the refusal's code for anything `parseCsdLink` would not return.
  */
 export function formatCsdLink(link: CsdLink): string {
-  const bad = linkProblem(link);
-  if (bad) throw new CairnError(bad.reason, { code: bad.code });
-  return SCHEME + link.name + (link.path === undefined ? "" : `/${link.path}`);
+  const c = checkedLink(link);
+  return SCHEME + linkBody(c);
 }
 
 /**
  * The https URL of the same name page, for showing beside a `web+csd:` link to readers without a handler:
- * `<origin>/names#/name/<name>[/<path>]`. `origin` is the site's https origin (for example the one the dApp
- * already uses as `baseUrls.cairn`); there is no default. Throws a `CairnError` (`LINK_ORIGIN`, or the link's own
- * code) on a refusal.
+ * `<origin>/names#/name/<name>[/<path>]`, where `<origin>` is the URL origin of `origin`. Only an https origin is
+ * taken (an `http://` base such as a local front door throws `LINK_ORIGIN`); there is no default. Throws a
+ * `CairnError` (`LINK_ORIGIN`, or the link's own code) on a refusal.
  */
 export function csdLinkToHttps(link: CsdLink, origin: string): string {
-  const bad = linkProblem(link);
-  if (bad) throw new CairnError(bad.reason, { code: bad.code });
+  const c = checkedLink(link);
   const refuseOrigin = (cause?: unknown) =>
     new CairnError("the site origin must be an https origin with no path, query, fragment or credentials", { code: "LINK_ORIGIN", cause });
   let u: URL;
@@ -101,5 +106,5 @@ export function csdLinkToHttps(link: CsdLink, origin: string): string {
     throw refuseOrigin(e);
   }
   if (u.protocol !== "https:" || u.username || u.password || u.pathname !== "/" || u.search || u.hash) throw refuseOrigin();
-  return `${u.origin}/names#/name/${link.name}${link.path === undefined ? "" : `/${link.path}`}`;
+  return `${u.origin}/names#/name/${linkBody(c)}`;
 }

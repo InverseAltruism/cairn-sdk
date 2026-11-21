@@ -15,6 +15,8 @@
   `LINK_PATH`, `LINK_TOO_LONG`, `LINK_ORIGIN`. `csdLinkToHttps` gives `<origin>/names#/name/<name>[/<path>]` for an
   https origin the caller passes. The ABNF and the codes are in the guide ("Links"); `test/vectors/csd-link.json`
   and `test/csd-link.test.ts` (the vectors and a seeded property loop) pin them.
+  An https link with a path opens the right page only once the site splits that route at the first `/`; the site
+  reads everything after `#/name/` as the name today, so this release follows that site change.
 
 ### Changed
 

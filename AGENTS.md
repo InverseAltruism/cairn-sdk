@@ -168,6 +168,8 @@ checks).
   codes in its `WALLET-ERROR-CODES.md`; `src/connect.ts` is the typed mirror of it.
 - The cairn server endpoints (/api/rpc, /api/headers, /content, /explorer/api, /trade/api/cairnx/*), and the SPV
   checkpoint literal copied from cairn/public/trade/swapguard.js (each repo checks its copy against the chain).
+- The site's names page route `/names#/name/<name>[/<path>]` (read by cairn `public/names/route.js`), which
+  `csdLinkToHttps` builds.
 - The opt-in wallet-connector E2E loads a sibling ../cairn-wallet/dist (override with `WALLET_EXT`).
 
 ## Docs

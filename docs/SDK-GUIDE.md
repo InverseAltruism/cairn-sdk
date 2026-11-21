@@ -298,7 +298,7 @@ a 2xx body whose shape is wrong, such as a names list read that is not an array)
 `CONTENT_NOT_JSON` (`content.get()` on verified bytes that are not JSON), `WALLET_TIMEOUT` (a write method
 outlasted the connection timeout; see below), `WALLET_RELOADED` (the wallet was updated or reloaded under the
 page; the request never reached it, and the page must reload to reach the wallet again), `UNKNOWN`, the `LINK_*`
-codes of [Links](#links-websd), and every wallet code below.
+codes of [Links](#links-webcsd), and every wallet code below.
 
 > **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the
 > source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error (except
@@ -383,13 +383,19 @@ safe       = ALPHA / DIGIT / "-" / "_" / "~"
   nothing to decode. Percent-encoding, an empty segment (a leading, doubled or trailing slash) and a `.` or `..`
   segment are refused.
 - The `web+csd://` form is refused. The whole input is at most 297 characters (8 + 32 + 1 + 256), checked first.
+- White space is refused anywhere, including around the link. A browser strips it before a handler sees the link;
+  a page that parses pasted or scanned text trims it first.
 - A browser's `registerProtocolHandler` hands the link percent-encoded in place of `%s`; decode it once (for example
   with `URLSearchParams`) and pass the result to `parseCsdLink`.
 - `formatCsdLink` takes the name in the lowercase form `parseCsdLink` returns, so `parseCsdLink(formatCsdLink(x))`
-  gives back `x`; it throws a `CairnError` with the code below for anything `parseCsdLink` would not return.
+  gives back `x`; it throws a `CairnError` with the code below for anything `parseCsdLink` would not return. It
+  reads `name` and `path` once and writes the values it checked.
 - `csdLinkToHttps(link, origin)` is the https page of the same name and path, to show beside every `web+csd:` link:
-  `<origin>/names#/name/<name>[/<path>]`. `origin` is an https origin you pass (no default); anything else throws
-  `LINK_ORIGIN`.
+  `<origin>/names#/name/<name>[/<path>]`. There is no default origin. `origin` is read with `new URL(String(origin))`
+  and refused with `LINK_ORIGIN` unless that URL is https with no credentials, no path other than `/` and no query
+  or fragment; a form URL parsing reduces to that is taken (surrounding white space, backslashes, an empty `?` or
+  `#`, a path such as `/a/..`). The output is that URL's origin followed by `/names#/name/...`. An `http://` base,
+  such as a local front door at `http://127.0.0.1`, is refused.
 
 | Code | Refused |
 |---|---|

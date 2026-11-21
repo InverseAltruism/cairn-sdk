@@ -70,6 +70,22 @@ for (const v of V.https) {
   }
 }
 
+console.log("=== flipping getters ===");
+// Objects whose getter answers a checked value first and other text on a later read: the output holds only what was
+// checked, or the call refuses.
+const flipping = (key: "name" | "path", good: string, evil: string, flipAt: number, base: Record<string, string>) => {
+  let reads = 0;
+  return Object.defineProperty({ ...base }, key, { enumerable: true, get: () => (++reads >= flipAt ? evil : good) }) as unknown as CsdLink;
+};
+const nameFlip = flipping("name", "alice", "EVIL?x=1#//evil.example/", 2, {});
+const fmt = thrownCode(() => formatCsdLink(nameFlip));
+ok("a name getter that flips on its second read: format refuses or writes only the checked name",
+  fmt === "returned" ? formatCsdLink(flipping("name", "alice", "EVIL?x=1#//evil.example/", 2, {})) === "web+csd:alice" : LINK_CODES.has(fmt));
+const pathFlip = () => flipping("path", "blog", "\"><img src=x onerror=alert(1)>", 3, { name: "alice" });
+const httpsCode = thrownCode(() => csdLinkToHttps(pathFlip(), "https://cairn-substrate.com"));
+ok("a path getter that flips on its third read: the https URL holds only the checked path, or the call refuses",
+  httpsCode === "returned" ? csdLinkToHttps(pathFlip(), "https://cairn-substrate.com") === "https://cairn-substrate.com/names#/name/alice/blog" : LINK_CODES.has(httpsCode));
+
 console.log("=== the handler's call shape ===");
 // A browser's registerProtocolHandler puts the whole link, percent-encoded, where the handler URL has %s; the page
 // reads it back with URLSearchParams, which decodes it once.

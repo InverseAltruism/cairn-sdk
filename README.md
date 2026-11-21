@@ -66,7 +66,7 @@ try {
 
 **`cairn.chain`:** `tip()`, `utxos(addr)`, `submit(nodeJsonTx)`, `.client` (full `CsdClient`), `.light()` (a `LightClient` over the same RPC with no checkpoint and no batch header source: it proves nothing until seeded, and a sync from it reads one block per height through the RPC; for verified reads use `cairn.index.verifyInclusion()` and `cairn.verifyOfferForFill()`, which run the facade's light client seeded from `DEFAULT_SPV_CHECKPOINT`, or build your own `new LightClient({ client, checkpoints, headersBatchProvider })` from a pinned checkpoint). The package also re-exports the primitives under the `/chain` subpath: `buildSendVerified/buildProposeVerified/buildAttestVerified` (they check each input's value against its source transaction; use them over the bare `buildSend/buildPropose/buildAttest` with any RPC you do not run), `signTx`, `keygen`, `payloadHash`, `verifyMerkleProof`, `LightClient`, etc.
 
-**Links:** `parseCsdLink(input)`, `formatCsdLink({ name, path })` and `csdLinkToHttps(link, origin)` read and write `web+csd:<name>[/<path>]` links. A link opens a name page and authorizes nothing; the grammar and the refusal codes are in the [guide](docs/SDK-GUIDE.md#links-websd).
+**Links:** `parseCsdLink(input)`, `formatCsdLink({ name, path })` and `csdLinkToHttps(link, origin)` read and write `web+csd:<name>[/<path>]` links. A link opens a name page and authorizes nothing; the grammar and the refusal codes are in the [guide](docs/SDK-GUIDE.md#links-webcsd).
 
 Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{connect,indexer,content,chain,controller,react,testing}`.
 

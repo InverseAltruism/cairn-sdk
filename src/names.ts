@@ -13,11 +13,11 @@
 // `verifyInclusion` covers content/tx inclusion). Do not wire `resolve()` output straight into a
 // payment target you sign elsewhere.
 //
-// Input names are pre-validated with cairnx-core's own NAME_RE (the consensus grammar), so a
+// Input names are pre-validated with cairnx-core's own isName (the consensus grammar), so a
 // malformed input fails fast client-side instead of round-tripping to a 404. Responses that a dApp does
 // arithmetic or iteration on (token amounts and decimals, the list reads) are shape-checked before they are
 // returned; a body that does not match throws a typed HttpError instead of reaching the caller as a typed lie.
-import { NAME_RE, RESERVED_NAMES, TICKER_RE, HASH_RE, MAX_TOKEN_DECIMALS, parseAmount, type BidStatus, type NameState, type OfferStatus } from "@inversealtruism/cairnx-core";
+import { isName, TICKER_RE, HASH_RE, MAX_TOKEN_DECIMALS, parseAmount, type BidStatus, type NameState, type OfferStatus } from "@inversealtruism/cairnx-core";
 import type { Http } from "./http.js";
 import { HttpError } from "./errors.js";
 
@@ -99,9 +99,6 @@ export interface NameHistory {
   caveat?: string;
 }
 
-const nameOk = (n: unknown): n is string =>
-  typeof n === "string" && NAME_RE.test(n) && !RESERVED_NAMES.has(n);
-
 // parseAmount applies cairnx-core's MAX_AMOUNT; minted and served amounts may be zero.
 const amountOk = (v: unknown): v is string => parseAmount(v, { allowZero: true }) !== null;
 const decimalsOk = (d: unknown): d is number =>
@@ -163,14 +160,14 @@ export class NamesClient {
 
   /** Resolve a .csd name for DISPLAY (server-trusted; see the module trust note). null = unknown/invalid name. */
   async resolve(name: string): Promise<NameResolution | null> {
-    if (!nameOk(name)) return null;
+    if (!isName(name)) return null;
     try { return await this.http.getJson<NameResolution>(`/trade/api/cairnx/resolve/${encodeURIComponent(name)}`); }
     catch (e: any) { if (e?.status === 404) return null; throw e; }
   }
 
   /** Full detail for one name (lease, lock, resting offer, recapture). null = not registered/invalid. */
   async name(name: string): Promise<NameDetail | null> {
-    if (!nameOk(name)) return null;
+    if (!isName(name)) return null;
     try { return await this.http.getJson<NameDetail>(`/trade/api/cairnx/name/${encodeURIComponent(name)}`); }
     catch (e: any) { if (e?.status === 404) return null; throw e; }
   }
@@ -178,7 +175,7 @@ export class NamesClient {
   /** The event history of one name (registrations, transfers, sets, renewals) with the server's current
    *  claim. null = invalid or unregistered name. Throws a typed HttpError on a malformed body. */
   async nameHistory(name: string): Promise<NameHistory | null> {
-    if (!nameOk(name)) return null;
+    if (!isName(name)) return null;
     const path = `/trade/api/cairnx/name-history/${encodeURIComponent(name)}`;
     let h: unknown;
     try { h = await this.http.getJson<unknown>(path); }
