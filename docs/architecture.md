@@ -18,6 +18,7 @@ contract couplings and the integration notes. `AGENTS.md` keeps the rules; this 
   not-found (+ equivocation flag), SSE-over-fetch with reconnect + 1MiB buffer cap, WS subscribe.
 - `content.ts`: prepare/put/hash, verified get/getBytes from the cairn origin, hash format gated against path-walk.
 - `names.ts`: NamesClient over /trade/api/cairnx/*; inputs pre-validated with cairnx-core NAME_RE + RESERVED_NAMES.
+- `csdlink.ts`: `web+csd:` links (parse, format, the https page beside a link); names checked with cairnx-core `isName`, no I/O.
 - `chain.ts`: tip/utxos/submit/light(); Chain.send() = key-backed send via buildSendVerified + verifyInputValues
   (fail-closed). It reads the submit with `classifySubmit` and throws SubmitInFlightError with the signed txid and
   the signed tx as `nodeJson` for a duplicate or an outcome without a verdict, a final CairnError `SUBMIT_REJECTED`
