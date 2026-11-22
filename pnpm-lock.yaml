@@ -8,9 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@inversealtruism/cairnx-api':
+        specifier: 0.1.2
+        version: 0.1.2(@inversealtruism/cairnx-core@0.2.9)
       '@inversealtruism/cairnx-core':
-        specifier: 0.2.8
-        version: 0.2.8
+        specifier: 0.2.9
+        version: 0.2.9
       '@inversealtruism/csd-client':
         specifier: 0.1.20
         version: 0.1.20
@@ -423,8 +426,14 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@inversealtruism/cairnx-core@0.2.8':
-    resolution: {integrity: sha512-39kXJ7wZyIIRjpoaHOmVHxgbY2NdQMXcA74fjhWouD6ReUtnmEm71q0SmSnoG1Y71JATL5ItvJYmk8CbFhl8Zw==}
+  '@inversealtruism/cairnx-api@0.1.2':
+    resolution: {integrity: sha512-91vHH9GcUP241dLbI/60ZnpINcjYJB54CcObgIdiNb6m5cqzOSe+ysEpoGmLRuS2KF1zhkamlOZ5p2QM3bt3gA==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@inversealtruism/cairnx-core': 0.2.9
+
+  '@inversealtruism/cairnx-core@0.2.9':
+    resolution: {integrity: sha512-dlvdcXrygwwcOwr2bTpLrQaHhdta6pElKlK2U5BirbMAhX4+woPIRECKRo8vpajNXqHfmuj75YEUqYzdoahwtQ==}
     engines: {node: '>=18'}
 
   '@inversealtruism/csd-client@0.1.20':
@@ -1027,7 +1036,12 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@inversealtruism/cairnx-core@0.2.8':
+  '@inversealtruism/cairnx-api@0.1.2(@inversealtruism/cairnx-core@0.2.9)':
+    dependencies:
+      '@inversealtruism/cairnx-core': 0.2.9
+      '@noble/hashes': 1.8.0
+
+  '@inversealtruism/cairnx-core@0.2.9':
     dependencies:
       '@inversealtruism/csd-codec': 0.1.18
       '@noble/hashes': 1.8.0
