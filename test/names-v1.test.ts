@@ -134,7 +134,6 @@ async function main() {
     ["a network error", (u) => (v1Path(u.pathname) ? "throw" : undefined)],
     ["ok: false", (u) => (v1Path(u.pathname) ? json(200, { ok: false, error: { code: "INTERNAL", message: "x" } }) : undefined)],
     ["rows not an array", (u) => (v1Path(u.pathname) ? json(200, { ok: true, level: 1, at: p1.at, rows: {}, next: null }) : undefined)],
-    ["a malformed at", (u) => (v1Path(u.pathname) ? json(200, { ...p1, ok: true, level: 1, at: { height: "1" } }) : undefined)],
   ];
   for (const [kind, route, timeoutMs] of kinds) {
     const { names, calls } = client(route, timeoutMs);
@@ -163,6 +162,70 @@ async function main() {
     const both = client((u) => (v1Path(u.pathname) || u.pathname === LEGACY ? json(500, { ok: false }) : undefined));
     const le = await grab(() => both.names.namesPage());
     check("when the legacy read fails too, its error is the caller's", le instanceof HttpError && le.status === 500 && both.calls.at(-1) === LEGACY);
+  }
+
+  console.log("a page's at is kept only when cairnx-api's parser takes it back");
+  {
+    const row = keyRows[0]!;
+    for (const [label, at, kept] of [
+      ["a 16-hex rev", { ...p1.at }, true],
+      ["a rev in another form", { ...p1.at, rev: "v2-0123456789abcdef" }, false],
+      ["a 20-digit rev", { ...p1.at, rev: "0123456789abcdef0123" }, false],
+      ["an uppercase rev", { ...p1.at, rev: "A123456789ABCDEF" }, false],
+      ["a height that is a string", { ...p1.at, height: String(p1.at.height) }, false],
+    ] as const) {
+      const { names, calls } = client((u) => (v1Path(u.pathname) ? json(200, { ok: true, level: 1, at, rows: [row], next: u.searchParams.has("after") ? null : row.name, total: 2 }) : undefined));
+      const a = await names.namesPage({ limit: 1 });
+      const b = await grab(() => names.namesPage({ limit: 1, after: a.next, at: a.at }));
+      const sent = calls[1] === undefined ? null : new URL(ORIGIN + calls[1]).searchParams.get("at");
+      check(`${label}: page 1 from v1 with at ${kept ? "kept" : "null"}; page 2 is sent${kept ? " pinned" : " unpinned"}, no INVALID_QUERY`,
+        isDeepStrictEqual(a.rows, [row]) && (kept ? isDeepStrictEqual(a.at, p1.at) : a.at === null) && !calls.includes(LEGACY)
+        && !(b instanceof Error) && calls.length === 2 && sent === (kept ? `${p1.at.height}:${p1.at.hash}:${p1.at.rev}` : null));
+    }
+  }
+
+  console.log("a walk that mixes two states, and the guide's readAllNames");
+  {
+    // The guide's example, run as written (its fenced block holds plain JavaScript).
+    const guide = readFileSync(new URL("../docs/SDK-GUIDE.md", import.meta.url), "utf8");
+    const block = guide.split("```").find((b) => b.includes("async function readAllNames"));
+    if (block === undefined) throw new Error("docs/SDK-GUIDE.md has no readAllNames block");
+    const code = block.replace(/^ts\n/, "").split("\nconst all = await")[0]!;
+    const readAllNames = new Function(`${code}\nreturn readAllNames;`)() as (n: NamesClient, o?: { limit?: number; restarts?: number }) => Promise<NameRow[]>;
+    // v1 is cairnx-api's handler over the full list; the legacy list lacks a row of page 1's range (a cached copy).
+    const at = { height: 146981, hash: `0x${"00".repeat(31)}01` };
+    const viewOf = (rows: readonly NameRow[]) => prepareView({ tipHeight: at.height, names: Object.fromEntries(rows.map((r) => [r.name, r])), offers: {}, bids: {}, tokens: {}, balances: {}, events: [] } as unknown as CairnXState, { height: at.height, hash: at.hash, input: "walk", core: "0.2.9" });
+    const fresh = viewOf(legacyRows);
+    const victim = [...legacyRows].sort((a, b) => (a.name < b.name ? -1 : 1))[1]!.name;
+    const stale = legacyRows.filter((r) => r.name !== victim);
+    const v1Down = (first: number) => { let n = 0; return (u: URL) => {
+      if (u.pathname === LEGACY) return json(200, stale);
+      if (!v1Path(u.pathname)) return undefined;
+      if (n++ < first) return json(502, { ok: false, error: { code: "UPSTREAM_UNAVAILABLE", message: "x" } });
+      const r = answer([fresh], "names", u.searchParams); return json(r.status, r.body);
+    }; };
+    // The reviewer's reproduction: page 1 from the legacy list, the later pages pinned on v1.
+    const raw = client(v1Down(1));
+    let page = await raw.names.namesPage({ limit: 50 });
+    const ats = [page.at];
+    const mixed = [...page.rows];
+    while (page.next !== null) { page = await raw.names.namesPage({ limit: 50, after: page.next, at: page.at }); ats.push(page.at); mixed.push(...page.rows); }
+    check("the transition: page 1 at null (legacy), page 2 on v1 with an at; a walk that ignores it misses a row of the state",
+      ats[0] === null && ats[1]?.hash === at.hash && ats.slice(1).every((a) => isDeepStrictEqual(a, ats[1])) && mixed.length === legacyRows.length - 1 && page.total === legacyRows.length);
+    const names = (rows: NameRow[]) => rows.map((r) => r.name);
+    const healed = client(v1Down(1));
+    const all = await readAllNames(healed.names, { limit: 50 });
+    check("readAllNames starts again at the null at and returns the v1 state whole, once each, in name order",
+      isDeepStrictEqual(names(all), names([...legacyRows].sort((a, b) => (a.name < b.name ? -1 : 1)))) && healed.calls.filter((c) => c === LEGACY).length === 1);
+    const ok = client(v1Down(0));
+    const direct = await readAllNames(ok.names, { limit: 50 });
+    check("honest path: v1 healthy, one attempt, four pages pinned", direct.length === legacyRows.length && ok.calls.length === 4 && ok.calls.slice(1).every((c) => c.includes("at=")));
+    const legacyOnly = client((u) => (v1Path(u.pathname) ? json(404, {}) : u.pathname === LEGACY ? json(200, legacyRows) : undefined));
+    const e = await grab(() => readAllNames(legacyOnly.names, { limit: 50, restarts: 2 }));
+    check("a host without the read API and more than one page: readAllNames gives up after its restarts (3 reads)",
+      e instanceof Error && /names\(\) once/.test(e.message) && legacyOnly.calls.length === 6);
+    const single = await readAllNames(legacyOnly.names, { limit: 200 });
+    check("a single legacy page is one read of one list and is returned", single.length === legacyRows.length);
   }
 
   console.log("the legacy page against cairnx-api's own handler over the same rows");

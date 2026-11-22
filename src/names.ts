@@ -284,8 +284,9 @@ export class NamesClient {
   names(): Promise<unknown[]> { return this.list(`/trade/api/cairnx/names`); }
 
   /**
-   * A page of the names list from the read API (`/api/cairnx/v1/names`), typed. Walk with `{ after: page.next, at:
-   * page.at }` until `next` is null. When the front door has no read API or its answer is not a page, a read without
+   * A page of the names list from the read API (`/api/cairnx/v1/names`), typed. Walk with `{ after: page.next, at }`,
+   * `at` being page 1's, until `next` is null. The walk holds one state only when every page carries that same
+   * non-null `at`; a page with `at: null` or another `at` means start the walk again (the guide's `readAllNames`). When the front door has no read API or its answer is not a page, a read without
    * `at`, `owner` or `status` is answered from the legacy list in the same order and paging (`at: null`); any other
    * read throws the read API's error (an `HttpError`, 409 for a snapshot no longer held). An option outside the
    * read's grammar throws a `CairnError` with code `INVALID_QUERY` before any request.
@@ -302,8 +303,10 @@ export class NamesClient {
     return legacyNamesPage(rows as NameRow[], q);
   }
 
-  /** One name for display over `names?keys=<name>`, with cairnx-core's forward resolution. null = not a name (the
-   *  input is checked with cairnx-core's `isName`; nothing is sent). Falls back as `namesPage` does. */
+  /** One name for display over `names?keys=<name>`, with cairnx-core's forward resolution (server-trusted; see the
+   *  module trust note). null = not a name (the input is checked with cairnx-core's `isName`; nothing is sent). Falls
+   *  back as `namesPage` does: on a host without the read API each lookup reads the whole legacy list, bounded by the
+   *  HTTP client's byte cap (16 MiB by default) and timeout. */
   async lookup(name: string): Promise<NameLookup | null> {
     if (!isName(name)) return null;
     const page = await this.namesPage({ keys: [name] });

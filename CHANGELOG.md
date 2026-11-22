@@ -14,6 +14,10 @@
   a timeout, a network error, `ok: false`) is answered from the legacy list `/trade/api/cairnx/names`, sorted and
   paged with cairnx-api's cursor codec, with `at: null`. A read with `at`, `owner` or `status` has no legacy answer
   and throws the read API's error. The guide states the rule ("Names: pages and lookups").
+- A page's `at` is kept only when cairnx-api's parser takes it back as the next read's `at`; any other `at` (a form
+  of `rev` this release does not parse, say) gives the page `at: null`. A walk of more than one page holds one state
+  only when every page carries the same non-null `at`: a page with `at: null` or another `at` means start again. The
+  guide's example, `readAllNames`, does so with a bounded number of restarts.
 - Types: `NamesPage`, `NamesPageOptions`, `NameLookup` from the root entry. No type of cairnx-api is re-exported:
   it is pre-1.0, and these two calls follow it until its 1.0.0.
 
