@@ -17,7 +17,13 @@ contract couplings and the integration notes. `AGENTS.md` keeps the rules; this 
   pages, then throws HttpError) + verifyInclusion(txid) with TrustLevel = verified-inclusion | proof-consistent |
   not-found (+ equivocation flag), SSE-over-fetch with reconnect + 1MiB buffer cap, WS subscribe.
 - `content.ts`: prepare/put/hash, verified get/getBytes from the cairn origin, hash format gated against path-walk.
-- `names.ts`: NamesClient over /trade/api/cairnx/*; inputs pre-validated with cairnx-core `isName`.
+- `names.ts`: NamesClient over /trade/api/cairnx/*; inputs pre-validated with cairnx-core `isName`. `namesPage` and
+  `lookup` read `/api/cairnx/v1/names` through `apiv1.ts` and answer from the legacy list when it has an answer, sorted
+  and paged with cairnx-api's cursor codec; `lookup` resolves with cairnx-core's `resolveNameIn`.
+- `apiv1.ts`: page reads of the CairnX read API, version 1: the query checked with cairnx-api's `parseQuery` before a
+  request, the page shape check, and the fallback rule (the site's, cairn `public/trade/apiv1.js`; the guide states
+  it). Types come from `@inversealtruism/cairnx-api` (pre-1.0); no entry re-exports one
+  (`test/no-registry-surface.test.mjs`).
 - `csdlink.ts`: `web+csd:` links (parse, format, the https page beside a link); names checked with cairnx-core `isName`, no I/O.
 - `chain.ts`: tip/utxos/submit/light(); Chain.send() = key-backed send via buildSendVerified + verifyInputValues
   (fail-closed). It reads the submit with `classifySubmit` and throws SubmitInFlightError with the signed txid and
@@ -49,7 +55,7 @@ Outside `src/`:
 ## The hosted bases
 
 Everything defaults to the hosted public bases at https://cairn-substrate.com: RPC proxy /api/rpc, SPV headers
-/api/headers, content /content, indexer proxy /explorer/api, names /trade/api/cairnx/*. Those are reverse proxies in
+/api/headers, content /content, indexer proxy /explorer/api, names /trade/api/cairnx/* and the read API /api/cairnx/v1/*. Those are reverse proxies in
 front of the node, the csd-indexer, and the cairnx names/market resolver; every base is overridable via CairnConfig for
 self-hosted setups. The chain is the only source of truth; every read carries an honest trust level, described once in
 `docs/SDK-GUIDE.md` ("What the SDK verifies vs trusts").

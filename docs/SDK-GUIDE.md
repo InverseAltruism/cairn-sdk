@@ -144,6 +144,44 @@ is compared with the wallet by hand at each wallet release.
 | `…/testing` | `mockCairnProvider`, `installMockCairn`: a mock of the wallet's provider for your tests (no key, signs nothing) |
 | `@inversealtruism/csd-siwc` | **server-side** SIWC verify (`verifySiwc`, `generateNonce`) |
 
+## Names: pages and lookups
+
+`cairn.names.namesPage(opts)` reads one page of the names list from the CairnX read API, version 1
+(`/api/cairnx/v1/names`). Rows are `NameRow` from `@inversealtruism/cairnx-api` (cairnx-core's `NameState`: `name`,
+`owner`, `addr`, `profile`, `viaFill`, the lease fields). That package is pre-1.0, and these calls follow it: a
+release before its 1.0.0 may change a parameter or a field, and this SDK's changelog names it.
+
+```ts
+let page = await cairn.names.namesPage({ limit: 200 });
+const all = [...page.rows];
+while (page.next !== null) {
+  page = await cairn.names.namesPage({ limit: 200, after: page.next, at: page.at });
+  all.push(...page.rows);
+}
+```
+
+- Options: `keys` (1 to 32 names; excludes every other option but `at`), `after` (a page's `next`), `limit` (1 to
+  200; the server's default is 100), `at` (a page's `at`), `owner`, `status` (`held`, `pending`, `lapsed`), `order`
+  (`name`, bytewise, the default; `newest`). An option outside that grammar throws a `CairnError` with code
+  `INVALID_QUERY` before any request (the check is cairnx-api's `parseQuery`).
+- `at` is the snapshot a page describes. Passing it back reads every page from that one state; a server that no longer
+  holds it answers 409 (an `HttpError` whose body names `SNAPSHOT_NOT_HELD`), and the walk starts again without `at`.
+  A walk ends on `next === null`; `total`, when present, is a count and never ends a walk.
+- `cairn.names.lookup(name)` reads one name over `names?keys=<name>` and returns `{ name, row, resolved, at }`:
+  `resolved` is cairnx-core's `resolveNameIn` over the row (the `nset` address, else the owner; null for no row or a
+  pending reservation; `lapsed: true` for a lease that ran out). null means the input is not a name.
+
+Fallback. On a front door without the read API, both calls answer from the legacy list
+(`/trade/api/cairnx/names`), the read `names()` makes. The rule is the site's: anything but a 2xx whose JSON body is a
+page (`ok: true`, `rows` an array, a well-formed `at`, `next` a string or null) falls back, whatever the cause: a 404
+(no read API), a 5xx, a body that is not JSON, the request timeout, a network error, `ok: false`. The legacy rows are
+sorted and paged with cairnx-api's cursor codec, so a page holds the rows the read API gives for the same query, with
+`at: null`. A read the legacy list cannot answer has no fallback and throws the read API's error: one with `at` (the
+legacy list names no snapshot) or with `owner` or `status` (filters are the read API's). If the legacy read fails as
+well, its error is thrown.
+
+These are display reads like the rest of `cairn.names`: an answer is the server's word, never a payment target.
+
 ## What the SDK verifies vs trusts (read this)
 
 The honest trust model: funds are safe even against a malicious RPC, because **the wallet signs
@@ -297,7 +335,8 @@ Codes: `NOT_INSTALLED`, `USER_REJECTED`, `WALLET_LOCKED`, `UNSUPPORTED_METHOD`, 
 a 2xx body whose shape is wrong, such as a names list read that is not an array), `CONTENT_VERIFICATION`,
 `CONTENT_NOT_JSON` (`content.get()` on verified bytes that are not JSON), `WALLET_TIMEOUT` (a write method
 outlasted the connection timeout; see below), `WALLET_RELOADED` (the wallet was updated or reloaded under the
-page; the request never reached it, and the page must reload to reach the wallet again), `UNKNOWN`, the `LINK_*`
+page; the request never reached it, and the page must reload to reach the wallet again), `INVALID_QUERY` (a
+`namesPage` option outside the read's grammar; nothing was sent), `UNKNOWN`, the `LINK_*`
 codes of [Links](#links-webcsd), and every wallet code below.
 
 > **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the

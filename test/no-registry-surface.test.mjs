@@ -21,7 +21,8 @@ const fixture = JSON.parse(readFileSync(join(root, "test/fixtures/public-surface
 const ADDED = {
   chain: ["buildProposeVerified", "buildAttestVerified", "classifySubmit", "SubmitOutcome", "SubmitVerdict"],
   index: ["classifySubmit", "SubmitOutcome", "SubmitVerdict",
-    "parseCsdLink", "formatCsdLink", "csdLinkToHttps", "CsdLink", "CsdLinkCode", "CsdLinkParse"],
+    "parseCsdLink", "formatCsdLink", "csdLinkToHttps", "CsdLink", "CsdLinkCode", "CsdLinkParse",
+    "NamesPage", "NamesPageOptions", "NameLookup"],
   testing: ["mockCairnProvider", "installMockCairn", "MockCairnProvider", "MockCairnOptions", "MockAnswer", "MockMethod", "MockCall",
     "MockCapabilities", "MockCairnTarget", "DisconnectReason"],
 };
@@ -111,6 +112,22 @@ try {
   ok("each entry exports exactly the 0.6.0 names outside the registry surface plus ADDED: none missing, none other added", () => {
     assert.deepEqual(Object.keys(pinned).sort(), entries);
     for (const e of entries) assert.deepEqual([...typeExports[e]].sort(), [...pinned[e]].sort(), e);
+  });
+  // cairnx-api is pre-1.0: its types appear in the SDK's signatures, and no entry re-exports one of its names, as a
+  // value or a type, so none reads as part of this package's own surface.
+  ok("no entry exports a name that @inversealtruism/cairnx-api exports", () => {
+    const api = ts.createProgram([join(root, "node_modules/@inversealtruism/cairnx-api/dist/index.d.ts")], {
+      module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, skipLibCheck: true, noEmit: true, types: [],
+    });
+    const apiChecker = api.getTypeChecker();
+    const apiNames = apiChecker.getExportsOfModule(apiChecker.getSymbolAtLocation(api.getSourceFile(join(root, "node_modules/@inversealtruism/cairnx-api/dist/index.d.ts")))).map((x) => x.name);
+    assert.ok(apiNames.includes("NameRow") && apiNames.includes("Page") && apiNames.length > 40, `cairnx-api exports read: ${apiNames.length}`);
+    for (const e of entries) assert.deepEqual(typeExports[e].filter((n) => apiNames.includes(n)), [], e);
+  });
+  ok("NamesClient keeps every 0.8.8 method and adds namesPage and lookup", () => {
+    const have = Object.getOwnPropertyNames(runtime.index.NamesClient.prototype).filter((n) => n !== "constructor").sort();
+    const kept = ["resolve", "name", "nameHistory", "primary", "namesOf", "names", "tokens", "token", "offers", "bids", "state"];
+    for (const m of [...kept, "namesPage", "lookup"]) assert.ok(have.includes(m), m);
   });
   ok("every other IndexerClient method of 0.6.0 is still a method, and nothing was added", () => {
     const have = Object.getOwnPropertyNames(runtime.indexer.IndexerClient.prototype).filter((n) => n !== "constructor").sort();

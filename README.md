@@ -60,7 +60,12 @@ try {
 
 **`cairn.index`:** `tipHeight()`, `block()/blockTxids()`, `tx()/txStatus()/txMerkleProof()`, `address()/addressTxs()/addressUtxo()` (every unspent output, read in pages of 1,000 up to 100 pages; a full 100th page throws `HttpError`), `domains()/domainProposals(domain)`, `proposal()/attestations()`, `reputation()`, **`verifyInclusion(txid)`** (proves `txid` is a node of a PoW-verified block's merkle tree; an inner node or a block's root folds too, so hash the transaction body you hold to get the id, see the guide), `streamAll()/streamBlocks()/streamDomain()` (SSE), `subscribe()` (WS).
 
-**`cairn.names`:** `resolve(name)` (display-path name to address), `name(name)`/`nameHistory(name)`, `primary(addr)` (reverse lookup)/`namesOf(addr)`, `names()`, `tokens()/token(ticker)`, `offers()`/`bids()` (open rows by default; pass `{ status }` for another status, or `{ status: "all" }` for every row), `state()` (the canonical CairnX state). Reads go through the public `/trade/api/cairnx/*` proxy; for payment-grade name resolution verify through the wallet or a replaying resolver, not a bare read (see `src/names.ts` header).
+**`cairn.names`:** `resolve(name)` (display-path name to address), `name(name)`/`nameHistory(name)`, `primary(addr)` (reverse lookup)/`namesOf(addr)`, `names()` (the whole list, untyped), `namesPage(opts)` (a typed page of the read API, below), `lookup(name)` (one name for display, with its address by cairnx-core's `resolveNameIn`), `tokens()/token(ticker)`, `offers()`/`bids()` (open rows by default; pass `{ status }` for another status, or `{ status: "all" }` for every row), `state()` (the canonical CairnX state). Reads go through the public `/trade/api/cairnx/*` proxy; for payment-grade name resolution verify through the wallet or a replaying resolver, not a bare read (see `src/names.ts` header).
+
+`namesPage` and `lookup` read the CairnX read API (`/api/cairnx/v1/names`); their rows are `NameRow` from
+`@inversealtruism/cairnx-api`, a pre-1.0 package, so these two calls may change with it until its 1.0.0. On a front
+door without the read API they answer from the legacy list (`at: null`). The guide has the walk and the fallback rule
+("Names: pages and lookups").
 
 **`cairn.content`:** `prepare(obj)`/`put(obj)` → `{ payloadHash, canonical, bytes }`; `get(hash)` / `getBytes(hash)` (fetch **and verify** `sha256(bytes) === hash`, throws `ContentVerificationError` on tamper); `hash(obj)`.
 
