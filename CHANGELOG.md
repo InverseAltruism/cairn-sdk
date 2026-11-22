@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `cairn.names.namesPage(opts)`: a typed page of the names list from the CairnX read API, version 1
+  (`/api/cairnx/v1/names`), with `keys`, `after`, `limit`, `at`, `owner`, `status` and `order`; it returns
+  `{ rows, next, at, total? }` with rows of `NameRow` from `@inversealtruism/cairnx-api`. Options are checked with
+  cairnx-api's `parseQuery` before a request; a refused one throws a `CairnError` with the new code `INVALID_QUERY`.
+- `cairn.names.lookup(name)`: one name over `names?keys=<name>`, `{ name, row, resolved, at }`, where `resolved` is
+  cairnx-core's `resolveNameIn` over the row.
+- Fallback for both: on a front door without the read API, anything but a 2xx page (404, 5xx, a body that is not JSON,
+  a timeout, a network error, `ok: false`) is answered from the legacy list `/trade/api/cairnx/names`, sorted and
+  paged with cairnx-api's cursor codec, with `at: null`. A read with `at`, `owner` or `status` has no legacy answer
+  and throws the read API's error. The guide states the rule ("Names: pages and lookups").
+- A page's `at` is kept only when cairnx-api's parser takes it back as the next read's `at`; any other `at` (a form
+  of `rev` this release does not parse, say) gives the page `at: null`. A walk of more than one page holds one state
+  only when every page carries the same non-null `at`: a page with `at: null` or another `at` means start again. The
+  guide's example, `readAllNames`, does so with a bounded number of restarts.
+- Types: `NamesPage`, `NamesPageOptions`, `NameLookup` from the root entry. No type of cairnx-api is re-exported:
+  it is pre-1.0, and these two calls follow it until its 1.0.0.
+
+### Changed
+
+- New dependency `@inversealtruism/cairnx-api` 0.1.2 (exact), whose exact peer is cairnx-core 0.2.9, so
+  `@inversealtruism/cairnx-core` moves from 0.2.8 to 0.2.9 (no export changed between them). Every 0.8.8 call is
+  unchanged: `names()`, `resolve()`, `name()` and the rest read the legacy routes as before.
+
+### Docs and internal
+
+- `test/names-v1.test.ts` runs both calls on answers of the live front door recorded on 2026-11-22
+  (`test/fixtures/apiv1-names-2026-11-22.json`), each fallback cause, the reads without fallback, and every page of
+  walks in both orders against cairnx-api's own handler over the same rows.
+- `test/packed-testing.test.mjs` packs this package with `pnpm pack`, installs the tarball into a throwaway project
+  and imports `@inversealtruism/cairn-sdk/testing` there as an ES module and with `require()`: connect, the address,
+  sign-in, a send with its txid, a rejection and a locked wallet, through `WalletConnection` from the packed root
+  entry. `scripts/check-consumer-types.mjs` exports the install step it shares with that test (`installPackage`).
+
 ## 0.8.8
 
 ### Added

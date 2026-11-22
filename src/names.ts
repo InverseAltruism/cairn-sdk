@@ -17,9 +17,11 @@
 // malformed input fails fast client-side instead of round-tripping to a 404. Responses that a dApp does
 // arithmetic or iteration on (token amounts and decimals, the list reads) are shape-checked before they are
 // returned; a body that does not match throws a typed HttpError instead of reaching the caller as a typed lie.
-import { isName, TICKER_RE, HASH_RE, MAX_TOKEN_DECIMALS, parseAmount, type BidStatus, type NameState, type OfferStatus } from "@inversealtruism/cairnx-core";
+import { ROUTE_TABLE, type At, type CursorCodec, type NameRow, type NameStatus, type OrderOf, type Query } from "@inversealtruism/cairnx-api";
+import { isName, resolveNameIn, TICKER_RE, HASH_RE, MAX_TOKEN_DECIMALS, parseAmount, type BidStatus, type NameState, type OfferStatus, type ResolvedName } from "@inversealtruism/cairnx-core";
 import type { Http } from "./http.js";
-import { HttpError } from "./errors.js";
+import { CairnError, HttpError } from "./errors.js";
+import { atParam, checkedQuery, legacyAnswers, readV1, type AtParam, type ListPage } from "./apiv1.js";
 
 /** `/cairnx/resolve/:name`: the display-path name→address resolution. */
 export interface NameResolution {
@@ -97,6 +99,84 @@ export interface NameHistory {
   /** `false`: replaying only `events` cannot prove this name's owner (see `caveat`); never treat a match as verified. */
   scopedReplaySufficient: boolean;
   caveat?: string;
+}
+
+/**
+ * A read of the names list (`names` of the CairnX read API, version 1). Pre-1.0: the parameters follow
+ * `@inversealtruism/cairnx-api`, which may change them in any release before its 1.0.0.
+ */
+export interface NamesPageOptions {
+  /** 1 to 32 names: their rows only, in name order. Excludes every option but `at`. */
+  keys?: readonly string[];
+  /** A page's `next`: the page after it. */
+  after?: string | null;
+  /** Rows per page, 1 to 200 (the server's default is 100). */
+  limit?: number;
+  /** A page's `at`: read the same snapshot. A server that no longer holds it answers 409; start the walk again. */
+  at?: AtParam | null;
+  /** Names this address owns, reservations included. */
+  owner?: string;
+  /** `held` (neither pending nor lapsed), `pending` (a reservation) or `lapsed`. */
+  status?: NameStatus;
+  /** `name` (the default, bytewise) or `newest` (height descending, then name). */
+  order?: OrderOf<"names">;
+}
+
+/** A page of the names list. Rows are cairnx-api's `NameRow` (cairnx-core's `NameState`), a pre-1.0 type. `at` is
+ *  null when the front door has no read API and the legacy list answered. */
+export type NamesPage = ListPage<NameRow>;
+
+/** One name for display, read over `names?keys=`. Server-trusted, like every names read: never a payment target. */
+export interface NameLookup {
+  name: string;
+  /** The name's row as the server holds it; null when it holds none. */
+  row: NameRow | null;
+  /** cairnx-core's `resolveNameIn` over `row`: the `nset` address, else the owner; null for no row or a pending
+   *  reservation. `lapsed: true` is a lease that ran out, which a sender refuses. */
+  resolved: ResolvedName | null;
+  /** The snapshot the row describes; null when the legacy list answered. */
+  at: At | null;
+}
+
+const nameRowOk = (r: unknown): r is NameRow =>
+  !!r && typeof r === "object" && typeof (r as Record<string, unknown>).name === "string" && typeof (r as Record<string, unknown>).owner === "string";
+
+/** The query of a names read, in a fixed order; an unset option is left out. */
+function namesParams(o: NamesPageOptions): URLSearchParams {
+  const p = new URLSearchParams();
+  if (o.keys !== undefined) {
+    // A comma would split one key into two in the query; cairnx-api's parser checks each key's grammar.
+    if (!Array.isArray(o.keys) || o.keys.some((k) => typeof k !== "string" || k.includes(","))) {
+      throw new CairnError("invalid names read: keys must be names", { code: "INVALID_QUERY" });
+    }
+    p.set("keys", o.keys.join(","));
+  }
+  if (o.at != null) p.set("at", atParam(o.at));
+  if (o.after != null) p.set("after", o.after);
+  if (o.limit !== undefined) p.set("limit", String(o.limit));
+  if (o.order !== undefined) p.set("order", o.order);
+  if (o.owner !== undefined) p.set("owner", o.owner);
+  if (o.status !== undefined) p.set("status", o.status);
+  return p;
+}
+
+/** The page `q` asks for, from the legacy whole list: sorted and paged with cairnx-api's codec for the order, so it
+ *  holds the rows a v1 server gives for the same query. Names are distinct, so a page never splits a key. */
+function legacyNamesPage(rows: readonly NameRow[], q: Query<"names">): NamesPage {
+  const codec = (ROUTE_TABLE.names.orders as Record<string, unknown>)[q.order] as CursorCodec<unknown, NameRow>;
+  const sorted = [...rows].sort((a, b) => codec.compare(codec.of(a), codec.of(b)));
+  if (q.keys !== null) {
+    const want = new Set(q.keys);
+    const hit = sorted.filter((r) => want.has(r.name));
+    return { rows: hit, next: null, at: null, total: hit.length };
+  }
+  const after = q.after;
+  const found = after === null ? 0 : sorted.findIndex((r) => codec.compare(codec.of(r), after) > 0);
+  const start = found < 0 ? sorted.length : found;
+  const page = sorted.slice(start, start + q.limit);
+  const last = page[page.length - 1];
+  const next = start + q.limit < sorted.length && last !== undefined ? codec.encode(codec.of(last)) : null;
+  return { rows: page, next, at: null, total: sorted.length };
 }
 
 // parseAmount applies cairnx-core's MAX_AMOUNT; minted and served amounts may be zero.
@@ -199,8 +279,42 @@ export class NamesClient {
     catch (e: any) { if (e?.status === 404) return null; throw e; }
   }
 
-  /** All registered names (display list; short-edge-cached server-side). */
+  /** All registered names (display list; short-edge-cached server-side). The legacy whole list, in the server's
+   *  order; `namesPage` reads it by page with typed rows. */
   names(): Promise<unknown[]> { return this.list(`/trade/api/cairnx/names`); }
+
+  /**
+   * A page of the names list from the read API (`/api/cairnx/v1/names`), typed. Walk with `{ after: page.next, at }`,
+   * `at` being page 1's, until `next` is null. The walk holds one state only when every page carries that same
+   * non-null `at`; a page with `at: null` or another `at` means start the walk again (the guide's `readAllNames`). When the front door has no read API or its answer is not a page, a read without
+   * `at`, `owner` or `status` is answered from the legacy list in the same order and paging (`at: null`); any other
+   * read throws the read API's error (an `HttpError`, 409 for a snapshot no longer held). An option outside the
+   * read's grammar throws a `CairnError` with code `INVALID_QUERY` before any request.
+   */
+  async namesPage(opts: NamesPageOptions = {}): Promise<NamesPage> {
+    const params = namesParams(opts);
+    const q = checkedQuery("names", params);
+    const v1 = await readV1(this.http, "names", params, nameRowOk);
+    if (v1.ok) return v1.page;
+    if (!legacyAnswers(q)) throw v1.error;
+    const path = `/trade/api/cairnx/names`;
+    const rows = await this.list(path);
+    rows.forEach((r, i) => { if (!nameRowOk(r)) throw this.malformed(path, `name row ${i} is not a name record`); });
+    return legacyNamesPage(rows as NameRow[], q);
+  }
+
+  /** One name for display over `names?keys=<name>`, with cairnx-core's forward resolution (server-trusted; see the
+   *  module trust note). null = not a name (the input is checked with cairnx-core's `isName`; nothing is sent). Falls
+   *  back as `namesPage` does: on a host without the read API each lookup reads the whole legacy list, bounded by the
+   *  HTTP client's byte cap (16 MiB by default) and timeout. */
+  async lookup(name: string): Promise<NameLookup | null> {
+    if (!isName(name)) return null;
+    const page = await this.namesPage({ keys: [name] });
+    const row = page.rows.find((r) => r.name === name) ?? null;
+    const held: Record<string, NameState> = Object.create(null);
+    if (row) held[name] = row;
+    return { name, row, resolved: row ? resolveNameIn(held, name) : null, at: page.at };
+  }
 
   /** All deployed tokens. Throws a typed HttpError if any row has a malformed ticker, decimals or amount. */
   async tokens(): Promise<TokenInfo[]> {

@@ -82,6 +82,8 @@ export type KnownCode =
   | "LINK_PATH"
   | "LINK_TOO_LONG"
   | "LINK_ORIGIN"
+  // SDK-side: a names read whose options cairnx-api's parser refuses (src/apiv1.ts); nothing was sent
+  | "INVALID_QUERY"
   | "UNKNOWN";
 
 /** Stable machine-readable error codes (branch on these, not the message text). A code the wallet sent that this

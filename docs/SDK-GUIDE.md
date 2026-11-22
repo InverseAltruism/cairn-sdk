@@ -144,6 +144,65 @@ is compared with the wallet by hand at each wallet release.
 | `…/testing` | `mockCairnProvider`, `installMockCairn`: a mock of the wallet's provider for your tests (no key, signs nothing) |
 | `@inversealtruism/csd-siwc` | **server-side** SIWC verify (`verifySiwc`, `generateNonce`) |
 
+## Names: pages and lookups
+
+`cairn.names.namesPage(opts)` reads one page of the names list from the CairnX read API, version 1
+(`/api/cairnx/v1/names`). Rows are `NameRow` from `@inversealtruism/cairnx-api` (cairnx-core's `NameState`: `name`,
+`owner`, `addr`, `profile`, `viaFill`, the lease fields). That package is pre-1.0, and these calls follow it: a
+release before its 1.0.0 may change a parameter or a field, and this SDK's changelog names it.
+
+```ts
+// Every row of the names list from one state; starts again when a page comes from another state.
+async function readAllNames(names, { limit = 200, restarts = 3 } = {}) {
+  const same = (a, b) => a !== null && b !== null && a.height === b.height && a.hash === b.hash && a.rev === b.rev;
+  for (let attempt = 0; attempt <= restarts; attempt++) {
+    const first = await names.namesPage({ limit });
+    let page = first;
+    const rows = [...first.rows];
+    while (page.next !== null && same(page.at, first.at)) {
+      try {
+        page = await names.namesPage({ limit, after: page.next, at: first.at });
+      } catch (e) {
+        if (e.status === 409) break; // the server no longer holds that state
+        throw e;
+      }
+      if (same(page.at, first.at)) rows.push(...page.rows);
+    }
+    if (page.next === null && (page === first || same(page.at, first.at))) return rows;
+  }
+  throw new Error("no attempt read the names list from one state; without the read API, read names() once");
+}
+const all = await readAllNames(cairn.names);
+```
+
+- Options: `keys` (1 to 32 names; excludes every other option but `at`), `after` (a page's `next`), `limit` (1 to
+  200; the server's default is 100), `at` (a page's `at`), `owner`, `status` (`held`, `pending`, `lapsed`), `order`
+  (`name`, bytewise, the default; `newest`). An option outside that grammar throws a `CairnError` with code
+  `INVALID_QUERY` before any request (the check is cairnx-api's `parseQuery`).
+- `at` is the snapshot a page describes. A walk of more than one page holds one state only when every page carries the
+  same non-null `at`. Pass page 1's `at` on every later page and compare each page's `at` with it: a page with
+  `at: null` (answered from the legacy list, below) or another `at` comes from another state, and the walk starts
+  again without `at`. So does a 409 (an `HttpError` whose body names `SNAPSHOT_NOT_HELD`), the answer of a server that
+  no longer holds the state. `readAllNames` above does this, with a bounded number of restarts. A front door without
+  the read API answers every page with `at: null`, so a walk there of more than one page cannot be pinned; `names()`
+  reads that list in one request. A page whose `at` the SDK could not send back as the next read's `at` (a form of
+  `rev` that cairnx-api's parser does not take) also has `at: null`. A walk ends on `next === null`; `total`, when present, is a count and does not end
+  a walk.
+- `cairn.names.lookup(name)` reads one name over `names?keys=<name>` and returns `{ name, row, resolved, at }`:
+  `resolved` is cairnx-core's `resolveNameIn` over the row (the `nset` address, else the owner; null for no row or a
+  pending reservation; `lapsed: true` for a lease that ran out). null means the input is not a name.
+
+Fallback. On a front door without the read API, both calls answer from the legacy list
+(`/trade/api/cairnx/names`), the read `names()` makes. The rule is the site's: anything but a 2xx whose JSON body is a
+page (`ok: true`, `rows` an array, `next` a string or null) falls back, whatever the cause: a 404
+(no read API), a 5xx, a body that is not JSON, the request timeout, a network error, `ok: false`. The legacy rows are
+sorted and paged with cairnx-api's cursor codec, so a page holds the rows the read API gives for the same query, with
+`at: null`. A read the legacy list cannot answer has no fallback and throws the read API's error: one with `at` (the
+legacy list names no snapshot) or with `owner` or `status` (filters are the read API's). If the legacy read fails as
+well, its error is thrown.
+
+These are display reads like the rest of `cairn.names`: an answer is the server's word, never a payment target.
+
 ## What the SDK verifies vs trusts (read this)
 
 The honest trust model: funds are safe even against a malicious RPC, because **the wallet signs
@@ -297,7 +356,8 @@ Codes: `NOT_INSTALLED`, `USER_REJECTED`, `WALLET_LOCKED`, `UNSUPPORTED_METHOD`, 
 a 2xx body whose shape is wrong, such as a names list read that is not an array), `CONTENT_VERIFICATION`,
 `CONTENT_NOT_JSON` (`content.get()` on verified bytes that are not JSON), `WALLET_TIMEOUT` (a write method
 outlasted the connection timeout; see below), `WALLET_RELOADED` (the wallet was updated or reloaded under the
-page; the request never reached it, and the page must reload to reach the wallet again), `UNKNOWN`, the `LINK_*`
+page; the request never reached it, and the page must reload to reach the wallet again), `INVALID_QUERY` (a
+`namesPage` option outside the read's grammar; nothing was sent), `UNKNOWN`, the `LINK_*`
 codes of [Links](#links-webcsd), and every wallet code below.
 
 > **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the
