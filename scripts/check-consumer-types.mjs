@@ -26,6 +26,21 @@ export function exportTargets(value, at, out = []) {
   return out;
 }
 
+/**
+ * Put the unpacked package at `work/node_modules/<name>`, with each of its dependencies linked from `repo`'s
+ * node_modules (the versions the lockfile pins), so a consumer in `work` resolves it as an installed package.
+ */
+export function installPackage(packageDir, work, repo = here) {
+  const pkg = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
+  mkdirSync(join(work, "node_modules", ...pkg.name.split("/").slice(0, -1)), { recursive: true });
+  execFileSync("cp", ["-R", packageDir, join(work, "node_modules", pkg.name)]);
+  for (const dep of Object.keys(pkg.dependencies ?? {})) {
+    const link = join(work, "node_modules", dep);
+    mkdirSync(dirname(link), { recursive: true });
+    symlinkSync(realpathSync(join(repo, "node_modules", dep)), link);
+  }
+}
+
 const MODES = [
   { name: "node16-cjs", file: "consumer.cts", module: "node16", moduleResolution: "node16" },
   { name: "node16-esm", file: "consumer.mts", module: "node16", moduleResolution: "node16" },
@@ -49,14 +64,7 @@ export function consumerTypeChecks(packageDir, repo = here) {
 
   const work = mkdtempSync(join(tmpdir(), "cairn-sdk-consumer-"));
   try {
-    const scope = join(work, "node_modules", ...pkg.name.split("/").slice(0, -1));
-    mkdirSync(scope, { recursive: true });
-    execFileSync("cp", ["-R", packageDir, join(work, "node_modules", pkg.name)]);
-    for (const dep of Object.keys(pkg.dependencies ?? {})) {
-      const link = join(work, "node_modules", dep);
-      mkdirSync(dirname(link), { recursive: true });
-      symlinkSync(realpathSync(join(repo, "node_modules", dep)), link);
-    }
+    installPackage(packageDir, work, repo);
     const specs = subpaths.map((s) => (s === "." ? pkg.name : `${pkg.name}/${s.slice(2)}`));
     const source = [
       ...specs.map((s, i) => `import * as m${i} from ${JSON.stringify(s)};`),

@@ -28,6 +28,10 @@
 - `test/names-v1.test.ts` runs both calls on answers of the live front door recorded on 2026-11-22
   (`test/fixtures/apiv1-names-2026-11-22.json`), each fallback cause, the reads without fallback, and every page of
   walks in both orders against cairnx-api's own handler over the same rows.
+- `test/packed-testing.test.mjs` packs this package with `pnpm pack`, installs the tarball into a throwaway project
+  and imports `@inversealtruism/cairn-sdk/testing` there as an ES module and with `require()`: connect, the address,
+  sign-in, a send with its txid, a rejection and a locked wallet, through `WalletConnection` from the packed root
+  entry. `scripts/check-consumer-types.mjs` exports the install step it shares with that test (`installPackage`).
 
 ## 0.8.8
 
