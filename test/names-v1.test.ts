@@ -138,9 +138,9 @@ async function main() {
   ];
   for (const [kind, route, timeoutMs] of kinds) {
     const { names, calls } = client(route, timeoutMs);
-    const a = await names.namesPage({ limit: 2 });
-    const b = await names.namesPage({ limit: 2, after: a.next });
-    const k = await names.lookup("6");
+    const a = await grab(() => names.namesPage({ limit: 2 })) as NamesPage;
+    const b = await grab(() => names.namesPage({ limit: 2, after: a.next })) as NamesPage;
+    const k = await grab(() => names.lookup("6")) as NameLookup | null;
     check(`${kind}: pages 1 and 2 equal the recorded v1 pages with at null; lookup resolves; the legacy list was read`,
       isDeepStrictEqual(a, { rows: p1.rows, next: "0xinverse", at: null, total: 174 })
       && isDeepStrictEqual(b, { rows: p2.rows, next: "10", at: null, total: 174 })
@@ -175,7 +175,8 @@ async function main() {
     for (const order of ["name", "newest"] as const) {
       for (const limit of [1, 2, 7, 100, 200]) {
         let after: string | null = null;
-        for (;;) {
+        // Bounded: a cursor that does not advance must fail the walk, not loop (174 rows at 1 a page is the longest).
+        for (let n = 0; n < 400; n++) {
           const q = new URLSearchParams({ limit: String(limit), order, ...(after === null ? {} : { after }) });
           const want = answer([view], "names", q).body as { rows: NameRow[]; next: string | null; total: number };
           const got = await names.namesPage({ limit, order, after });
@@ -200,4 +201,4 @@ async function main() {
   if (fail) process.exit(1);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => { console.error(e); console.log(`\nnames-v1: threw after ${pass} passed, ${fail} failed`); process.exit(1); });
