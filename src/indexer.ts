@@ -59,13 +59,17 @@ function cursorAfter(a: string, b: string): boolean {
   if (ta!.toLowerCase() !== tb!.toLowerCase()) return ta!.toLowerCase() > tb!.toLowerCase();
   return Number(va) > Number(vb);
 }
+// csd-codec's verifyMerkleProof folds pos as a 32-bit integer and reads one bit of it per branch level, so a pos at
+// or above 2^levels folds like its low bits: the bound keeps a folding proof's pos the one it proves. 31 levels is
+// the deepest branch whose every pos that fold reads exactly.
+const MAX_PROOF_LEVELS = 31;
 function isValidMerkleProof(p: unknown): p is MerkleProof {
   if (!p || typeof p !== "object") return false;
   const m = p as Record<string, unknown>;
-  return Number.isInteger(m.block_height) && (m.block_height as number) >= 0
-    && Number.isInteger(m.pos) && (m.pos as number) >= 0
+  return Number.isSafeInteger(m.block_height) && (m.block_height as number) >= 0
     && typeof m.merkle_root === "string" && HEX64.test(m.merkle_root)
-    && Array.isArray(m.merkle) && m.merkle.every((x) => typeof x === "string" && HEX64.test(x));
+    && Array.isArray(m.merkle) && m.merkle.length <= MAX_PROOF_LEVELS && m.merkle.every((x) => typeof x === "string" && HEX64.test(x))
+    && Number.isSafeInteger(m.pos) && (m.pos as number) >= 0 && (m.pos as number) < 2 ** m.merkle.length;
 }
 
 /** A live index event ({ kind: "block" | "proposal" | "attestation" | "reorg", ... }). */
