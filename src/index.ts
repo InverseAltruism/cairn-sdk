@@ -41,7 +41,8 @@ export interface CairnConfig {
   baseUrls?: CairnBaseUrls;
   /** Custom fetch (defaults to global fetch). */
   fetch?: FetchLike;
-  /** Per-request HTTP timeout in ms (default 15000). */
+  /** Per-request HTTP timeout in ms for the indexer, content and names reads (default 15000); chain reads
+   *  through csd-client use its own default, 10000, when this is unset. */
   timeoutMs?: number;
   /** A pre-connected wallet (otherwise call `cairn.connect()` in the browser). */
   wallet?: WalletConnection;

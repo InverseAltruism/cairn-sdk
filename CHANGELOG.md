@@ -2,6 +2,10 @@
 
 ## 0.9.0
 
+Wallet contract: as in 0.8.7 (`test/types/wallet-codes.ts` and `wallet-params.ts` are unchanged since it). Its 44
+error codes equal the table in `WALLET-ERROR-CODES.md` at Cairn Wallet `v0.3.5` (compared 2026-11-23, after the
+release). Whether the sample ran against a wallet for this release is not recorded.
+
 ### Added
 
 - `@inversealtruism/cairn-sdk/replica`: `@inversealtruism/cairnx-replica` 0.2.0's browser entry, re-exported whole
@@ -81,6 +85,9 @@
   entry. `scripts/check-consumer-types.mjs` exports the install step it shares with that test (`installPackage`).
 
 ## 0.8.8
+
+Wallet contract: as in 0.8.7 (the snapshot files are unchanged since it; this line was added after the release).
+Whether the sample ran against a wallet for this release is not recorded.
 
 ### Added
 

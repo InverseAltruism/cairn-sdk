@@ -114,7 +114,7 @@ new Cairn({
     rpc:     "https://cairn-substrate.com/api/rpc", // node RPC (proxy)
     indexer: "https://cairn-substrate.com/explorer/api",
   },
-  fetch,            // custom fetch (Node <18, tests)
+  fetch,            // custom fetch (tests, a proxy agent)
   timeoutMs: 15000,
   WebSocketImpl,    // for index.subscribe() in environments without global WebSocket
 });

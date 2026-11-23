@@ -101,7 +101,8 @@ self-hosted setups. The chain is the only source of truth; every read carries an
   but a pay `previewFill` says delivers nothing refuses; `me` and `tip` add `fillEndorsement`, `offerFillTooLate` and
   the legacy-hold sunset (an open CSD offer's fill that attests the offer id is refused from that height).
   Without them `ok` is a verdict on the record, not on the caller's fill.
-- fillverify exports the `preverifyOffer` helper and the throw-on-nested-refusal write wrapper.
+- fillverify exports the `preverifyOffer` helper; the throw-on-nested-refusal write wrapper is `unwrapWrite` in
+  `connect.ts`, not exported.
 - The give and want-type binds are on: `bindOfferTerms` over the branded `MintedProvenOfferTerms` checks them by
   default in cairnx-core, and fillverify also passes `{ give: true, wantType: true }`. It binds the give legs, a
   symmetric want-type refusal and a token want's ticker and amount.
