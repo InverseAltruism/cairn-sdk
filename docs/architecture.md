@@ -75,7 +75,9 @@ self-hosted setups. The chain is the only source of truth; every read carries an
 - The facade's light client (`SpvLightClient`) runs one `sync` at a time, csd-light's own on-demand sync included:
   csd-light refuses an overlapping sync as out of order, which would read as a reorg and reseed
   (`test/fillverify.test.ts` and `test/spv-fault-tolerance.test.ts`, the concurrent cases). Callers whose structural
-  failures overlap share one reseed (C5).
+  failures overlap share one reseed (C5). Only a failure that says the chain moved reseeds: csd-light's broken prev link
+  past the cached tip, or the near-tip re-check's mismatch. Every other one (a refused tx or block read, a device
+  clock more than 2 h behind) keeps the cache and surfaces as itself (C6, C7).
 - The per-attempt timeout is deliberately above the server's 10 s route deadline.
 - Cross-origin reach of that provider depends on the cairn server's CORS mount on /api/headers.
 - The checkpoint is picked in cairn (`bump-swapguard-cp.mjs`) and copied here in the same cycle; it is never a

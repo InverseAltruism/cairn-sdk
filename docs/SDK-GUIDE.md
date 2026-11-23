@@ -281,6 +281,10 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
   with the header the base serves at that height, so a block orphaned by a reorg stops counting. The
   hosted base edge-caches rows at or below its tip minus 6, so against cairn-substrate.com this catches
   reorgs of up to 6 blocks; a self-hosted base without that cache gets the full 12.
+- **A device clock behind the chain:** csd-light refuses a header dated more than 2 hours after the device's
+  clock, as the node does. On a device whose clock is that far behind, checks that need the newest blocks
+  answer `"proof-consistent"` with `time too far in future` in the `reason` until the clock is right; older
+  blocks still verify.
 - **A long-lived instance:** the header cache advances on demand. When a transaction sits more than 256
   blocks above it (a page open for hours, or a header pre-warm that failed), `verifyInclusion` and
   `verifyOfferForFill` sync the cache forward first through `/api/headers` (512 headers a request), so
