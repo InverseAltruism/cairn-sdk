@@ -1,7 +1,8 @@
-// classifySubmit against the shared submit vectors (test/fixtures/submit-classify-parity.vectors.json): every answer
-// shape POST /tx/submit can produce, with this SDK's verdict and the wallet's. The wallet keeps the same file byte for
-// byte and pins the same sha256, so a changed copy fails in either repo; each repo asserts its own column. Every
-// answer goes through csd-client's real submit, as Chain.send sends it. Offline.
+// classifySubmit against the submit vectors (test/fixtures/submit-classify-parity.vectors.json): every answer shape
+// POST /tx/submit can produce, with this SDK's verdict and the wallet's. This repo pins the file by the sha256 below
+// and asserts the sdk column; a wallet change can take the same bytes, pin the same sha256 and assert the wallet
+// column (wallet master does not yet). Every answer goes through csd-client's real submit, as Chain.send sends it.
+// Offline.
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { CsdClient } from "@inversealtruism/csd-client";
@@ -10,7 +11,7 @@ import { classifySubmit } from "../src/index.js";
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { c ? pass++ : fail++; console.log(`  ${c ? "PASS" : "FAIL"} ${n}`); };
 
-const VECTORS_SHA256 = "000b5246260a2ae9a8a915573306cd48c58d1dcbf26365becaceaad325265952";
+const VECTORS_SHA256 = "003f8fb28cc5dfece3f540c55789409153a203ec3b216351fc0f981cc76f93fc";
 const EXPECTED_VECTORS = 91;
 type Answer = { status: number; body: string } | { network: true };
 type Vector = { id: string; label: string; answer: Answer; sdk: string; wallet: string; differs?: string };

@@ -1,7 +1,7 @@
 {
   "family": "submit-classifier",
   "revision": 1,
-  "purpose": "The answers POST /tx/submit can produce, with the verdict of cairn-sdk's classifySubmit (src/submit.ts) and of cairn-wallet's classifyAnswer (src/core/submitverdict.ts). Each repo keeps this file byte for byte and its test pins the sha256, so a changed copy fails; each repo asserts its own column.",
+  "purpose": "The answers POST /tx/submit can produce, with the verdict of cairn-sdk's classifySubmit (src/submit.ts) and of cairn-wallet's classifyAnswer (src/core/submitverdict.ts). cairn-sdk pins this file by sha256 (test/submit-classify-parity.test.ts) and asserts the sdk column. A wallet change can take the same bytes, pin the same sha256 and assert the wallet column; wallet master does not yet.",
   "contract": "A verdict that says refused (sdk rejected, wallet refused) tells the sender nothing was taken, so it may send again from other coins. It is meant only for an answer that cannot follow admission; each differs note says where a reading falls short of that. Every other verdict leaves the signed bytes with the sender for a resend of the same transaction.",
   "answerShape": "status and body are what the server sent. sdk: the body text in a fetch Response through csd-client's CsdClient.submit, then classifySubmit of what it resolved or threw. wallet: body is JSON.parse(text), undefined when that throws, then classifyAnswer({ status, body }); network is classifyAnswer({ thrown: true }). A network answer is a fetch that throws TypeError(\"fetch failed\").",
   "verdicts": {
