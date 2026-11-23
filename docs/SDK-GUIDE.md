@@ -142,66 +142,109 @@ is compared with the wallet by hand at each wallet release.
 | `…/chain` | `CsdClient`, tx builders, the verifying `LightClient` |
 | `…/indexer`, `…/content` | service clients |
 | `…/testing` | `mockCairnProvider`, `installMockCairn`: a mock of the wallet's provider for your tests (no key, signs nothing) |
+| `…/replica` | the CairnX replica (`@inversealtruism/cairnx-replica/browser`, an optional peer you install yourself): "A replica" below |
 | `@inversealtruism/csd-siwc` | **server-side** SIWC verify (`verifySiwc`, `generateNonce`) |
 
 ## Names: pages and lookups
 
 `cairn.names.namesPage(opts)` reads one page of the names list from the CairnX read API, version 1
 (`/api/cairnx/v1/names`). Rows are `NameRow` from `@inversealtruism/cairnx-api` (cairnx-core's `NameState`: `name`,
-`owner`, `addr`, `profile`, `viaFill`, the lease fields). That package is pre-1.0, and these calls follow it: a
-release before its 1.0.0 may change a parameter or a field, and this SDK's changelog names it.
+`owner`, `addr`, `profile`, `viaFill`, the lease fields); the root entry re-exports `NameRow` as a type.
+cairnx-api 1.0 is the read API's contract: its README states what is promised (routes, parameters, rows, the
+envelope, the error codes and their statuses) and what is not. A refusal code this SDK does not know is read by its
+HTTP status, which is how `HttpError.status` reports every refusal.
+
+`cairn.names.allNames(opts)` reads every row from one state, with the read API's rules inside it:
 
 ```ts
-// Every row of the names list from one state; starts again when a page comes from another state.
-async function readAllNames(names, { limit = 200, restarts = 3 } = {}) {
-  const same = (a, b) => a !== null && b !== null && a.height === b.height && a.hash === b.hash && a.rev === b.rev;
-  for (let attempt = 0; attempt <= restarts; attempt++) {
-    const first = await names.namesPage({ limit });
-    let page = first;
-    const rows = [...first.rows];
-    while (page.next !== null && same(page.at, first.at)) {
-      try {
-        page = await names.namesPage({ limit, after: page.next, at: first.at });
-      } catch (e) {
-        if (e.status === 409) break; // the server no longer holds that state
-        throw e;
-      }
-      if (same(page.at, first.at)) rows.push(...page.rows);
-    }
-    if (page.next === null && (page === first || same(page.at, first.at))) return rows;
-  }
-  throw new Error("no attempt read the names list from one state; without the read API, read names() once");
+import { Cairn, CairnError, HttpError } from "@inversealtruism/cairn-sdk";
+
+const cairn = new Cairn({ network: "mainnet" });
+try {
+  const all = await cairn.names.allNames({ order: "length" });
+  console.log(all.source, all.at?.height, all.rows.length);
+} catch (e) {
+  if (e instanceof CairnError && e.code === "WALK_RESTARTS") { /* the server kept dropping the state: try later */ }
+  else if (e instanceof HttpError) { /* a refusal, by e.status, or a malformed answer */ }
+  else throw e;
 }
-const all = await readAllNames(cairn.names);
 ```
 
-- Options: `keys` (1 to 32 names; excludes every other option but `at`), `after` (a page's `next`), `limit` (1 to
+- `allNames` options: `order`, `owner`, `status` (as below), `limit` (default 200), `maxPages` (default
+  `WALK_MAX_PAGES`, 1,000), `maxRows` (default `WALK_MAX_ROWS`, 100,000; the list held 179 rows on 2026-11-23) and
+  `restarts` (default `WALK_RESTARTS_MAX`, 3). It returns `{ source, rows, at }`. It sends page 1's `at` with every
+  later page. A 409 (the server no longer holds the state) starts again from page 1 under the newest state, at most
+  `restarts` times, then throws a `CairnError` `WALK_RESTARTS`. A page that makes no progress ends the walk with an
+  `HttpError` (a malformed response): an empty page with a `next`, a `next` equal to the cursor just sent or to an
+  earlier cursor of the walk, or a later page naming another `at`. Over `maxPages` or `maxRows`: `WALK_LIMIT`. A page
+  1 whose `at` the SDK cannot send back: `SNAPSHOT_UNPINNED`.
+- `namesPage` options: `keys` (1 to 32 names; excludes every other option but `at`), `after` (a page's `next`), `limit` (1 to
   200; the server's default is 100), `at` (a page's `at`), `owner`, `status` (`held`, `pending`, `lapsed`), `order`
-  (`name`, bytewise, the default; `newest`). An option outside that grammar throws a `CairnError` with code
+  (`name`, bytewise, the default; `newest`; `length`, shortest first). An option outside that grammar throws a `CairnError` with code
   `INVALID_QUERY` before any request (the check is cairnx-api's `parseQuery`).
-- `at` is the snapshot a page describes. A walk of more than one page holds one state only when every page carries the
-  same non-null `at`. Pass page 1's `at` on every later page and compare each page's `at` with it: a page with
-  `at: null` (answered from the legacy list, below) or another `at` comes from another state, and the walk starts
-  again without `at`. So does a 409 (an `HttpError` whose body names `SNAPSHOT_NOT_HELD`), the answer of a server that
-  no longer holds the state. `readAllNames` above does this, with a bounded number of restarts. A front door without
-  the read API answers every page with `at: null`, so a walk there of more than one page cannot be pinned; `names()`
-  reads that list in one request. A page whose `at` the SDK could not send back as the next read's `at` (a form of
-  `rev` that cairnx-api's parser does not take) also has `at: null`. A walk ends on `next === null`; `total`, when present, is a count and does not end
-  a walk.
+- A page carries `source`: `"v1"` (the read API) or `"legacy"` (the legacy list, below). `at` is the snapshot a v1
+  page describes. A walk of more than one page holds one state only when every page carries the same non-null `at`;
+  `allNames` does this. The `rev` in a page's `at` is an opaque token, sent back unchanged; a v1 page whose `at` the
+  SDK could not send back as the next read's `at` (a `rev` outside the token grammar of 1 to 64 letters, digits, `.`,
+  `_` and `-`) has `at: null` and `source: "v1"`. A `next` that is not a cursor of the order asked is a malformed
+  answer (`HttpError`), never your `INVALID_QUERY`. A walk ends on `next === null`; `total`, when present, is a count
+  and does not end a walk.
 - `cairn.names.lookup(name)` reads one name over `names?keys=<name>` and returns `{ name, row, resolved, at }`:
   `resolved` is cairnx-core's `resolveNameIn` over the row (the `nset` address, else the owner; null for no row or a
   pending reservation; `lapsed: true` for a lease that ran out). null means the input is not a name.
 
-Fallback. On a front door without the read API, both calls answer from the legacy list
-(`/trade/api/cairnx/names`), the read `names()` makes. The rule is the site's: anything but a 2xx whose JSON body is a
-page (`ok: true`, `rows` an array, `next` a string or null) falls back, whatever the cause: a 404
-(no read API), a 5xx, a body that is not JSON, the request timeout, a network error, `ok: false`. The legacy rows are
-sorted and paged with cairnx-api's cursor codec, so a page holds the rows the read API gives for the same query, with
-`at: null`. A read the legacy list cannot answer has no fallback and throws the read API's error: one with `at` (the
-legacy list names no snapshot) or with `owner` or `status` (filters are the read API's). If the legacy read fails as
-well, its error is thrown.
+Fallback. On a front door without the read API, `namesPage`, `lookup` and `allNames` answer from the legacy list
+(`/trade/api/cairnx/names`), the read `names()` makes. "Without the read API" is a 404 for `/api/cairnx/v1/names`: the
+answer of a host older than the read API and of one whose resolver has no v1 mount. Every other answer that is not a
+page (a 400, 409, 429, a 5xx, a body that is not a page, the request timeout, a network error) is thrown as the read
+API's error; the legacy list is not a second try. The legacy rows are sorted and paged with cairnx-api's cursor
+codec, so a page holds the rows the read API gives for the same query, with `source: "legacy"`. What a legacy page
+cannot promise: it names no snapshot (`at: null`), so a walk over it is not one state, and its `total` is the SDK's
+count of the list it read, not the server's. A legacy row without what the order sorts on (a name; for `newest`, a
+height) makes the answer malformed (`HttpError`). A read the legacy list cannot answer has no fallback and throws the
+404: one with `at` or with `owner` or `status` (filters are the read API's). If the legacy read fails as well, its
+error is thrown.
 
 These are display reads like the rest of `cairn.names`: an answer is the server's word, never a payment target.
+
+## A replica
+
+`@inversealtruism/cairn-sdk/replica` is `@inversealtruism/cairnx-replica`'s browser entry, re-exported whole, so an
+app reads one vocabulary: each answer's `level`, `proof` and `vouch`, and the codes of `NOT_VERIFIED_CODES` and
+`NOTE_CODES` in `why` and `notes`. Nothing in it is restated by this SDK; the replica's README is the reference
+(https://github.com/InverseAltruism/csd-sdk/tree/master/packages/replica). The replica is an optional peer
+dependency, installed by an app that imports this entry, with the cairnx-core this SDK pins:
+
+```bash
+npm i @inversealtruism/cairn-sdk @inversealtruism/cairnx-replica@0.2.0 @inversealtruism/cairnx-core@0.2.10 @inversealtruism/cairnx-pin@0.1.1
+```
+
+A name at level 3 from the release's pin and the hosted blocks above it, in a page:
+
+```ts
+import { PIN } from "@inversealtruism/cairnx-pin";
+import { hosted, open } from "@inversealtruism/cairn-sdk/replica";
+
+const replica = await open(hosted({ pin: PIN, origin: "https://cairn-substrate.com" }));
+await replica.advance();
+const a = await replica.name("m");
+// a.verified: act on a.value; else a.shown is for display and a.why lists the codes (NOT_WITNESSED without a witness)
+console.log(a.level, a.proof, a.verified, a.why.map((w) => w.code), a.verified ? a.value : a.shown);
+await replica.close();
+```
+
+Without a witness on another origin no answer is verified (`NOT_WITNESSED`): pass `witness`, one's own node through
+`nodeWitness`, to `hosted`.
+
+This release pins cairnx-replica 0.2.0. Note codes are an open set from that version: a minor version may add one,
+and the replica's README says to read a note it does not know as one that withholds nothing. 0.2.0 adds
+`SOURCE_FAILING` (the source's steps have failed, none settling, for more than `FAILING_MS`, 30 minutes) and exports
+`FAILING_MS`, `READ_ADVANCE_MS`, `STALE_MAX_MS` and `heldReplay` from this entry. Code that lists every
+`NoteCode` (a `switch` without a default, a `Record` keyed by it) needs a path for a code it does not know.
+
+Limits of this entry, those of the replica: it is an ES module only. TypeScript refuses it from a CommonJS file under
+`module: "node16"` (TS1479); `module: "node20"` or `"nodenext"`, or an ES module, takes it. `require()` of it needs
+Node 22.12 or later (earlier 22.x lines throw `ERR_REQUIRE_ESM`). A server uses the replica's `./server` entry directly (`diskStore`, `ownNode`).
 
 ## What the SDK verifies vs trusts (read this)
 

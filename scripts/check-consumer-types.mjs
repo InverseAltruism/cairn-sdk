@@ -2,9 +2,10 @@
 // Typechecks a consumer of the packed package, so the published `exports` map is checked for types and not only
 // for bytes. The package is unpacked into a throwaway project's node_modules; its dependencies are linked from
 // this repo's node_modules (the versions the lockfile pins), so nothing is downloaded. One consumer file imports
-// every subpath the `exports` map names and is compiled with this repo's tsc under three settings:
+// every subpath the `exports` map names and is compiled with this repo's tsc under four settings:
 //   node16-cjs   a .cts file, module/moduleResolution node16: needs each entry's `require` condition to give
-//                CommonJS types (.d.cts); ESM types there are TS1479.
+//                CommonJS types (.d.cts); ESM types there are TS1479. Leaves out ESM_PEER_SUBPATHS (below).
+//   node20-cjs   a .cts file, module node20: every subpath, `./replica` included, as Node 22.12 and later load it.
 //   node16-esm   a .mts file, module/moduleResolution node16.
 //   bundler      a .ts file, module esnext, moduleResolution bundler.
 // Before compiling, every file the map names must exist in the package (the build emits what the map promises).
@@ -29,20 +30,27 @@ export function exportTargets(value, at, out = []) {
 /**
  * Put the unpacked package at `work/node_modules/<name>`, with each of its dependencies linked from `repo`'s
  * node_modules (the versions the lockfile pins), so a consumer in `work` resolves it as an installed package.
+ * `peers: true` links the peer dependencies too (the optional replica peer, for a consumer of `./replica`).
  */
-export function installPackage(packageDir, work, repo = here) {
+export function installPackage(packageDir, work, repo = here, { peers = false } = {}) {
   const pkg = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
   mkdirSync(join(work, "node_modules", ...pkg.name.split("/").slice(0, -1)), { recursive: true });
   execFileSync("cp", ["-R", packageDir, join(work, "node_modules", pkg.name)]);
-  for (const dep of Object.keys(pkg.dependencies ?? {})) {
+  for (const dep of Object.keys({ ...pkg.dependencies, ...(peers ? pkg.peerDependencies : {}) })) {
     const link = join(work, "node_modules", dep);
     mkdirSync(dirname(link), { recursive: true });
     symlinkSync(realpathSync(join(repo, "node_modules", dep)), link);
   }
 }
 
+// `./replica` re-exports @inversealtruism/cairnx-replica, which is ESM only. Under node16 TypeScript refuses an ES
+// module imported from a CommonJS file (TS1479 in dist/replica.d.cts with TypeScript 5.9.3), so node16-cjs leaves that
+// subpath out; node20-cjs models Node 22.12 and later, whose
+// require() loads ES modules, and imports every subpath.
+const ESM_PEER_SUBPATHS = new Set(["./replica"]);
 const MODES = [
-  { name: "node16-cjs", file: "consumer.cts", module: "node16", moduleResolution: "node16" },
+  { name: "node16-cjs", file: "consumer.cts", module: "node16", moduleResolution: "node16", skip: ESM_PEER_SUBPATHS },
+  { name: "node20-cjs", file: "consumer.cts", module: "node20", moduleResolution: "node16" },
   { name: "node16-esm", file: "consumer.mts", module: "node16", moduleResolution: "node16" },
   { name: "bundler", file: "consumer.ts", module: "esnext", moduleResolution: "bundler" },
 ];
@@ -64,18 +72,21 @@ export function consumerTypeChecks(packageDir, repo = here) {
 
   const work = mkdtempSync(join(tmpdir(), "cairn-sdk-consumer-"));
   try {
-    installPackage(packageDir, work, repo);
-    const specs = subpaths.map((s) => (s === "." ? pkg.name : `${pkg.name}/${s.slice(2)}`));
-    const source = [
-      ...specs.map((s, i) => `import * as m${i} from ${JSON.stringify(s)};`),
-      `export const entries: number[] = [${specs.map((_, i) => `Object.keys(m${i}).length`).join(", ")}];`,
-      "",
-    ].join("\n");
+    installPackage(packageDir, work, repo, { peers: true });
+    const sourceOf = (paths) => {
+      const specs = paths.map((s) => (s === "." ? pkg.name : `${pkg.name}/${s.slice(2)}`));
+      return [
+        ...specs.map((s, i) => `import * as m${i} from ${JSON.stringify(s)};`),
+        `export const entries: number[] = [${specs.map((_, i) => `Object.keys(m${i}).length`).join(", ")}];`,
+        "",
+      ].join("\n");
+    };
     const tsc = join(repo, "node_modules", "typescript", "bin", "tsc");
     for (const mode of MODES) {
       const dir = join(work, mode.name);
       mkdirSync(dir);
-      writeFileSync(join(dir, mode.file), source);
+      const paths = subpaths.filter((s) => !mode.skip?.has(s));
+      writeFileSync(join(dir, mode.file), sourceOf(paths));
       writeFileSync(join(dir, "package.json"), JSON.stringify({ name: `consumer-${mode.name}`, private: true }));
       writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({
         compilerOptions: {
@@ -87,7 +98,7 @@ export function consumerTypeChecks(packageDir, repo = here) {
       const r = spawnSync(process.execPath, [tsc, "-p", join(dir, "tsconfig.json")], { cwd: dir, encoding: "utf8" });
       const errors = `${r.stdout ?? ""}${r.stderr ?? ""}`.split("\n").filter((l) => /error TS\d+/.test(l));
       results.push({
-        name: `a ${mode.name} consumer typechecks against every subpath`,
+        name: `a ${mode.name} consumer typechecks against every subpath${paths.length < subpaths.length ? ` but ${subpaths.filter((x) => !paths.includes(x)).join(", ")}` : ""}`,
         ok: r.status === 0 && errors.length === 0,
         detail: errors.length ? errors : r.status === 0 ? [] : [`tsc exited ${r.status ?? r.signal}`],
       });

@@ -1,8 +1,53 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
 
 ### Added
+
+- `@inversealtruism/cairn-sdk/replica`: `@inversealtruism/cairnx-replica` 0.2.0's browser entry, re-exported whole
+  (`export *`), so an app reads one vocabulary: `open`, `hosted`, `hostedBlocks`, `idbStore`, the witnesses, the
+  verdict codes `NOT_VERIFIED_CODES` and `NOTE_CODES`, `levelOf`, `proofOf` and the answer types, the replica's own
+  objects. cairnx-replica is an optional peer dependency (exact, `peerDependenciesMeta.optional`): an app that does
+  not import `./replica` installs and loads nothing of it, and no other entry imports it. ES module only, as the
+  replica is: TypeScript refuses it from a CommonJS file under `module: "node16"` (TS1479), and `require()` loads it
+  on Node 22.12 and later only. The guide has an example ("A replica"); the install line names cairnx-core 0.2.10
+  with the replica. From cairnx-replica 0.2.0 note codes are an open set (a minor version may add one); 0.2.0's
+  `NOTE_CODES` holds 14, `SOURCE_FAILING` among them, and the entry has `FAILING_MS`, `READ_ADVANCE_MS`,
+  `STALE_MAX_MS` and `heldReplay`, which 0.1.0's browser entry lacked.
+- `cairn.names.allNames(opts)`: every row of the names list from one state, `{ source, rows, at }`, with the read
+  API's rules inside it. It sends page 1's `at` with every later page; a 409 starts again from page 1 under the newest
+  state, at most `restarts` times (default `WALK_RESTARTS_MAX`, 3), then throws `CairnError` `WALK_RESTARTS`; a page
+  that makes no progress (an empty page with a `next`, a `next` equal to the cursor just sent or to an earlier one of
+  the walk, a later page naming another `at`) throws an `HttpError` for a malformed answer; more than `maxPages`
+  (default `WALK_MAX_PAGES`, 1,000) pages or `maxRows` (default `WALK_MAX_ROWS`, 100,000) rows throws `WALK_LIMIT`;
+  a page 1 whose `at` cannot be sent back throws `SNAPSHOT_UNPINNED`. On a front door without the read API it is one
+  read of the legacy list. Types `NamesWalk`, `NamesWalkOptions`; new codes `WALK_LIMIT`, `WALK_RESTARTS`,
+  `SNAPSHOT_UNPINNED`.
+- A page carries `source`, `"v1"` or `"legacy"` (type `PageSource`), so `at: null` on a v1 page whose snapshot cannot
+  be pinned is told apart from a legacy page.
+- The root entry re-exports cairnx-api's `NameRow` as a type, now that cairnx-api 1.0 is the read API's contract.
+  Not its `At`: `./replica` exports the replica's own `At`, another type.
+
+### Changed
+
+- `@inversealtruism/cairnx-api` 0.1.2 to 1.0.0 and `@inversealtruism/cairnx-core` 0.2.9 to 0.2.10 (cairnx-api 1.0.0
+  and cairnx-replica 0.2.0 peer on 0.2.10 exactly). For a 0.8.8 user cairnx-core moves from 0.2.8 to 0.2.10; an app
+  that pins its own cairnx-core moves with it or installs a second copy. No export of this SDK was removed or
+  renamed, and the minimum Node stays 22.
+- `namesPage` takes `order: "length"` (shortest first, then bytewise), the order cairnx-api 1.0.0 adds; the legacy
+  fallback pages it with the same codec.
+- A page's `at` keeps any `rev` in cairnx-api 1.0.0's token grammar (1 to 64 ASCII letters, digits, `.`, `_` and
+  `-`) and sends it back unchanged on the next read. Under 0.1.2's parser only 16 lowercase hex digits were kept, so a
+  server that emits another token would have given every page `at: null` and no pinned walk.
+
+### Docs and internal
+
+- `scripts/check-consumer-types.mjs` runs a fourth consumer, node20 CommonJS, over every subpath; node16 CommonJS
+  leaves out `./replica`, which TypeScript refuses there (TS1479) because the replica is ESM only.
+  `test/packed-replica.test.mjs` installs the packed package with and without the peer. `test/doc-snippets.test.mjs`
+  type-checks the guide's `allNames` and replica blocks under strict settings against the built package.
+
+### Added in 0.9.0 from the unreleased work after 0.8.8
 
 - `cairn.names.namesPage(opts)`: a typed page of the names list from the CairnX read API, version 1
   (`/api/cairnx/v1/names`), with `keys`, `after`, `limit`, `at`, `owner`, `status` and `order`; it returns
@@ -10,28 +55,26 @@
   cairnx-api's `parseQuery` before a request; a refused one throws a `CairnError` with the new code `INVALID_QUERY`.
 - `cairn.names.lookup(name)`: one name over `names?keys=<name>`, `{ name, row, resolved, at }`, where `resolved` is
   cairnx-core's `resolveNameIn` over the row.
-- Fallback for both: on a front door without the read API, anything but a 2xx page (404, 5xx, a body that is not JSON,
-  a timeout, a network error, `ok: false`) is answered from the legacy list `/trade/api/cairnx/names`, sorted and
-  paged with cairnx-api's cursor codec, with `at: null`. A read with `at`, `owner` or `status` has no legacy answer
-  and throws the read API's error. The guide states the rule ("Names: pages and lookups").
-- A page's `at` is kept only when cairnx-api's parser takes it back as the next read's `at`; any other `at` (a form
-  of `rev` this release does not parse, say) gives the page `at: null`. A walk of more than one page holds one state
-  only when every page carries the same non-null `at`: a page with `at: null` or another `at` means start again. The
-  guide's example, `readAllNames`, does so with a bounded number of restarts.
-- Types: `NamesPage`, `NamesPageOptions`, `NameLookup` from the root entry. No type of cairnx-api is re-exported:
-  it is pre-1.0, and these two calls follow it until its 1.0.0.
+- Fallback for both: on a front door without the read API, a 404 for `/api/cairnx/v1/names` (the answer of a host
+  older than the read API, and of cairn's proxy for a resolver without the v1 mount), the read is answered from the
+  legacy list `/trade/api/cairnx/names`, sorted and paged with cairnx-api's cursor codec, `source: "legacy"` and
+  `at: null`. Every other answer that is not a page (a 400, 409, 429, a 5xx, a body that is not a page, a timeout, a
+  network error) is thrown. A read with `at`, `owner` or `status` has no legacy answer and throws the read API's
+  error. The guide states the rule ("Names: pages and lookups").
+- Validation at the door: a v1 `next` that is not a cursor of the order asked, and a legacy row without what the
+  order sorts on (a name; a height for `newest`), make the answer malformed (`HttpError`), never the caller's
+  `INVALID_QUERY`.
+- A page's `at` is kept only when cairnx-api's parser takes it back as the next read's `at`; any other `at` gives the
+  page `at: null`. `allNames` is the walk; the guide uses it.
+- Types: `NamesPage`, `NamesPageOptions`, `NameLookup` from the root entry.
+- New dependency `@inversealtruism/cairnx-api` (exact). Every 0.8.8 call is unchanged: `names()`, `resolve()`,
+  `name()` and the rest read the legacy routes as before.
 
-### Changed
-
-- New dependency `@inversealtruism/cairnx-api` 0.1.2 (exact), whose exact peer is cairnx-core 0.2.9, so
-  `@inversealtruism/cairnx-core` moves from 0.2.8 to 0.2.9 (no export changed between them). Every 0.8.8 call is
-  unchanged: `names()`, `resolve()`, `name()` and the rest read the legacy routes as before.
-
-### Docs and internal
+### Docs and internal, from the unreleased work after 0.8.8
 
 - `test/names-v1.test.ts` runs both calls on answers of the live front door recorded on 2026-11-22
   (`test/fixtures/apiv1-names-2026-11-22.json`), each fallback cause, the reads without fallback, and every page of
-  walks in both orders against cairnx-api's own handler over the same rows.
+  walks in all three orders against cairnx-api's own handler over the same rows.
 - `test/packed-testing.test.mjs` packs this package with `pnpm pack`, installs the tarball into a throwaway project
   and imports `@inversealtruism/cairn-sdk/testing` there as an ES module and with `require()`: connect, the address,
   sign-in, a send with its txid, a rejection and a locked wallet, through `WalletConnection` from the packed root

@@ -12,7 +12,8 @@
 //   2. Both package entries (dist/index.js for ESM, dist/index.cjs for require()) exist, carry the ASDK-1
 //      transient arm ("fetch failed") and a parseable DEFAULT_SPV_CHECKPOINT, which is printed.
 //   3. The tarball's types: every file its exports map names is present, and a consumer importing every subpath
-//      typechecks under node16 CommonJS, node16 ESM and bundler resolution (scripts/check-consumer-types.mjs).
+//      typechecks under node16 CommonJS (all but ./replica), node20 CommonJS, node16 ESM and bundler resolution
+//      (scripts/check-consumer-types.mjs).
 // The checkpoint's agreement with the chain is test/spv-checkpoint.test.ts (a pinned header fixture); no
 // other repository is read.
 //

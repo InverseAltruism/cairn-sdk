@@ -44,7 +44,7 @@ jobs:
         run: pnpm build
       - name: test (every suite under test/run.mjs)
         run: pnpm test
-      - name: verify-tarball (a fresh pack equals a second rebuild and repack; a consumer typechecks against it under node16 CJS, node16 ESM and bundler)
+      - name: verify-tarball (a fresh pack equals a second rebuild and repack; a consumer typechecks against it under node16 CJS, node20 CJS, node16 ESM and bundler)
         run: |
           pnpm pack --pack-destination "$RUNNER_TEMP/pack"
           node scripts/verify-tarball.mjs "$RUNNER_TEMP"/pack/*.tgz

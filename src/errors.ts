@@ -84,6 +84,11 @@ export type KnownCode =
   | "LINK_ORIGIN"
   // SDK-side: a names read whose options cairnx-api's parser refuses (src/apiv1.ts); nothing was sent
   | "INVALID_QUERY"
+  // SDK-side: NamesClient.allNames stopped (src/names.ts): over its page or row bound, out of restarts after 409s, or
+  // a page 1 whose snapshot it cannot send back
+  | "WALK_LIMIT"
+  | "WALK_RESTARTS"
+  | "SNAPSHOT_UNPINNED"
   | "UNKNOWN";
 
 /** Stable machine-readable error codes (branch on these, not the message text). A code the wallet sent that this
@@ -92,7 +97,7 @@ export type CairnErrorCode = KnownCode | (string & {});
 
 // Kept in sync with package.json `version` (the build has no JSON import; bump both together). SDK-VERSION-DRIFT:
 // errors.test.ts now asserts SDK_VERSION === package.json.version (the old test compared the constant to itself).
-export const SDK_VERSION = "0.8.8";
+export const SDK_VERSION = "0.9.0";
 const DOCS_BASE = "https://cairn-substrate.com/docs/sdk";
 
 export interface CairnErrorOptions {
