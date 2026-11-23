@@ -34,8 +34,8 @@ importers:
         specifier: 2.5.15
         version: 2.5.15
       '@inversealtruism/cairnx-replica':
-        specifier: 0.2.0
-        version: 0.2.0(@inversealtruism/cairnx-core@0.2.10)
+        specifier: 0.2.1
+        version: 0.2.1(@inversealtruism/cairnx-core@0.2.10)
       '@inversealtruism/csd-siwc':
         specifier: 0.1.22
         version: 0.1.22
@@ -439,8 +439,8 @@ packages:
     resolution: {integrity: sha512-k87OK3aLpJ3m2aglOiiHVZb5BOD7uaWcBYGPxbcVEB03QNJpfwl06VCMMaAQ5Mcsj48pt3vaoEIRzDZSgWtyjA==}
     engines: {node: '>=18'}
 
-  '@inversealtruism/cairnx-replica@0.2.0':
-    resolution: {integrity: sha512-7Vak3eOlYln8yKjj38crsu8xRrcNisxpRas3N238BG3U4Dc7ZBorWJ+cJ+9JiVyZZxdS4uzHIZQALYKrqC8WGQ==}
+  '@inversealtruism/cairnx-replica@0.2.1':
+    resolution: {integrity: sha512-AwCVbPiUO7xPj7tOwmieFg8M0D9RKNmaqPDEF3LgrcqUyWPdn19c8Lgz9khUwgV/7AtLcFrbXiukjF/TARevrQ==}
     engines: {node: '>=18'}
     hasBin: true
     peerDependencies:
@@ -1056,7 +1056,7 @@ snapshots:
       '@inversealtruism/csd-codec': 0.1.18
       '@noble/hashes': 1.8.0
 
-  '@inversealtruism/cairnx-replica@0.2.0(@inversealtruism/cairnx-core@0.2.10)':
+  '@inversealtruism/cairnx-replica@0.2.1(@inversealtruism/cairnx-core@0.2.10)':
     dependencies:
       '@inversealtruism/cairnx-core': 0.2.10
       '@inversealtruism/csd-client': 0.1.20

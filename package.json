@@ -127,7 +127,7 @@
     "@inversealtruism/csd-tx": "0.1.24"
   },
   "peerDependencies": {
-    "@inversealtruism/cairnx-replica": "0.2.0"
+    "@inversealtruism/cairnx-replica": "0.2.1"
   },
   "peerDependenciesMeta": {
     "@inversealtruism/cairnx-replica": {
@@ -136,7 +136,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
-    "@inversealtruism/cairnx-replica": "0.2.0",
+    "@inversealtruism/cairnx-replica": "0.2.1",
     "@inversealtruism/csd-siwc": "0.1.22",
     "@types/node": "22.19.20",
     "esbuild": "0.28.2",
