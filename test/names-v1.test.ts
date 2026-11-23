@@ -10,6 +10,7 @@ import type { CairnXState, NameState } from "@inversealtruism/cairnx-core";
 import { NamesClient, type NameLookup, type NamesPage } from "../src/names.js";
 import { Http } from "../src/http.js";
 import { CairnError, HttpError } from "../src/errors.js";
+import type { At as RootAt, NameRow as RootNameRow } from "../src/index.js";
 
 let pass = 0, fail = 0;
 const check = (n: string, c: boolean) => { c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n)); };
@@ -20,14 +21,15 @@ type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 const rowIsNameRow: Exact<NamesPage["rows"][number], NameRow> = true;
 const rowIsNotUnknown: Exact<NamesPage["rows"][number], unknown> = false;
 const lookupRow: Exact<NonNullable<NameLookup["row"]>, NameRow> = true;
+const rootTypes: Exact<RootNameRow, NameRow> & Exact<RootAt, At> = true;
 const full: NameRow = {
   name: "alice", owner: `0x${"11".repeat(20)}`, claimId: `0x${"22".repeat(32)}`, height: 1, effectiveHeight: 1, locked: false,
   addr: `0x${"33".repeat(20)}`, profile: { display: "Alice" }, viaFill: true,
 };
 const asState: NameState = full;
 const typed: NamesPage = { rows: [full], next: null, at: null };
-check("type proof: a row with addr, profile and viaFill is a NameRow and a page row (compiled by pnpm typecheck)",
-  rowIsNameRow && !rowIsNotUnknown && lookupRow && asState === full && typed.rows[0] === full);
+check("type proof: a row with addr, profile and viaFill is a NameRow and a page row; the root entry's NameRow and At are cairnx-api's (compiled by pnpm typecheck)",
+  rowIsNameRow && !rowIsNotUnknown && lookupRow && rootTypes && asState === full && typed.rows[0] === full);
 
 interface Recorded { status: number; contentType: string; body: string }
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/apiv1-names-2026-11-22.json", import.meta.url), "utf8")) as { answers: Record<string, Recorded> };
@@ -119,6 +121,8 @@ async function main() {
     check("limit 201 is INVALID_QUERY", (await code({ limit: 201 })) === "INVALID_QUERY");
     check("a key holding a comma is INVALID_QUERY", (await code({ keys: ["a,b"] })) === "INVALID_QUERY");
     check("keys with after is INVALID_QUERY", (await code({ keys: ["m"], after: "m" })) === "INVALID_QUERY");
+    check("keys with order is INVALID_QUERY", (await code({ keys: ["m"], order: "length" })) === "INVALID_QUERY");
+    check("a length cursor whose length is not its name's is INVALID_QUERY", (await code({ order: "length", after: "5:m" })) === "INVALID_QUERY");
     check("a malformed at is INVALID_QUERY", (await code({ at: { height: 1, hash: "0x12" } })) === "INVALID_QUERY");
     check("an after that is not a names cursor of the order is INVALID_QUERY", (await code({ order: "newest", after: "m" })) === "INVALID_QUERY");
     check("nothing was sent", calls.length === 0);
@@ -168,10 +172,15 @@ async function main() {
   {
     const row = keyRows[0]!;
     for (const [label, at, kept] of [
+      // cairnx-api 1.0.0: rev is an opaque token of 1 to 64 ASCII letters, digits, ".", "_" and "-", echoed unchanged.
       ["a 16-hex rev", { ...p1.at }, true],
-      ["a rev in another form", { ...p1.at, rev: "v2-0123456789abcdef" }, false],
-      ["a 20-digit rev", { ...p1.at, rev: "0123456789abcdef0123" }, false],
-      ["an uppercase rev", { ...p1.at, rev: "A123456789ABCDEF" }, false],
+      ["a rev in another form", { ...p1.at, rev: "v2-0123456789abcdef" }, true],
+      ["a 20-digit rev", { ...p1.at, rev: "0123456789abcdef0123" }, true],
+      ["an uppercase rev", { ...p1.at, rev: "A123456789ABCDEF" }, true],
+      ["a 64-character rev with every allowed sign", { ...p1.at, rev: `a.b_c-D${"9".repeat(57)}` }, true],
+      ["a 65-character rev", { ...p1.at, rev: "a".repeat(65) }, false],
+      ["a rev with a colon", { ...p1.at, rev: "ab:cd" }, false],
+      ["an empty rev", { ...p1.at, rev: "" }, false],
       ["a height that is a string", { ...p1.at, height: String(p1.at.height) }, false],
     ] as const) {
       const { names, calls } = client((u) => (v1Path(u.pathname) ? json(200, { ok: true, level: 1, at, rows: [row], next: u.searchParams.has("after") ? null : row.name, total: 2 }) : undefined));
@@ -179,8 +188,8 @@ async function main() {
       const b = await grab(() => names.namesPage({ limit: 1, after: a.next, at: a.at }));
       const sent = calls[1] === undefined ? null : new URL(ORIGIN + calls[1]).searchParams.get("at");
       check(`${label}: page 1 from v1 with at ${kept ? "kept" : "null"}; page 2 is sent${kept ? " pinned" : " unpinned"}, no INVALID_QUERY`,
-        isDeepStrictEqual(a.rows, [row]) && (kept ? isDeepStrictEqual(a.at, p1.at) : a.at === null) && !calls.includes(LEGACY)
-        && !(b instanceof Error) && calls.length === 2 && sent === (kept ? `${p1.at.height}:${p1.at.hash}:${p1.at.rev}` : null));
+        isDeepStrictEqual(a.rows, [row]) && (kept ? isDeepStrictEqual(a.at, at) : a.at === null) && !calls.includes(LEGACY)
+        && !(b instanceof Error) && calls.length === 2 && sent === (kept ? `${at.height}:${at.hash}:${at.rev}` : null));
     }
   }
 
@@ -235,7 +244,7 @@ async function main() {
     const view = prepareView(state, { height: 1, hash: `0x${"00".repeat(32)}`, input: "oracle", core: "0.2.9" });
     const { names } = client((u) => (v1Path(u.pathname) ? json(404, {}) : undefined));
     let walks = 0, same = 0;
-    for (const order of ["name", "newest"] as const) {
+    for (const order of ["name", "newest", "length"] as const) {
       for (const limit of [1, 2, 7, 100, 200]) {
         let after: string | null = null;
         // Bounded: a cursor that does not advance must fail the walk, not loop (174 rows at 1 a page is the longest).
@@ -250,7 +259,7 @@ async function main() {
         }
       }
     }
-    check(`every page of every walk (orders name and newest, limits 1, 2, 7, 100, 200) equals the handler's: ${same} of ${walks}`, walks > 300 && same === walks);
+    check(`every page of every walk (orders name, newest and length, limits 1, 2, 7, 100, 200) equals the handler's: ${same} of ${walks}`, walks > 300 && same === walks);
   }
 
   console.log("0.8.8's calls are unchanged");

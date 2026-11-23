@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@inversealtruism/cairnx-api':
-        specifier: 0.1.2
-        version: 0.1.2(@inversealtruism/cairnx-core@0.2.9)
+        specifier: 1.0.0
+        version: 1.0.0(@inversealtruism/cairnx-core@0.2.10)
       '@inversealtruism/cairnx-core':
-        specifier: 0.2.9
-        version: 0.2.9
+        specifier: 0.2.10
+        version: 0.2.10
       '@inversealtruism/csd-client':
         specifier: 0.1.20
         version: 0.1.20
@@ -33,6 +33,9 @@ importers:
       '@biomejs/biome':
         specifier: 2.5.15
         version: 2.5.15
+      '@inversealtruism/cairnx-replica':
+        specifier: 0.1.0
+        version: 0.1.0(@inversealtruism/cairnx-core@0.2.10)
       '@inversealtruism/csd-siwc':
         specifier: 0.1.22
         version: 0.1.22
@@ -426,15 +429,22 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@inversealtruism/cairnx-api@0.1.2':
-    resolution: {integrity: sha512-91vHH9GcUP241dLbI/60ZnpINcjYJB54CcObgIdiNb6m5cqzOSe+ysEpoGmLRuS2KF1zhkamlOZ5p2QM3bt3gA==}
+  '@inversealtruism/cairnx-api@1.0.0':
+    resolution: {integrity: sha512-B3+OYVCU0ovbFILj1Fs6Ap8pYoHv6vzo67RpwK41pl7361iSjSOnJgLKkB8ZhE+ytrYzVQSNZzBWHjKc7OPjdA==}
     engines: {node: '>=18'}
     peerDependencies:
-      '@inversealtruism/cairnx-core': 0.2.9
+      '@inversealtruism/cairnx-core': 0.2.10
 
-  '@inversealtruism/cairnx-core@0.2.9':
-    resolution: {integrity: sha512-dlvdcXrygwwcOwr2bTpLrQaHhdta6pElKlK2U5BirbMAhX4+woPIRECKRo8vpajNXqHfmuj75YEUqYzdoahwtQ==}
+  '@inversealtruism/cairnx-core@0.2.10':
+    resolution: {integrity: sha512-k87OK3aLpJ3m2aglOiiHVZb5BOD7uaWcBYGPxbcVEB03QNJpfwl06VCMMaAQ5Mcsj48pt3vaoEIRzDZSgWtyjA==}
     engines: {node: '>=18'}
+
+  '@inversealtruism/cairnx-replica@0.1.0':
+    resolution: {integrity: sha512-JjHiP0Wwu71hZ0OLrW7ZBRfej18ocWNj2QzwmKedWkmaVUb/BQq2jGc5ejVB8RH42W/hhYw1f5OAL25WcXrTKg==}
+    engines: {node: '>=18'}
+    hasBin: true
+    peerDependencies:
+      '@inversealtruism/cairnx-core': 0.2.10
 
   '@inversealtruism/csd-client@0.1.20':
     resolution: {integrity: sha512-AhbKDwDsnXW+UlgMOn9yTUDgeky31hoW8mdNGDGx9nIyJeAfA2fDMZa95i9J26VTKWbolClMrj0GDBGkKsWDvw==}
@@ -1036,15 +1046,23 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@inversealtruism/cairnx-api@0.1.2(@inversealtruism/cairnx-core@0.2.9)':
+  '@inversealtruism/cairnx-api@1.0.0(@inversealtruism/cairnx-core@0.2.10)':
     dependencies:
-      '@inversealtruism/cairnx-core': 0.2.9
+      '@inversealtruism/cairnx-core': 0.2.10
       '@noble/hashes': 1.8.0
 
-  '@inversealtruism/cairnx-core@0.2.9':
+  '@inversealtruism/cairnx-core@0.2.10':
     dependencies:
       '@inversealtruism/csd-codec': 0.1.18
       '@noble/hashes': 1.8.0
+
+  '@inversealtruism/cairnx-replica@0.1.0(@inversealtruism/cairnx-core@0.2.10)':
+    dependencies:
+      '@inversealtruism/cairnx-core': 0.2.10
+      '@inversealtruism/csd-client': 0.1.20
+      '@inversealtruism/csd-codec': 0.1.18
+      '@inversealtruism/csd-crypto': 0.1.21
+      '@inversealtruism/csd-light': 0.1.27
 
   '@inversealtruism/csd-client@0.1.20':
     dependencies:

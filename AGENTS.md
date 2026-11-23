@@ -19,7 +19,7 @@ pnpm install --frozen-lockfile
 pnpm typecheck                  # tsc over src and test/ (strict, noUncheckedIndexedAccess)
 pnpm lint                       # Biome, four rules only (biome.json; test/lint-config.test.mjs)
 pnpm check:dashes-paths         # em dashes in docs, sibling-checkout reads in code (CI runs both)
-pnpm build                      # tsup, 8 entrypoints; before pnpm test: one suite checks the built dist/
+pnpm build                      # tsup, 9 entrypoints; before pnpm test: one suite checks the built dist/
 pnpm test                       # offline unit suites (test/run.mjs, every test/*.test.{ts,mjs})
 pnpm test:live                  # examples/read-only.mjs + test/e2e/e2e-read.mjs vs live mainnet
 pnpm test:live:wallet           # wallet connector e2e (opt-in: Xvfb, Chromium, ../cairn-wallet/dist or WALLET_EXT)

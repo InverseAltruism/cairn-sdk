@@ -1,6 +1,6 @@
 {
   "name": "@inversealtruism/cairn-sdk",
-  "version": "0.8.8",
+  "version": "0.9.0",
   "description": "The Compute Substrate dApp kit: one cohesive toolkit to connect the Cairn Wallet, read the chain, the indexer and .csd names, verify self-certifying content, and resolve .csd names. Composes the published csd-* primitives.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -77,6 +77,16 @@
         "default": "./dist/react.cjs"
       }
     },
+    "./replica": {
+      "import": {
+        "types": "./dist/replica.d.ts",
+        "default": "./dist/replica.js"
+      },
+      "require": {
+        "types": "./dist/replica.d.cts",
+        "default": "./dist/replica.cjs"
+      }
+    },
     "./testing": {
       "import": {
         "types": "./dist/testing.d.ts",
@@ -94,7 +104,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/connect.ts src/indexer.ts src/content.ts src/chain.ts src/controller.ts src/react.ts src/testing.ts --format esm,cjs --dts --clean",
+    "build": "tsup src/index.ts src/connect.ts src/indexer.ts src/content.ts src/chain.ts src/controller.ts src/react.ts src/replica.ts src/testing.ts --format esm,cjs --dts --clean",
     "typecheck": "tsc -p tsconfig.typecheck.json",
     "lint": "biome lint --max-diagnostics=none .",
     "check:dashes-paths": "node scripts/check-dashes-paths.mjs",
@@ -108,16 +118,25 @@
     "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
-    "@inversealtruism/cairnx-api": "0.1.2",
-    "@inversealtruism/cairnx-core": "0.2.9",
+    "@inversealtruism/cairnx-api": "1.0.0",
+    "@inversealtruism/cairnx-core": "0.2.10",
     "@inversealtruism/csd-client": "0.1.20",
     "@inversealtruism/csd-codec": "0.1.18",
     "@inversealtruism/csd-crypto": "0.1.21",
     "@inversealtruism/csd-light": "0.1.27",
     "@inversealtruism/csd-tx": "0.1.24"
   },
+  "peerDependencies": {
+    "@inversealtruism/cairnx-replica": "0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@inversealtruism/cairnx-replica": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
+    "@inversealtruism/cairnx-replica": "0.1.0",
     "@inversealtruism/csd-siwc": "0.1.22",
     "@types/node": "22.19.20",
     "esbuild": "0.28.2",

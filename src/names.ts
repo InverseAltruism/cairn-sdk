@@ -102,8 +102,8 @@ export interface NameHistory {
 }
 
 /**
- * A read of the names list (`names` of the CairnX read API, version 1). Pre-1.0: the parameters follow
- * `@inversealtruism/cairnx-api`, which may change them in any release before its 1.0.0.
+ * A read of the names list (`names` of the CairnX read API, version 1). The parameters are those of
+ * `@inversealtruism/cairnx-api` 1.0, the API's contract.
  */
 export interface NamesPageOptions {
   /** 1 to 32 names: their rows only, in name order. Excludes every option but `at`. */
@@ -118,11 +118,11 @@ export interface NamesPageOptions {
   owner?: string;
   /** `held` (neither pending nor lapsed), `pending` (a reservation) or `lapsed`. */
   status?: NameStatus;
-  /** `name` (the default, bytewise) or `newest` (height descending, then name). */
+  /** `name` (the default, bytewise), `newest` (height descending, then name) or `length` (shortest first, then name). */
   order?: OrderOf<"names">;
 }
 
-/** A page of the names list. Rows are cairnx-api's `NameRow` (cairnx-core's `NameState`), a pre-1.0 type. `at` is
+/** A page of the names list. Rows are cairnx-api's `NameRow` (cairnx-core's `NameState`). `at` is
  *  null when the front door has no read API and the legacy list answered. */
 export type NamesPage = ListPage<NameRow>;
 
