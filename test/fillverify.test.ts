@@ -221,6 +221,13 @@ await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsemen
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash, H, "rpc-trusted", false), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }) });
     return r.ok === false && r.transient === true && r.trust === "unverified";
   });
+  // preverifyOffer takes any light client: an inclusion it answers as included but not PoW-verified must not read
+  // trust "verified" (csd-light does not answer that shape; a custom light client may).
+  await ok("[included, not verified] included:true at rpc-trusted or proof-consistent is ok:false, trust unverified, transient", async () => {
+    const rs = await Promise.all(["rpc-trusted", "proof-consistent"].map((level) =>
+      preverifyOffer({ light: mockLight(tx.json, tx.phash, H, level, true), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }) })));
+    return rs.every((r) => r.ok === false && r.trust === "unverified" && r.transient === true);
+  });
   await ok("[unprovable author] a chain that can't return the funding source tx fails SOFT (transient)", async () => {
     const noSrc = { async tx() { return { ok: false }; } };
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash), client: noSrc, offerId: tx.id, servedOffer: servedFor({ id: tx.id }) });
