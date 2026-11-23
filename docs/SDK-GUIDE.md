@@ -274,7 +274,9 @@ RPC that forwards a transaction and answers with a refusal invites a new send, w
   (`verifyInclusion`). `verifyInclusion()` folds the proof and checks its root against a header from
   `headerMerkleAt`. What it proves is that a 32-byte value is a node of that block's merkle tree, not that
   the value is a transaction: the tree has no leaf and node separation, so an inner node or the block's
-  merkle root itself folds as well. Get the id by hashing a transaction body you hold (`txid(tx)` from
+  merkle root itself folds as well. The returned `pos` is bounded by the proof's depth (below 2 to the power
+  of its length) but is not a proof of order: where the block's tree pads an odd level, another position folds
+  too (transaction 4 of a 6-transaction block also folds as position 6). Get the id by hashing a transaction body you hold (`txid(tx)` from
   `…/chain`); an id the indexer or anyone else hands you proves nothing on its own. The default `Cairn` wiring backs that with a light
   client that PoW-verifies headers forward from a pinned checkpoint (`DEFAULT_SPV_CHECKPOINT`; pass
   `spvCheckpoint` in the config to keep a different anchor). `included` is `true` only with

@@ -60,8 +60,10 @@ function cursorAfter(a: string, b: string): boolean {
   return Number(va) > Number(vb);
 }
 // csd-codec's verifyMerkleProof folds pos as a 32-bit integer and reads one bit of it per branch level, so a pos at
-// or above 2^levels folds like its low bits: the bound keeps a folding proof's pos the one it proves. 31 levels is
-// the deepest branch whose every pos that fold reads exactly.
+// or above 2^levels folds like its low bits; the bound keeps pos below 2^levels (31 levels: the deepest branch the
+// 32-bit fold reads exactly). It does not make pos the transaction's position: where a level pads an odd count by
+// duplicating its last node, a position in that padding folds too (tx 4 of a 6-tx block also folds as pos 6), and
+// telling them apart needs the block's transaction count, which the proof does not carry.
 const MAX_PROOF_LEVELS = 31;
 function isValidMerkleProof(p: unknown): p is MerkleProof {
   if (!p || typeof p !== "object") return false;
