@@ -79,7 +79,7 @@ Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{con
 **`/replica`:** the CairnX replica, `@inversealtruism/cairnx-replica`'s browser entry re-exported whole: `open`, the
 sources, the verdict codes (`NOT_VERIFIED_CODES`, `NOTE_CODES`) and the levels. The replica is an optional peer
 dependency: install it with the cairnx-core this SDK pins
-(`npm i @inversealtruism/cairnx-replica@0.1.0 @inversealtruism/cairnx-core@0.2.10`) only if you import `/replica`; no
+(`npm i @inversealtruism/cairnx-replica@0.2.0 @inversealtruism/cairnx-core@0.2.10`) only if you import `/replica`; no
 other entry loads it. ES module only, like the replica: TypeScript refuses it from a CommonJS file under
 `module: "node16"` (TS1479), and `require()` loads it on Node 22.12 and later only. The guide has an example
 ("A replica").

@@ -4,14 +4,16 @@
 
 ### Added
 
-- `@inversealtruism/cairn-sdk/replica`: `@inversealtruism/cairnx-replica` 0.1.0's browser entry, re-exported whole
+- `@inversealtruism/cairn-sdk/replica`: `@inversealtruism/cairnx-replica` 0.2.0's browser entry, re-exported whole
   (`export *`), so an app reads one vocabulary: `open`, `hosted`, `hostedBlocks`, `idbStore`, the witnesses, the
   verdict codes `NOT_VERIFIED_CODES` and `NOTE_CODES`, `levelOf`, `proofOf` and the answer types, the replica's own
   objects. cairnx-replica is an optional peer dependency (exact, `peerDependenciesMeta.optional`): an app that does
   not import `./replica` installs and loads nothing of it, and no other entry imports it. ES module only, as the
   replica is: TypeScript refuses it from a CommonJS file under `module: "node16"` (TS1479), and `require()` loads it
   on Node 22.12 and later only. The guide has an example ("A replica"); the install line names cairnx-core 0.2.10
-  with the replica.
+  with the replica. From cairnx-replica 0.2.0 note codes are an open set (a minor version may add one); 0.2.0's
+  `NOTE_CODES` holds 14, `SOURCE_FAILING` among them, and the entry has `FAILING_MS`, `READ_ADVANCE_MS`,
+  `STALE_MAX_MS` and `heldReplay`, which 0.1.0's browser entry lacked.
 - `cairn.names.allNames(opts)`: every row of the names list from one state, `{ source, rows, at }`, with the read
   API's rules inside it. It sends page 1's `at` with every later page; a 409 starts again from page 1 under the newest
   state, at most `restarts` times (default `WALK_RESTARTS_MAX`, 3), then throws `CairnError` `WALK_RESTARTS`; a page
@@ -29,7 +31,7 @@
 ### Changed
 
 - `@inversealtruism/cairnx-api` 0.1.2 to 1.0.0 and `@inversealtruism/cairnx-core` 0.2.9 to 0.2.10 (cairnx-api 1.0.0
-  and cairnx-replica 0.1.0 peer on 0.2.10 exactly). For a 0.8.8 user cairnx-core moves from 0.2.8 to 0.2.10; an app
+  and cairnx-replica 0.2.0 peer on 0.2.10 exactly). For a 0.8.8 user cairnx-core moves from 0.2.8 to 0.2.10; an app
   that pins its own cairnx-core moves with it or installs a second copy. No export of this SDK was removed or
   renamed, and the minimum Node stays 22.
 - `namesPage` takes `order: "length"` (shortest first, then bytewise), the order cairnx-api 1.0.0 adds; the legacy

@@ -216,7 +216,7 @@ app reads one vocabulary: each answer's `level`, `proof` and `vouch`, and the co
 dependency, installed by an app that imports this entry, with the cairnx-core this SDK pins:
 
 ```bash
-npm i @inversealtruism/cairn-sdk @inversealtruism/cairnx-replica@0.1.0 @inversealtruism/cairnx-core@0.2.10 @inversealtruism/cairnx-pin@0.1.0
+npm i @inversealtruism/cairn-sdk @inversealtruism/cairnx-replica@0.2.0 @inversealtruism/cairnx-core@0.2.10 @inversealtruism/cairnx-pin@0.1.1
 ```
 
 A name at level 3 from the release's pin and the hosted blocks above it, in a page:
@@ -235,6 +235,12 @@ await replica.close();
 
 Without a witness on another origin no answer is verified (`NOT_WITNESSED`): pass `witness`, one's own node through
 `nodeWitness`, to `hosted`.
+
+This release pins cairnx-replica 0.2.0. Note codes are an open set from that version: a minor version may add one,
+and the replica's README says to read a note it does not know as one that withholds nothing. 0.2.0 adds
+`SOURCE_FAILING` (the source's steps have failed, none settling, for more than `FAILING_MS`, 30 minutes) and exports
+`FAILING_MS`, `READ_ADVANCE_MS`, `STALE_MAX_MS` and `heldReplay` from this entry. Code that lists every
+`NoteCode` (a `switch` without a default, a `Record` keyed by it) needs a path for a code it does not know.
 
 Limits of this entry, those of the replica: it is an ES module only. TypeScript refuses it from a CommonJS file under
 `module: "node16"` (TS1479); `module: "node20"` or `"nodenext"`, or an ES module, takes it. `require()` of it needs
