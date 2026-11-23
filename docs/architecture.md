@@ -18,11 +18,14 @@ contract couplings and the integration notes. `AGENTS.md` keeps the rules; this 
   not-found (+ equivocation flag), SSE-over-fetch with reconnect + 1MiB buffer cap, WS subscribe.
 - `content.ts`: prepare/put/hash, verified get/getBytes from the cairn origin, hash format gated against path-walk.
 - `names.ts`: NamesClient over /trade/api/cairnx/*; inputs pre-validated with cairnx-core `isName`. `namesPage` and
-  `lookup` read `/api/cairnx/v1/names` through `apiv1.ts` and answer from the legacy list when it has an answer, sorted
-  and paged with cairnx-api's cursor codec; `lookup` resolves with cairnx-core's `resolveNameIn`.
+  `lookup` read `/api/cairnx/v1/names` through `apiv1.ts` and answer from the legacy list on a 404 (no v1 mount) when
+  it has an answer, sorted and paged with cairnx-api's cursor codec; `lookup` resolves with cairnx-core's
+  `resolveNameIn`. `allNames` is the walk: page 1's `at` on every page, a progress check on every `next`, bounds on
+  pages, rows and 409 restarts (`test/names-v1.test.ts`, "allNames").
 - `apiv1.ts`: page reads of the CairnX read API, version 1: the query checked with cairnx-api's `parseQuery` before a
-  request, the page shape check, and the fallback rule (the site's, cairn `public/trade/apiv1.js`; the guide states
-  it). Types come from `@inversealtruism/cairnx-api` 1.0; the root entry re-exports `NameRow` as a type
+  request, the page shape check (rows, and `next` in the order's cursor grammar), the page's `source`, and the
+  fallback rule: a 404 only, where the site's own pages (cairn `public/trade/apiv1.js`) fall back on any failure; an
+  SDK caller gets every other refusal as an error (the guide states the rule). Types come from `@inversealtruism/cairnx-api` 1.0; the root entry re-exports `NameRow` as a type
   (`test/no-registry-surface.test.mjs`), not `At`, a name the `./replica` entry uses for the replica's own type.
 - `replica.ts`: the `./replica` entry, `export *` from `@inversealtruism/cairnx-replica/browser`, an optional peer
   (`peerDependenciesMeta`) and an exact dev dependency. No other entry imports it, so an app that does not import

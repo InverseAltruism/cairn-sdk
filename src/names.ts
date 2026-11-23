@@ -21,7 +21,7 @@ import { ROUTE_TABLE, type At, type CursorCodec, type NameRow, type NameStatus, 
 import { isName, resolveNameIn, TICKER_RE, HASH_RE, MAX_TOKEN_DECIMALS, parseAmount, type BidStatus, type NameState, type OfferStatus, type ResolvedName } from "@inversealtruism/cairnx-core";
 import type { Http } from "./http.js";
 import { CairnError, HttpError } from "./errors.js";
-import { atParam, checkedQuery, legacyAnswers, readV1, type AtParam, type ListPage } from "./apiv1.js";
+import { atParam, checkedQuery, legacyAnswers, readV1, type AtParam, type ListPage, type PageSource } from "./apiv1.js";
 
 /** `/cairnx/resolve/:name`: the display-path name→address resolution. */
 export interface NameResolution {
@@ -122,9 +122,40 @@ export interface NamesPageOptions {
   order?: OrderOf<"names">;
 }
 
-/** A page of the names list. Rows are cairnx-api's `NameRow` (cairnx-core's `NameState`). `at` is
- *  null when the front door has no read API and the legacy list answered. */
+/** A page of the names list. Rows are cairnx-api's `NameRow` (cairnx-core's `NameState`). `source` is `"legacy"`
+ *  when the front door has no read API and the legacy list answered: no snapshot (`at` null) and a `total` the SDK
+ *  counted from that list. */
 export type NamesPage = ListPage<NameRow>;
+
+/** What `allNames` reads: the list's order and filters, and the walk's bounds. */
+export interface NamesWalkOptions {
+  order?: OrderOf<"names">;
+  owner?: string;
+  status?: NameStatus;
+  /** Rows per page, 1 to 200; default 200. */
+  limit?: number;
+  /** Pages read in one attempt before the walk stops with `WALK_LIMIT`; default `WALK_MAX_PAGES`. */
+  maxPages?: number;
+  /** Rows held before the walk stops with `WALK_LIMIT`; default `WALK_MAX_ROWS`. */
+  maxRows?: number;
+  /** Walks started again after a 409 before `WALK_RESTARTS`; default `WALK_RESTARTS_MAX`. */
+  restarts?: number;
+}
+
+/** Every row of the names list from one state (`source: "v1"`, `at` that state), or the legacy list of a front door
+ *  without the read API (`source: "legacy"`, `at` null, one read of the whole list). */
+export interface NamesWalk {
+  source: PageSource;
+  rows: NameRow[];
+  at: At | null;
+}
+
+// The names list held 179 rows on 2026-11-23 (`total` of /api/cairnx/v1/names). 100,000 rows leaves room for growth
+// of more than 500 times that; 1,000 pages reads them at the default limit and bounds a server that pages one row at a
+// time to 1,000 requests.
+export const WALK_MAX_ROWS = 100_000;
+export const WALK_MAX_PAGES = 1_000;
+export const WALK_RESTARTS_MAX = 3;
 
 /** One name for display, read over `names?keys=`. Server-trusted, like every names read: never a payment target. */
 export interface NameLookup {
@@ -140,6 +171,13 @@ export interface NameLookup {
 
 const nameRowOk = (r: unknown): r is NameRow =>
   !!r && typeof r === "object" && typeof (r as Record<string, unknown>).name === "string" && typeof (r as Record<string, unknown>).owner === "string";
+/** A legacy row the SDK can sort in `order`: a name row, with a height for `newest` (whose cursor is `<height>:<name>`). */
+const legacyRowOk = (order: OrderOf<"names">) => (r: unknown): r is NameRow =>
+  nameRowOk(r) && (order !== "newest" || heightOk((r as unknown as Record<string, unknown>).height));
+const codecOf = (order: OrderOf<"names">) => (ROUTE_TABLE.names.orders as Record<string, unknown>)[order] as CursorCodec<unknown, NameRow>;
+/** True when `c` is a cursor of `order`'s grammar (cairnx-api's codec). */
+const cursorOf = (order: OrderOf<"names">) => (c: string): boolean => codecOf(order).decode(c) !== null;
+const sameAt = (a: At, b: At): boolean => a.height === b.height && a.hash === b.hash && a.rev === b.rev;
 
 /** The query of a names read, in a fixed order; an unset option is left out. */
 function namesParams(o: NamesPageOptions): URLSearchParams {
@@ -162,13 +200,12 @@ function namesParams(o: NamesPageOptions): URLSearchParams {
 
 /** The page `q` asks for, from the legacy whole list: sorted and paged with cairnx-api's codec for the order, so it
  *  holds the rows a v1 server gives for the same query. Names are distinct, so a page never splits a key. */
-function legacyNamesPage(rows: readonly NameRow[], q: Query<"names">): NamesPage {
-  const codec = (ROUTE_TABLE.names.orders as Record<string, unknown>)[q.order] as CursorCodec<unknown, NameRow>;
-  const sorted = [...rows].sort((a, b) => codec.compare(codec.of(a), codec.of(b)));
+function legacyNamesPage(sorted: readonly NameRow[], q: Query<"names">): NamesPage {
+  const codec = codecOf(q.order);
   if (q.keys !== null) {
     const want = new Set(q.keys);
     const hit = sorted.filter((r) => want.has(r.name));
-    return { rows: hit, next: null, at: null, total: hit.length };
+    return { source: "legacy", rows: hit, next: null, at: null, total: hit.length };
   }
   const after = q.after;
   const found = after === null ? 0 : sorted.findIndex((r) => codec.compare(codec.of(r), after) > 0);
@@ -176,7 +213,7 @@ function legacyNamesPage(rows: readonly NameRow[], q: Query<"names">): NamesPage
   const page = sorted.slice(start, start + q.limit);
   const last = page[page.length - 1];
   const next = start + q.limit < sorted.length && last !== undefined ? codec.encode(codec.of(last)) : null;
-  return { rows: page, next, at: null, total: sorted.length };
+  return { source: "legacy", rows: page, next, at: null, total: sorted.length };
 }
 
 // parseAmount applies cairnx-core's MAX_AMOUNT; minted and served amounts may be zero.
@@ -284,23 +321,89 @@ export class NamesClient {
   names(): Promise<unknown[]> { return this.list(`/trade/api/cairnx/names`); }
 
   /**
-   * A page of the names list from the read API (`/api/cairnx/v1/names`), typed. Walk with `{ after: page.next, at }`,
-   * `at` being page 1's, until `next` is null. The walk holds one state only when every page carries that same
-   * non-null `at`; a page with `at: null` or another `at` means start the walk again (the guide's `readAllNames`). When the front door has no read API or its answer is not a page, a read without
-   * `at`, `owner` or `status` is answered from the legacy list in the same order and paging (`at: null`); any other
-   * read throws the read API's error (an `HttpError`, 409 for a snapshot no longer held). An option outside the
-   * read's grammar throws a `CairnError` with code `INVALID_QUERY` before any request.
+   * A page of the names list from the read API (`/api/cairnx/v1/names`), typed. `allNames` is the walk over every
+   * page. On a front door without the read API (a 404), a read without `at`, `owner` or `status` is answered from the
+   * legacy list in the same order and paging (`source: "legacy"`, `at: null`); every other answer that is not a page
+   * throws the read API's error (an `HttpError`, 409 for a snapshot no longer held). An option outside the read's
+   * grammar throws a `CairnError` with code `INVALID_QUERY` before any request.
    */
   async namesPage(opts: NamesPageOptions = {}): Promise<NamesPage> {
     const params = namesParams(opts);
     const q = checkedQuery("names", params);
-    const v1 = await readV1(this.http, "names", params, nameRowOk);
+    const v1 = await readV1(this.http, "names", params, nameRowOk, cursorOf(q.order));
     if (v1.ok) return v1.page;
-    if (!legacyAnswers(q)) throw v1.error;
+    if (!v1.absent || !legacyAnswers(q)) throw v1.error;
+    return legacyNamesPage(await this.legacySorted(q.order), q);
+  }
+
+  /** The legacy whole list, every row checked for what `order` sorts on, in cairnx-api's order. */
+  private async legacySorted(order: OrderOf<"names">): Promise<NameRow[]> {
     const path = `/trade/api/cairnx/names`;
     const rows = await this.list(path);
-    rows.forEach((r, i) => { if (!nameRowOk(r)) throw this.malformed(path, `name row ${i} is not a name record`); });
-    return legacyNamesPage(rows as NameRow[], q);
+    const ok = legacyRowOk(order);
+    rows.forEach((r, i) => { if (!ok(r)) throw this.malformed(path, `name row ${i} is not a name record${order === "newest" ? " with a height" : ""}`); });
+    const codec = codecOf(order);
+    return (rows as NameRow[]).sort((a, b) => codec.compare(codec.of(a), codec.of(b)));
+  }
+
+  /**
+   * Every row of the names list from one state: page 1's `at` is sent with every later page. A 409 (the server no
+   * longer holds that state) starts the walk again from page 1 under the newest state, at most `restarts` times, then
+   * throws a `CairnError` `WALK_RESTARTS`. A page with an empty `rows` and a `next`, a `next` equal to the cursor just
+   * sent or to an earlier cursor of the walk, or a later page naming another `at` throws an `HttpError` (malformed
+   * response). More than `maxPages` pages or `maxRows` rows throws `WALK_LIMIT`. A page 1 whose `at` the SDK cannot
+   * send back throws `SNAPSHOT_UNPINNED`. A front door without the read API (a 404) answers from one read of the legacy
+   * list, `source: "legacy"` and `at` null; a read with `owner` or `status` has no legacy answer and throws the 404.
+   */
+  async allNames(opts: NamesWalkOptions = {}): Promise<NamesWalk> {
+    const { maxPages = WALK_MAX_PAGES, maxRows = WALK_MAX_ROWS, restarts = WALK_RESTARTS_MAX } = opts;
+    const base: NamesPageOptions = { limit: opts.limit ?? 200 };
+    if (opts.order !== undefined) base.order = opts.order;
+    if (opts.owner !== undefined) base.owner = opts.owner;
+    if (opts.status !== undefined) base.status = opts.status;
+    const params = namesParams(base);
+    const q = checkedQuery("names", params);
+    const path = "/api/cairnx/v1/names";
+    const malformed = (what: string) => new HttpError(200, this.http.url(path, Object.fromEntries(params)), `malformed v1 walk: ${what}`);
+    const tooMany = (what: string) => new CairnError(`names walk stopped: more than ${what}`, { code: "WALK_LIMIT" });
+    for (let attempt = 0; ; attempt++) {
+      const v1 = await readV1(this.http, "names", params, nameRowOk, cursorOf(q.order));
+      if (!v1.ok) {
+        if (!v1.absent || !legacyAnswers(q)) throw v1.error;
+        const rows = await this.legacySorted(q.order);
+        if (rows.length > maxRows) throw tooMany(`${maxRows} rows`);
+        return { source: "legacy", rows, at: null };
+      }
+      let page = v1.page;
+      const at = page.at;
+      if (at === null) throw new CairnError("names walk: the server's snapshot cannot be pinned (its at is not one the SDK can send back)", { code: "SNAPSHOT_UNPINNED" });
+      const rows = [...page.rows];
+      const seen = new Set<string>();
+      let after: string | null = null, pages = 1, restart = false;
+      while (page.next !== null) {
+        const next: string = page.next;
+        if (page.rows.length === 0) throw malformed(`an empty page with next ${JSON.stringify(next)}`);
+        if (next === after || seen.has(next)) throw malformed(`next ${JSON.stringify(next)} repeats a cursor of this walk`);
+        if (rows.length > maxRows) throw tooMany(`${maxRows} rows`);
+        if (pages >= maxPages) throw tooMany(`${maxPages} pages`);
+        seen.add(next);
+        after = next;
+        try {
+          page = await this.namesPage({ ...base, after, at });
+        } catch (e) {
+          if (e instanceof HttpError && e.status === 409) { restart = true; break; }
+          throw e;
+        }
+        pages++;
+        if (page.at === null || !sameAt(page.at, at)) throw malformed("a pinned page names another snapshot");
+        rows.push(...page.rows);
+      }
+      if (!restart) {
+        if (rows.length > maxRows) throw tooMany(`${maxRows} rows`);
+        return { source: "v1", rows, at };
+      }
+      if (attempt >= restarts) throw new CairnError(`names walk: the server dropped the snapshot ${restarts + 1} times (409)`, { code: "WALK_RESTARTS" });
+    }
   }
 
   /** One name for display over `names?keys=<name>`, with cairnx-core's forward resolution (server-trusted; see the

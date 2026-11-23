@@ -60,11 +60,12 @@ try {
 
 **`cairn.index`:** `tipHeight()`, `block()/blockTxids()`, `tx()/txStatus()/txMerkleProof()`, `address()/addressTxs()/addressUtxo()` (every unspent output, read in pages of 1,000 up to 100 pages; a full 100th page throws `HttpError`), `domains()/domainProposals(domain)`, `proposal()/attestations()`, `reputation()`, **`verifyInclusion(txid)`** (proves `txid` is a node of a PoW-verified block's merkle tree; an inner node or a block's root folds too, so hash the transaction body you hold to get the id, see the guide), `streamAll()/streamBlocks()/streamDomain()` (SSE), `subscribe()` (WS).
 
-**`cairn.names`:** `resolve(name)` (display-path name to address), `name(name)`/`nameHistory(name)`, `primary(addr)` (reverse lookup)/`namesOf(addr)`, `names()` (the whole list, untyped), `namesPage(opts)` (a typed page of the read API, below), `lookup(name)` (one name for display, with its address by cairnx-core's `resolveNameIn`), `tokens()/token(ticker)`, `offers()`/`bids()` (open rows by default; pass `{ status }` for another status, or `{ status: "all" }` for every row), `state()` (the canonical CairnX state). Reads go through the public `/trade/api/cairnx/*` proxy; for payment-grade name resolution verify through the wallet or a replaying resolver, not a bare read (see `src/names.ts` header).
+**`cairn.names`:** `resolve(name)` (display-path name to address), `name(name)`/`nameHistory(name)`, `primary(addr)` (reverse lookup)/`namesOf(addr)`, `names()` (the whole list, untyped), `namesPage(opts)` (a typed page of the read API, below), `allNames(opts)` (every row from one state, the walk's rules inside it), `lookup(name)` (one name for display, with its address by cairnx-core's `resolveNameIn`), `tokens()/token(ticker)`, `offers()`/`bids()` (open rows by default; pass `{ status }` for another status, or `{ status: "all" }` for every row), `state()` (the canonical CairnX state). Reads go through the public `/trade/api/cairnx/*` proxy; for payment-grade name resolution verify through the wallet or a replaying resolver, not a bare read (see `src/names.ts` header).
 
 `namesPage` and `lookup` read the CairnX read API (`/api/cairnx/v1/names`); their rows are `NameRow` from
 `@inversealtruism/cairnx-api` 1.0, the API's contract, and the root entry re-exports `NameRow` as a type. On a
-front door without the read API they answer from the legacy list (`at: null`). The guide has the walk and the fallback rule
+front door without the read API (a 404) they answer from the legacy list, and a page says so (`source: "legacy"`,
+`at: null`, a `total` the SDK counted); every other refusal is thrown. The guide has the walk and the fallback rule
 ("Names: pages and lookups").
 
 **`cairn.content`:** `prepare(obj)`/`put(obj)` → `{ payloadHash, canonical, bytes }`; `get(hash)` / `getBytes(hash)` (fetch **and verify** `sha256(bytes) === hash`, throws `ContentVerificationError` on tamper); `hash(obj)`.
@@ -77,8 +78,10 @@ Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{con
 
 **`/replica`:** the CairnX replica, `@inversealtruism/cairnx-replica`'s browser entry re-exported whole: `open`, the
 sources, the verdict codes (`NOT_VERIFIED_CODES`, `NOTE_CODES`) and the levels. The replica is an optional peer
-dependency: install it (`npm i @inversealtruism/cairnx-replica@0.1.0`) only if you import `/replica`; no other entry
-loads it. ES module only, like the replica: `require()` loads it on Node 22.12 and later. The guide has an example
+dependency: install it with the cairnx-core this SDK pins
+(`npm i @inversealtruism/cairnx-replica@0.1.0 @inversealtruism/cairnx-core@0.2.10`) only if you import `/replica`; no
+other entry loads it. ES module only, like the replica: TypeScript refuses it from a CommonJS file under
+`module: "node16"` (TS1479), and `require()` loads it on Node 22.12 and later only. The guide has an example
 ("A replica").
 
 ## Examples

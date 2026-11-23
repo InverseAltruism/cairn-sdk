@@ -84,6 +84,11 @@ export type KnownCode =
   | "LINK_ORIGIN"
   // SDK-side: a names read whose options cairnx-api's parser refuses (src/apiv1.ts); nothing was sent
   | "INVALID_QUERY"
+  // SDK-side: NamesClient.allNames stopped (src/names.ts): over its page or row bound, out of restarts after 409s, or
+  // a page 1 whose snapshot it cannot send back
+  | "WALK_LIMIT"
+  | "WALK_RESTARTS"
+  | "SNAPSHOT_UNPINNED"
   | "UNKNOWN";
 
 /** Stable machine-readable error codes (branch on these, not the message text). A code the wallet sent that this

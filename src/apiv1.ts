@@ -1,9 +1,10 @@
-// Page reads of the CairnX public read API, version 1 (`/api/cairnx/v1/<list>`), with the legacy route as the
-// fallback. The rule is the site's (cairn `public/trade/apiv1.js`): an answer that is not a 2xx whose JSON body is a
-// page (`ok: true`, `rows` an array, `next` a cursor or null) is answered from the legacy read, whatever the cause: a
-// host without the v1 mount (404), a 5xx, a body that is not JSON, a timeout, a network error or `ok: false`. Only a
-// read the legacy route can answer falls back: one without `at` (the legacy route names no snapshot) and without a
-// filter (filters are the v1 handler's, which this SDK does not copy). Any other read throws the v1 read's error.
+// Page reads of the CairnX public read API, version 1 (`/api/cairnx/v1/<list>`), with the legacy route for a host
+// that does not have it. "Not there" is a 404: what a host answers that has no v1 mount (cairn's proxy answers its
+// NOT_FOUND refusal for a resolver without the mount, and a host older than the mount answers express's own 404).
+// Every other answer that is not a page (a 400, 409, 429, a 5xx, a body that is not a page, a timeout, a network
+// error) is the v1 read's error and is thrown. Only a read the legacy route can answer falls back: one without `at`
+// (the legacy route names no snapshot) and without a filter (filters are the v1 handler's, which this SDK does not
+// copy).
 // Row and envelope types are cairnx-api's 1.0 contract; the root entry re-exports `NameRow` as a type
 // (not `At`: the `./replica` entry exports the replica's own `At`).
 import { parseQuery, type At, type Query, type Route } from "@inversealtruism/cairnx-api";
@@ -12,9 +13,13 @@ import type { Http } from "./http.js";
 
 const V1 = "/api/cairnx/v1";
 
+/** Where a page came from: the read API, version 1, or the legacy route of a host without it. */
+export type PageSource = "v1" | "legacy";
+
 /** A page as the SDK returns it. `at` is the snapshot the rows describe; null when the legacy route answered or the
- *  server's `at` is not one cairnx-api's parser takes back (the page is then unpinned). */
+ *  server's `at` is not one cairnx-api's parser takes back (the page is then unpinned); `source` tells the two apart. */
 export interface ListPage<Row> {
+  source: PageSource;
   rows: Row[];
   /** The cursor after the last row, or null: a walk ends on null and on nothing else. */
   next: string | null;
@@ -53,27 +58,28 @@ function echoableAt(a: unknown): At | null {
   return parseQuery("names", new URLSearchParams({ at: atParam(at) })).ok ? at : null;
 }
 
-function pageProblem(body: unknown, rowOk: (r: unknown) => boolean): string | null {
+function pageProblem(body: unknown, rowOk: (r: unknown) => boolean, nextOk: (c: string) => boolean): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "not an object";
   const b = body as Record<string, unknown>;
   if (b.ok !== true) return "ok is not true";
   if (!Array.isArray(b.rows)) return "rows is not an array";
-  if (b.next !== null && typeof b.next !== "string") return "next is neither a cursor nor null";
+  if (b.next !== null && (typeof b.next !== "string" || !nextOk(b.next))) return "next is neither a cursor of the order asked nor null";
   if (b.total !== undefined && !(Number.isSafeInteger(b.total) && (b.total as number) >= 0)) return "total is malformed";
   const bad = b.rows.findIndex((r) => !rowOk(r));
   return bad < 0 ? null : `row ${bad} is malformed`;
 }
 
-/** The v1 page of `route` with `params`, or the error that kept it from being one. Never throws. */
-export async function readV1<Row>(http: Http, route: Route, params: URLSearchParams, rowOk: (r: unknown) => r is Row): Promise<{ ok: true; page: ListPage<Row> } | { ok: false; error: Error }> {
+/** The v1 page of `route` with `params`, or the error that kept it from being one, with `absent` true when the host
+ *  has no v1 mount (a 404). `nextOk` is the cursor grammar of the order asked. Never throws. */
+export async function readV1<Row>(http: Http, route: Route, params: URLSearchParams, rowOk: (r: unknown) => r is Row, nextOk: (c: string) => boolean): Promise<{ ok: true; page: ListPage<Row> } | { ok: false; error: Error; absent: boolean }> {
   const path = `${V1}/${route}`;
   try {
     const body = await http.getJson<unknown>(path, Object.fromEntries(params));
-    const p = pageProblem(body, rowOk);
-    if (p) return { ok: false, error: new HttpError(200, http.url(path, Object.fromEntries(params)), `malformed v1 page: ${p}`) };
+    const p = pageProblem(body, rowOk, nextOk);
+    if (p) return { ok: false, absent: false, error: new HttpError(200, http.url(path, Object.fromEntries(params)), `malformed v1 page: ${p}`) };
     const b = body as { rows: Row[]; next: string | null; at: unknown; total?: number };
-    return { ok: true, page: { rows: b.rows, next: b.next, at: echoableAt(b.at), ...(b.total === undefined ? {} : { total: b.total }) } };
+    return { ok: true, page: { source: "v1", rows: b.rows, next: b.next, at: echoableAt(b.at), ...(b.total === undefined ? {} : { total: b.total }) } };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e : new Error(String(e)) };
+    return { ok: false, absent: e instanceof HttpError && e.status === 404, error: e instanceof Error ? e : new Error(String(e)) };
   }
 }

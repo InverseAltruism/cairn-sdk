@@ -22,7 +22,8 @@ const ADDED = {
   chain: ["buildProposeVerified", "buildAttestVerified", "classifySubmit", "SubmitOutcome", "SubmitVerdict"],
   index: ["classifySubmit", "SubmitOutcome", "SubmitVerdict",
     "parseCsdLink", "formatCsdLink", "csdLinkToHttps", "CsdLink", "CsdLinkCode", "CsdLinkParse",
-    "NamesPage", "NamesPageOptions", "NameLookup", "NameRow"],
+    "NamesPage", "NamesPageOptions", "NameLookup", "NameRow", "NamesWalk", "NamesWalkOptions", "PageSource",
+    "WALK_MAX_PAGES", "WALK_MAX_ROWS", "WALK_RESTARTS_MAX"],
   testing: ["mockCairnProvider", "installMockCairn", "MockCairnProvider", "MockCairnOptions", "MockAnswer", "MockMethod", "MockCall",
     "MockCapabilities", "MockCairnTarget", "DisconnectReason"],
 };
@@ -132,10 +133,10 @@ try {
     }
     assert.equal(runtime.index.NameRow, undefined, "NameRow is a type only");
   });
-  ok("NamesClient keeps every 0.8.8 method and adds namesPage and lookup", () => {
+  ok("NamesClient keeps every 0.8.8 method and adds namesPage, lookup and allNames", () => {
     const have = Object.getOwnPropertyNames(runtime.index.NamesClient.prototype).filter((n) => n !== "constructor").sort();
     const kept = ["resolve", "name", "nameHistory", "primary", "namesOf", "names", "tokens", "token", "offers", "bids", "state"];
-    for (const m of [...kept, "namesPage", "lookup"]) assert.ok(have.includes(m), m);
+    for (const m of [...kept, "namesPage", "lookup", "allNames"]) assert.ok(have.includes(m), m);
   });
   ok("every other IndexerClient method of 0.6.0 is still a method, and nothing was added", () => {
     const have = Object.getOwnPropertyNames(runtime.indexer.IndexerClient.prototype).filter((n) => n !== "constructor").sort();
