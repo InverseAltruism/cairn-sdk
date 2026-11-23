@@ -79,7 +79,10 @@ export interface OfferFillCheck {
    *  verdict on the offer record, not on this fill. */
   sized?: boolean;
   /** Present when `me` and `tip` were passed: cairnx-core's `fillEndorsement` over the served state after the
-   *  binds. "refused" answers `ok: false`; "not-endorsable" (a token-priced want) is not a refusal. */
+   *  binds, kept as the core returned it: its opinion of the served hold alone. `ok` and `reason` are the SDK's
+   *  verdict, so a fill refused past the legacy-hold sunset or too close to the expiry answers `ok: false` with
+   *  `endorsed` here: branch on `ok`. "refused" answers `ok: false`; "not-endorsable" (a token-priced want) is not a
+   *  refusal. */
   endorsement?: { verdict: "endorsed" | "refused" | "not-endorsable"; reason: string };
   /** Present with `endorsement`: the proposal id the fill's attest must target at `tip` (cairnx-core
    *  `fillTargetId`: the offer id, or the fclaim txid while a live reservation routes the offer). */
@@ -274,7 +277,7 @@ function judgeFill(
         j.fillTarget = fillTargetOf(state, f.tip);
         if (e.verdict === "refused") { j.refusal ??= `CairnX would refuse this fill (${e.reason}) - do not sign it`; unplan(); }
         else if (legacySunsetFill(state, j.fillTarget, f.tip)) {
-          j.refusal ??= `past block ${LEGACY_HOLD_SUNSET_HEIGHT} an open CSD offer is filled only through its reservation (fclaim) target: CairnX rejects a fill that attests the offer id after the payment moved - ask the marketplace for the reservation id, do not sign it`;
+          j.refusal ??= `from block ${LEGACY_HOLD_SUNSET_HEIGHT} an open CSD offer is filled only through a reservation: CairnX rejects a fill that attests the offer id after the payment moved - reserve the offer and pass the reservation's fclaim txid as fillTargetId, do not sign this fill`;
           unplan();
         }
       } catch (e) { j.refusal ??= `couldn't judge the fill against the offer (${err(e)}) - refusing`; unplan(); }

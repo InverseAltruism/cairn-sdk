@@ -522,12 +522,12 @@ console.log("\nP75-5 fill-surface guards:");
     ["claimTxid equal to the offer id in upper case", { claimedBy: BUYER, claimUntilHeight: tip + 15, claimTxid: "0x" + open22.id.slice(2).toUpperCase() }],
     ["claimUntilHeight Infinity", { claimedBy: BUYER, claimUntilHeight: Number.POSITIVE_INFINITY }],
   ] as const;
-  await ok("[sunset] at and past the legacy-hold sunset an offer-id fill of an open CSD offer is REFUSED, with no plan, whatever hold the resolver serves", async () => {
+  await ok("[sunset] at and past the legacy-hold sunset an offer-id fill of an open CSD offer is REFUSED (ok false, a reason, no plan) whatever hold the resolver serves; endorsement stays the core's own endorsed", async () => {
     const out: string[] = [];
     for (const tip of SUNSET_TIPS) for (const [label, hold] of legacyShapes(tip)) {
       const r = await run(open22, { servedOffer: servedFor({ id: open22.id, height: 41_300, ...hold }), me: BUYER, tip }, 41_300);
-      if (!(r.ok === false && r.trust === "verified" && /reservation \(fclaim\) target/.test(r.reason ?? "") && r.fillTarget?.toLowerCase() === open22.id
-        && r.outputPlan === undefined && r.sized === false)) out.push(`${tip} ${label}: ok=${r.ok} target=${r.fillTarget?.toLowerCase() === open22.id ? "offer" : r.fillTarget} ${r.reason}`);
+      if (!(r.ok === false && r.trust === "verified" && /from block 60044 .* pass the reservation's fclaim txid as fillTargetId/.test(r.reason ?? "") && r.fillTarget?.toLowerCase() === open22.id
+        && r.outputPlan === undefined && r.sized === false && r.endorsement?.verdict === "endorsed")) out.push(`${tip} ${label}: ok=${r.ok} target=${r.fillTarget?.toLowerCase() === open22.id ? "offer" : r.fillTarget} ${r.reason}`);
     }
     return out.length === 0 || (console.log(`      ${out.join("\n      ")}`), false);
   });
@@ -563,7 +563,7 @@ console.log("\nP75-5 fill-surface guards:");
     const tip = 148_252;
     const lie = await cairn.verifyOfferForFill(open22.id, servedFor({ id: open22.id, height: 41_300, claimedBy: BUYER, claimUntilHeight: tip + 15 }), { pay: "500000000", me: BUYER, tip });
     const honest = await cairn.verifyOfferForFill(open22.id, servedFor({ id: open22.id, height: 41_300, claimedBy: BUYER, claimUntilHeight: tip + 30, claimTxid: FCLAIM }), { pay: "500000000", me: BUYER, tip, fillTargetId: FCLAIM });
-    return lie.ok === false && /reservation \(fclaim\) target/.test(lie.reason ?? "") && lie.outputPlan === undefined
+    return lie.ok === false && /from block 60044 .* pass the reservation's fclaim txid as fillTargetId/.test(lie.reason ?? "") && lie.outputPlan === undefined
       && honest.ok === true && honest.fillTarget === FCLAIM && Array.isArray(honest.outputPlan);
   });
   await ok("[token] a token-priced want is not-endorsable, never a refusal", async () => {

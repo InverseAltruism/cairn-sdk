@@ -347,18 +347,22 @@ outputs were not checked. On a token-priced offer a fill moves no CSD, so any po
 Without more inputs `ok` says the offer is proven, not that you can fill it now: an offer bound to another
 taker, or held by someone else's live claim or reservation, still answers `ok: true`. Pass `opts.me` (the
 address that signs the fill) and `opts.tip` (the chain tip height you sign at) together with `pay`, and
-optionally `opts.fillTargetId` (the proposal id your attest will target), to run cairnx-core's
+`opts.fillTargetId` (the proposal id your attest will target; optional for a taker-bound or token offer, required
+while a live reservation routes the offer, which from block 60,044 is every fill of an open CSD offer), to run cairnx-core's
 `fillEndorsement` over the served state after the binds. The result then carries `endorsement` (`{ verdict,
 reason }`) and `fillTarget` (the id the attest must target at that tip: the offer id, or the fclaim txid
 while a live V28 reservation routes the offer). A `refused` verdict answers `ok: false` with no `outputPlan`
 (`sized: false`), as a served status other than `open` does; `not-endorsable` (a
-token-priced want, whose delivery depends on your token balance) is not a refusal. The claim fields the
+token-priced want, whose delivery depends on your token balance) is not a refusal. `ok` and `reason` are the SDK's
+verdict; `endorsement` is cairnx-core's opinion of the served hold alone, kept as the core returned it, so a fill the
+SDK refuses for the sunset or the expiry cushion below answers `ok: false` with `endorsed`: branch on `ok`. The claim fields the
 endorsement reads (`claimedBy`, `claimUntilHeight`, `claimTxid`) are served by the resolver too, like `paid`, and
 `fillTarget` is derived from them: a resolver that serves `claimedBy` as your address turns `refused` into
 `endorsed` and `ok: true`, so rely on the Cairn Wallet's own fill preflight for the claim as well. From block 60,044
 (cairnx-core's `LEGACY_HOLD_SUNSET_HEIGHT`) no claim made before V28 is live and an open CSD offer fills only
 through a reservation's fclaim txid, so with `me` and `tip` a fill whose target is the offer id answers `ok: false`
-with no `outputPlan`, whatever claim is served. Every result that carries
+with no `outputPlan`, whatever claim is served: reserve the offer and pass the reservation's fclaim txid as
+`fillTargetId`. Every result that carries
 the proven `terms` also carries the proven expiry: `expiresEpoch` and `expiresAt`, the first block height at
 which CairnX treats the offer as expired. A fill must be mined below `expiresAt`. With `me` and `tip`, a fill
 whose offer's last live block (`expiresAt - 1`) is fewer than 4 blocks above your tip (cairnx-core's
@@ -372,7 +376,7 @@ reason naming the anchor, for an offer mined below the SPV checkpoint (pass an o
 verify it). Build EXACTLY the `outputPlan`, never the resolver-served outputs a lying
 resolver could redirect. Its values are `bigint` base units, while each output `value` of `fillOffer` is a
 `number` the wallet requires to be a positive safe integer (refused otherwise: wallet 0.3.3 answers the nested
-`BAD_OUTPUTS` at signing, the release after it `BAD_REQUEST` before any window opens): pass `Number(value)` after
+`BAD_OUTPUTS` at signing, wallet 0.3.4 and later `BAD_REQUEST` before any window opens): pass `Number(value)` after
 checking `value <= BigInt(Number.MAX_SAFE_INTEGER)`. Where a param takes a decimal string, `value.toString()` is
 exact. Never `JSON.stringify` the plan: it throws on a `bigint`. This is best-effort corroboration, not the payment-grade boundary (the Cairn
 Wallet's own on-device fill-SPV in 0.2.60+ is what fails-closed before signing), but a dApp settling real
@@ -451,8 +455,8 @@ codes of [Links](#links-webcsd), and every wallet code below.
 > once it confirms, or after the 30 minutes if it did not go through (the earlier fill can still be mined after
 > them). Wallets 0.3.2 and 0.3.3 refuse only the partial offer-id case of a repeated fill, as
 > `VERIFY_UNAVAILABLE`, which this SDK marks retryable, so a program that retries `VERIFY_UNAVAILABLE` meets it
-> again on each try; they sign a repeated whole-offer or reservation fill. The wider refusal comes with the next
-> wallet release. Under CommonJS, an error thrown by a `Chain` taken from `@inversealtruism/cairn-sdk/chain` is not
+> again on each try; they sign a repeated whole-offer or reservation fill. Wallet 0.3.4 and later refuse every
+> repeated fill as `FILL_ALREADY_SENT`. Under CommonJS, an error thrown by a `Chain` taken from `@inversealtruism/cairn-sdk/chain` is not
 > `instanceof` the root entry's classes (each CommonJS entry carries its own copy): branch on `e.code` and
 > `e.maybeSent`, or take `Chain` and the error classes from the same entry. `FILL_IN_PROGRESS`
 > means another fill request for the same offer or reservation is open in the wallet, queued or being sent; this
