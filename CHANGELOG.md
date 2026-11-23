@@ -3,9 +3,14 @@
 ## 0.9.1
 
 Wallet contract: as in 0.9.0 (the snapshot files are unchanged). Dependencies are unchanged; the optional peer
-`@inversealtruism/cairnx-replica` stays exactly 0.2.0. The SPV checkpoint does not move.
+`@inversealtruism/cairnx-replica` moves from 0.2.0 to 0.2.1. The SPV checkpoint does not move.
 
 ### Changed
+
+- `@inversealtruism/cairnx-replica` 0.2.0 to 0.2.1 (the optional peer and the dev dependency, exact): its
+  `nameHistory` with `check` no longer serves an address or profile record that a later one supersedes. Its
+  dependencies, its cairnx-core 0.2.10 peer and its type declarations are as in 0.2.0, so `/replica` exports the same
+  names; an app that installs the replica beside this SDK installs 0.2.1.
 
 - `classifySubmit` reads the node's HTTP 200 `{ ok: false, err: "submit validation did not finish: ..." }` as
   `inflight`, as the wallet does: the node answers it when its check of a submit panicked, which can follow

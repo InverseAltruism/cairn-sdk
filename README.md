@@ -14,9 +14,9 @@ The **Compute Substrate dApp kit:** one cohesive toolkit for building apps on CS
 npm i @inversealtruism/cairn-sdk
 ```
 
-The CairnX replica (`/replica`) is an optional peer dependency pinned to one exact version, 0.2.0 for this release, so
+The CairnX replica (`/replica`) is an optional peer dependency pinned to one exact version, 0.2.1 for this release, so
 that a process loads one cairnx-core. An app that installs another cairnx-replica version beside this SDK, for its
-`./server` entry too, is refused by npm with `ERESOLVE` (`peerOptional @inversealtruism/cairnx-replica@"0.2.0"`),
+`./server` entry too, is refused by npm with `ERESOLVE` (`peerOptional @inversealtruism/cairnx-replica@"0.2.1"`),
 and pnpm warns of an unmet peer. Install the version this release names; a newer replica comes with an SDK release
 that pins it. `--force` or `--legacy-peer-deps` installs the pair but can load two cairnx-core copies.
 
@@ -85,7 +85,7 @@ Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{con
 **`/replica`:** the CairnX replica, `@inversealtruism/cairnx-replica`'s browser entry re-exported whole: `open`, the
 sources, the verdict codes (`NOT_VERIFIED_CODES`, `NOTE_CODES`) and the levels. The replica is an optional peer
 dependency: install it with the cairnx-core this SDK pins
-(`npm i @inversealtruism/cairnx-replica@0.2.0 @inversealtruism/cairnx-core@0.2.10`) only if you import `/replica`; no
+(`npm i @inversealtruism/cairnx-replica@0.2.1 @inversealtruism/cairnx-core@0.2.10`) only if you import `/replica`; no
 other entry loads it. ES module only, like the replica: TypeScript refuses it from a CommonJS file under
 `module: "node16"` (TS1479), and `require()` loads it on Node 22.12 and later only. The guide has an example
 ("A replica").
