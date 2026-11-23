@@ -75,7 +75,9 @@ self-hosted setups. The chain is the only source of truth; every read carries an
 - The facade's light client (`SpvLightClient`) runs one `sync` at a time, csd-light's own on-demand sync included:
   csd-light refuses an overlapping sync as out of order, which would read as a reorg and reseed
   (`test/fillverify.test.ts` and `test/spv-fault-tolerance.test.ts`, the concurrent cases). Callers whose structural
-  failures overlap share one reseed (C5).
+  failures overlap share one reseed (C5). Only a failure that says the chain moved reseeds: csd-light's broken prev link
+  past the cached tip, or the near-tip re-check's mismatch. Every other one (a refused tx or block read, a device
+  clock more than 2 h behind) keeps the cache and surfaces as itself (C6, C7).
 - The per-attempt timeout is deliberately above the server's 10 s route deadline.
 - Cross-origin reach of that provider depends on the cairn server's CORS mount on /api/headers.
 - The checkpoint is picked in cairn (`bump-swapguard-cp.mjs`) and copied here in the same cycle; it is never a
@@ -90,14 +92,17 @@ self-hosted setups. The chain is the only source of truth; every read carries an
 
 - `src/fillverify.ts` imports `feeBpsAt`, `bindOfferTerms`, `provenOfferTerms`, `provenOfferRefusal` (the resolver's
   creation rules for a proven offer, both activation gates included), `previewFill`, `fillEndorsement`,
-  `fillTargetId`, `offerExpiryHeightOf` and `offerFillTooLate` from cairnx-core, with no local copies. The
+  `fillTargetId`, `isOpenClaimLane`, `LEGACY_HOLD_SUNSET_HEIGHT`, `offerExpiryHeightOf` and `offerFillTooLate` from
+  cairnx-core, with no local copies. The
   ProvenOfferTerms interface and producer are single-sourced and corpus-equivalence-pinned by
   `test/proven-terms-corpus.test.ts`.
 - `preverifyOffer` judges a fill over the proven record plus the served running state (status, a partial offer's paid
   and delivered, the claim or reservation). A served status other than open refuses; a partial offer is never sized,
-  but a pay `previewFill` says delivers nothing refuses; `me` and `tip` add `fillEndorsement` and `offerFillTooLate`.
+  but a pay `previewFill` says delivers nothing refuses; `me` and `tip` add `fillEndorsement`, `offerFillTooLate` and
+  the legacy-hold sunset (an open CSD offer's fill that attests the offer id is refused from that height).
   Without them `ok` is a verdict on the record, not on the caller's fill.
-- fillverify exports the `preverifyOffer` helper and the throw-on-nested-refusal write wrapper.
+- fillverify exports the `preverifyOffer` helper; the throw-on-nested-refusal write wrapper is `unwrapWrite` in
+  `connect.ts`, not exported.
 - The give and want-type binds are on: `bindOfferTerms` over the branded `MintedProvenOfferTerms` checks them by
   default in cairnx-core, and fillverify also passes `{ give: true, wantType: true }`. It binds the give legs, a
   symmetric want-type refusal and a token want's ticker and amount.

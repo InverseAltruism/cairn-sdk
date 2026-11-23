@@ -131,8 +131,11 @@ async function viaChainSend(answer) {
   return { node, ...(await send.then((r) => ({ r }), (e) => ({ e }))) };
 }
 
-await ok("node-signer: after a 502 the node took, a caller on the SDK's contract pays once (the same transaction resent, never one from other coins)", async () => {
-  const { node, provider, wallet, e } = await viaExample(ingestThen502);
+// The node takes the transaction, then the task that checked it panics: HTTP 200 with the node's not-finished text.
+const ingestThenNotFinished = (tx, node, json) => { node.held.push(tx); return json(200, { ok: false, txid: ECHO, err: "submit validation did not finish: task 12 panicked" }); };
+for (const [label, answer] of [["a 502", ingestThen502], ["the node's \"submit validation did not finish\"", ingestThenNotFinished]])
+await ok(`node-signer: after ${label} the node took, a caller on the SDK's contract pays once (the same transaction resent, never one from other coins)`, async () => {
+  const { node, provider, wallet, e } = await viaExample(answer);
   // The caller: a SubmitInFlightError is settled, never sent anew; any other error broadcast nothing, so it sends again.
   let mined = null;
   if (e instanceof SubmitInFlightError) {
@@ -152,7 +155,7 @@ const duplicate = (tx, node, json) => { node.held.push(tx); return json(200, { o
 const missingUtxo = (_tx, _node, json) => json(200, { ok: false, err: "missing utxo", txid: ECHO });
 const oddBody = (text) => (tx, node) => { node.held.push(tx); return new Response(text, { status: 200, headers: { "content-type": "application/json" } }); };
 await ok("node-signer classifies every submit answer as Chain.send does (one classifier): in flight, duplicate, or sent nothing", async () => {
-  const answers = [["502 after ingest", ingestThen502], ["no answer", ingestNoAnswer], ["413 body cap", bodyCap413], ["node refusal", nodeRefusal],
+  const answers = [["502 after ingest", ingestThen502], ["not finished after ingest", ingestThenNotFinished], ["no answer", ingestNoAnswer], ["413 body cap", bodyCap413], ["node refusal", nodeRefusal],
     ["missing utxo", missingUtxo], ["already present", duplicate], ["408", (_t, _n, json) => json(408, {})], ["429", (_t, _n, json) => json(429, {})],
     ...["null", "{}", "[]", "\"ok\"", "{\"ok\":\"maybe\",\"n\":9007199254740993}", "{\"ok\":false}", "{\"ok\":false,\"error\":\"node unreachable\"}"]
       .map((t) => [`2xx ${t}`, oddBody(t)])];

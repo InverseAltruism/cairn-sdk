@@ -59,8 +59,8 @@ follows, and says whether the sample ran against that wallet for the release.
 4. Balances are served reads for display, never a payment gate. CSD: `cairn.chain.utxos(addr)`,
    `confirmed_balance` in base units (1 CSD = 100,000,000). Tokens: `GET
    https://cairn-substrate.com/trade/api/cairnx/address/<addr>` answers `{ balances: { <ticker>: { available,
-   locked } } }` in base units as strings; `cairn.names.token(ticker)` gives the `decimals`. The SDK does not wrap
-   that route.
+   locked } } }` in base units as strings; `cairn.names.token(ticker)` gives the `decimals`. `cairn.names.namesOf(addr)`
+   reads that route (server-trusted, for display).
 5. Sign in with server-side verification. Your server issues a nonce (`generateNonce()`; at least 8 ASCII letters
    and digits, see "Sign-in" below), the page calls `wallet.signInWithCsd({ nonce, statement })`, and the server
    looks the nonce up in its own store (bound to the browser that asked for it), deletes it, runs `verifySiwc`
@@ -80,7 +80,9 @@ follows, and says whether the sample ran against that wallet for the release.
    `SubmitInFlightError` means the transaction may have been sent: check before sending again ("Typed errors"
    below). With code `WALLET_TIMEOUT` the request may still be open in the wallet: have the user reject it there
    first, then check, since approving it after a new send sends twice. A failed read never involved the wallet: an
-   HTTP status from the indexer, content or names routes throws an `HttpError` with code `HTTP_ERROR`; a chain read
+   HTTP status from the indexer, content or names routes throws an `HttpError` with code `HTTP_ERROR` (content
+   resolves `null` on a 404, and `verifyInclusion` does not throw: a proof read that fails for any reason answers
+   `not-found`, "no merkle proof (tx not indexed)"); a chain read
    (`cairn.chain.*`) that fails, or a request that got no answer, rejects with a plain `Error`, for which
    `errorCode` gives `UNKNOWN`.
 9. Account changes: `wallet.on("accountsChanged", (accounts) => ...)` fires with `[]` when the site loses access
@@ -177,7 +179,9 @@ try {
   `restarts` times, then throws a `CairnError` `WALK_RESTARTS`. A page that makes no progress ends the walk with an
   `HttpError` (a malformed response): an empty page with a `next`, a `next` equal to the cursor just sent or to an
   earlier cursor of the walk, or a later page naming another `at`. Over `maxPages` or `maxRows`: `WALK_LIMIT`. A page
-  1 whose `at` the SDK cannot send back: `SNAPSHOT_UNPINNED`.
+  1 whose `at` the SDK cannot send back: `SNAPSHOT_UNPINNED`. A `maxPages`, `maxRows` or `restarts` that is not a
+  whole number of 0 or more (a string of digits such as `"5"` is read as that number): `INVALID_QUERY`, before any
+  request.
 - `namesPage` options: `keys` (1 to 32 names; excludes every other option but `at`), `after` (a page's `next`), `limit` (1 to
   200; the server's default is 100), `at` (a page's `at`), `owner`, `status` (`held`, `pending`, `lapsed`), `order`
   (`name`, bytewise, the default; `newest`; `length`, shortest first). An option outside that grammar throws a `CairnError` with code
@@ -249,7 +253,9 @@ Node 22.12 or later (earlier 22.x lines throw `ERR_REQUIRE_ESM`). A server uses 
 ## What the SDK verifies vs trusts (read this)
 
 The honest trust model: funds are safe even against a malicious RPC, because **the wallet signs
-locally and the user clear-signs every signature**; a bad RPC can mislead *display*, not move funds.
+locally and the user clear-signs every signature**; a bad RPC can mislead *display*, not move funds. That holds for
+the wallet. A key-backed signer (`cairn.chain.send`, `examples/node-signer.mjs`) trusts the RPC's submit answer: an
+RPC that forwards a transaction and answers with a refusal invites a new send, which can pay twice.
 
 - **Verified (cryptographic):** transaction signing + sighash (in the wallet); `LightClient` tx
   *inclusion* (Merkle branch folded against a **PoW-verified** header it re-derives LWMA difficulty
@@ -262,12 +268,15 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
   `rpc-trusted` and never hides that. Verify what matters; treat balances as a hint.
   `cairn.index.addressUtxo(addr)` reads an address's unspent outputs from the indexer in pages of 1,000 and
   stops at 100 pages: when the 100th page is full (100,000 or more outputs, or an indexer whose pages never
-  end) it throws `HttpError` (`too many unspent outputs: ...`) instead of reading on.
+  end) it throws `HttpError` (`too many unspent outputs: ...`) instead of reading on. A page that is not an
+  array throws `HttpError` too, the first one included.
 - **Indexer = untrusted derived view:** the `IndexerClient` re-folds Merkle proofs
   (`verifyInclusion`). `verifyInclusion()` folds the proof and checks its root against a header from
   `headerMerkleAt`. What it proves is that a 32-byte value is a node of that block's merkle tree, not that
   the value is a transaction: the tree has no leaf and node separation, so an inner node or the block's
-  merkle root itself folds as well. Get the id by hashing a transaction body you hold (`txid(tx)` from
+  merkle root itself folds as well. The returned `pos` is bounded by the proof's depth (below 2 to the power
+  of its length) but is not a proof of order: where the block's tree pads an odd level, another position folds
+  too (transaction 4 of a 6-transaction block also folds as position 6). Get the id by hashing a transaction body you hold (`txid(tx)` from
   `…/chain`); an id the indexer or anyone else hands you proves nothing on its own. The default `Cairn` wiring backs that with a light
   client that PoW-verifies headers forward from a pinned checkpoint (`DEFAULT_SPV_CHECKPOINT`; pass
   `spvCheckpoint` in the config to keep a different anchor). `included` is `true` only with
@@ -277,15 +286,31 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
   alone vouches for it. Gate on `included` or on `trustLevel === "verified-inclusion"`; they agree.
   When a release moves the default checkpoint, transactions below the new anchor drop to
   `"proof-consistent"`; the changelog names the affected band.
-- **Reorgs near the tip:** a header within 12 blocks of the light client's cached tip is first compared
+- **Reorgs near the tip:** each of the 12 newest headers in the light client's cache (the cached tip and the 11
+  below it) is first compared
   with the header the base serves at that height, so a block orphaned by a reorg stops counting. The
   hosted base edge-caches rows at or below its tip minus 6, so against cairn-substrate.com this catches
   reorgs of up to 6 blocks; a self-hosted base without that cache gets the full 12.
+- **A device clock behind the chain:** csd-light refuses a header dated more than 2 hours after the device's
+  clock, as the node does. On a device whose clock is that far behind, checks that need the newest blocks
+  answer `"proof-consistent"` with `time too far in future` in the `reason` until the clock is right; older
+  blocks still verify.
 - **A long-lived instance:** the header cache advances on demand. When a transaction sits more than 256
   blocks above it (a page open for hours, or a header pre-warm that failed), `verifyInclusion` and
   `verifyOfferForFill` sync the cache forward first through `/api/headers` (512 headers a request), so
   the first check after a long idle takes a few requests longer; later checks add none. Concurrent checks on
   one `Cairn` instance share that sync.
+- **The checkpoint's age:** every `Cairn` instance syncs headers from `DEFAULT_SPV_CHECKPOINT` (or your
+  `spvCheckpoint`) to the tip on its first check, in memory, so that cost grows with the checkpoint's age. Each
+  release moves the default checkpoint; an app that stays on one release pays more each month. Estimates (720
+  blocks a day; 512 headers and about 325 bytes of JSON a header per request; 16 to 46 microseconds of CPU and
+  about 0.5 KB of memory a header, measured on 2026-11-23): one year after the checkpoint, 515 requests, 82 MiB
+  of JSON, 4 to 12 s of CPU and about 120 MiB of memory; three years after it, 1,541 requests, 245 MiB, 12 to
+  36 s of CPU and about 380 MiB, plus a round trip per request (52 s and 154 s at 100 ms a request). The hosted
+  `/api/headers` allows 600 requests a minute per address by default, which one sync outgrows after about
+  307,200 headers (427 days); until a later call finishes the sync, checks answer `transient` or
+  `"proof-consistent"`. A reorg seen near the cached tip repeats the whole sync. Update the SDK, or pass a recent
+  `spvCheckpoint`, to keep the first check short.
 
 **Filling an offer (F13, diligent-dApp pre-verify):** `fillOffer` is resolver-trusted at this SDK layer:
 the SDK does NOT SPV-verify the `outputs` you hand the wallet, so a lying resolver could redirect the
@@ -322,15 +347,22 @@ outputs were not checked. On a token-priced offer a fill moves no CSD, so any po
 Without more inputs `ok` says the offer is proven, not that you can fill it now: an offer bound to another
 taker, or held by someone else's live claim or reservation, still answers `ok: true`. Pass `opts.me` (the
 address that signs the fill) and `opts.tip` (the chain tip height you sign at) together with `pay`, and
-optionally `opts.fillTargetId` (the proposal id your attest will target), to run cairnx-core's
+`opts.fillTargetId` (the proposal id your attest will target; optional for a taker-bound or token offer, required
+while a live reservation routes the offer, which from block 60,044 is every fill of an open CSD offer), to run cairnx-core's
 `fillEndorsement` over the served state after the binds. The result then carries `endorsement` (`{ verdict,
 reason }`) and `fillTarget` (the id the attest must target at that tip: the offer id, or the fclaim txid
 while a live V28 reservation routes the offer). A `refused` verdict answers `ok: false` with no `outputPlan`
 (`sized: false`), as a served status other than `open` does; `not-endorsable` (a
-token-priced want, whose delivery depends on your token balance) is not a refusal. The claim fields the
+token-priced want, whose delivery depends on your token balance) is not a refusal. `ok` and `reason` are the SDK's
+verdict; `endorsement` is cairnx-core's opinion of the served hold alone, kept as the core returned it, so a fill the
+SDK refuses for the sunset or the expiry cushion below answers `ok: false` with `endorsed`: branch on `ok`. The claim fields the
 endorsement reads (`claimedBy`, `claimUntilHeight`, `claimTxid`) are served by the resolver too, like `paid`, and
 `fillTarget` is derived from them: a resolver that serves `claimedBy` as your address turns `refused` into
-`endorsed` and `ok: true`, so rely on the Cairn Wallet's own fill preflight for the claim as well. Every result that carries
+`endorsed` and `ok: true`, so rely on the Cairn Wallet's own fill preflight for the claim as well. From block 60,044
+(cairnx-core's `LEGACY_HOLD_SUNSET_HEIGHT`) no claim made before V28 is live and an open CSD offer fills only
+through a reservation's fclaim txid, so with `me` and `tip` a fill whose target is the offer id answers `ok: false`
+with no `outputPlan`, whatever claim is served: reserve the offer and pass the reservation's fclaim txid as
+`fillTargetId`. Every result that carries
 the proven `terms` also carries the proven expiry: `expiresEpoch` and `expiresAt`, the first block height at
 which CairnX treats the offer as expired. A fill must be mined below `expiresAt`. With `me` and `tip`, a fill
 whose offer's last live block (`expiresAt - 1`) is fewer than 4 blocks above your tip (cairnx-core's
@@ -344,7 +376,7 @@ reason naming the anchor, for an offer mined below the SPV checkpoint (pass an o
 verify it). Build EXACTLY the `outputPlan`, never the resolver-served outputs a lying
 resolver could redirect. Its values are `bigint` base units, while each output `value` of `fillOffer` is a
 `number` the wallet requires to be a positive safe integer (refused otherwise: wallet 0.3.3 answers the nested
-`BAD_OUTPUTS` at signing, the release after it `BAD_REQUEST` before any window opens): pass `Number(value)` after
+`BAD_OUTPUTS` at signing, wallet 0.3.4 and later `BAD_REQUEST` before any window opens): pass `Number(value)` after
 checking `value <= BigInt(Number.MAX_SAFE_INTEGER)`. Where a param takes a decimal string, `value.toString()` is
 exact. Never `JSON.stringify` the plan: it throws on a `bigint`. This is best-effort corroboration, not the payment-grade boundary (the Cairn
 Wallet's own on-device fill-SPV in 0.2.60+ is what fails-closed before signing), but a dApp settling real
@@ -400,13 +432,15 @@ a 2xx body whose shape is wrong, such as a names list read that is not an array)
 `CONTENT_NOT_JSON` (`content.get()` on verified bytes that are not JSON), `WALLET_TIMEOUT` (a write method
 outlasted the connection timeout; see below), `WALLET_RELOADED` (the wallet was updated or reloaded under the
 page; the request never reached it, and the page must reload to reach the wallet again), `INVALID_QUERY` (a
-`namesPage` option outside the read's grammar; nothing was sent), `UNKNOWN`, the `LINK_*`
+`namesPage` or `allNames` option outside the read's grammar; nothing was sent), `WALK_LIMIT`, `WALK_RESTARTS` and
+`SNAPSHOT_UNPINNED` (`allNames` stopped: see Names), `SUBMIT_REJECTED`, `SUBMIT_MAYBE_INFLIGHT` and `SUBMIT_DUPLICATE`
+(also from `cairn.chain.send`), `UNKNOWN`, the `LINK_*`
 codes of [Links](#links-webcsd), and every wallet code below.
 
 > **Canonical error contract:** the wallet repo's `WALLET-ERROR-CODES.md` (cairn-wallet) is the
 > source of truth. `mapProviderError` and the write wrappers keep the wallet's code on the error (except
 > `UNKNOWN_KIND`, which throws `UnsupportedMethodError` with `UNSUPPORTED_METHOD`, and `APPROVAL_CLOSED`, which
-> throws `UserRejectedError` with `USER_REJECTED`) and classify every code listed there as of the wallet after 0.3.3 except
+> throws `UserRejectedError` with `USER_REJECTED`) and classify every code listed there as of wallet 0.3.5 except
 > `RESERVATION_UNCONFIRMED`, which the wallet returns to its approval window only: retryable (`VERIFY_UNAVAILABLE`, `OFFER_UNKNOWN`, `REVIEW_REQUIRED`,
 > `SEAL_NOT_MINED`, and `WALLET_UNAVAILABLE` on `connect` and `getAddress`: nothing was sent), in flight
 > (`SUBMIT_MAYBE_INFLIGHT`, `SUBMIT_DUPLICATE`, and `WALLET_UNAVAILABLE` on a write method: `send`,
@@ -414,15 +448,15 @@ codes of [Links](#links-webcsd), and every wallet code below.
 > `OFFER_SOURCE_CONFLICT`, `FILL_LEGACY_SUNSET`, `VERIFY_HORIZON`, `VERIFY_UNREPRESENTABLE`,
 > `RESERVATION_DENIED`, `RPC_BLOCK_MISMATCH`, `FILL_IN_PROGRESS`, `SEAL_UNKNOWN` and `FILL_ALREADY_SENT`;
 > `retryable: false`). `SEAL_UNKNOWN`: `revealClaim` named a txid this account holds no sealed claim for; reveal
-> from the account that sealed it. The wallet sends that code from its release after 0.3.3; 0.3.3 sends the same
-> refusal without a code, which reads `UNKNOWN`. `FILL_ALREADY_SENT` comes with the wallet's next release: this
+> from the account that sealed it. The wallet sends that code since 0.3.4; 0.3.3 sends the same
+> refusal without a code, which reads `UNKNOWN`. `FILL_ALREADY_SENT` (since wallet 0.3.4): this
 > account's earlier fill of the same offer or reservation was sent less than 30 minutes ago and is not seen
 > applied; nothing was signed. Do not ask again on a timer: look the earlier fill up, and let the user ask again
 > once it confirms, or after the 30 minutes if it did not go through (the earlier fill can still be mined after
 > them). Wallets 0.3.2 and 0.3.3 refuse only the partial offer-id case of a repeated fill, as
 > `VERIFY_UNAVAILABLE`, which this SDK marks retryable, so a program that retries `VERIFY_UNAVAILABLE` meets it
-> again on each try; they sign a repeated whole-offer or reservation fill. The wider refusal comes with the next
-> wallet release. Under CommonJS, an error thrown by a `Chain` taken from `@inversealtruism/cairn-sdk/chain` is not
+> again on each try; they sign a repeated whole-offer or reservation fill. Wallet 0.3.4 and later refuse every
+> repeated fill as `FILL_ALREADY_SENT`. Under CommonJS, an error thrown by a `Chain` taken from `@inversealtruism/cairn-sdk/chain` is not
 > `instanceof` the root entry's classes (each CommonJS entry carries its own copy): branch on `e.code` and
 > `e.maybeSent`, or take `Chain` and the error classes from the same entry. `FILL_IN_PROGRESS`
 > means another fill request for the same offer or reservation is open in the wallet, queued or being sent; this
@@ -437,7 +471,9 @@ codes of [Links](#links-webcsd), and every wallet code below.
 > resend sends twice. The key-backed `cairn.chain.send` reads its submit with the exported `classifySubmit`
 > and throws the same error, carrying the signed transaction as `nodeJson`, when
 > no verdict came (code `SUBMIT_MAYBE_INFLIGHT`: no answer, a timeout, a 5xx or any status other than 400, 413
-> and 429, a 2xx body without the node's own `ok`, or an `ok: false` without the node's `err` text) and when the
+> and 429, a 2xx body without the node's own `ok`, an `ok: false` without the node's `err` text, or the node's
+> "submit validation did not finish", which it answers when its check of the submit panicked, possibly after the
+> mempool took the transaction) and when the
 > node answers "already present" (code
 > `SUBMIT_DUPLICATE`: a node holds these bytes). Once the chain shows it did not land, resend it with
 > `cairn.chain.submit(e.nodeJson)` (the same coins under the same txid, so it cannot pay twice) rather than a new
@@ -516,8 +552,8 @@ safe       = ALPHA / DIGIT / "-" / "_" / "~"
 
 - The SDK is **0.x**: minor versions may change the API until 1.0 (semver: 0.y.z makes no
   compatibility promise). Read the changelog before upgrading.
-- **In apps: pin exactly** (`"@inversealtruism/cairn-sdk": "0.8.0"`) and commit your lockfile.
-  **In libraries that depend on the SDK: use a range** (`^0.8.0`; on 0.x a caret stays inside one minor) to avoid duplicate installs.
+- **In apps: pin exactly** (`"@inversealtruism/cairn-sdk": "0.9.1"`) and commit your lockfile.
+  **In libraries that depend on the SDK: use a range** (`^0.9.1`; on 0.x a caret stays inside one minor) to avoid duplicate installs.
 - The low-level **`@inversealtruism/csd-*` packages are versioned independently**, so their numbers differ.
   If you depend on more than one, pin each exactly and make sure your lockfile resolves a single
   `@inversealtruism/csd-codec` and a single `@inversealtruism/csd-crypto` (a codec that *signs* must be the

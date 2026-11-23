@@ -8,13 +8,14 @@ export type SubmitOutcome = { answer: unknown } | { error: unknown };
 /**
  * - `accepted`: the node answered `ok: true`.
  * - `duplicate`: the node answered that it already holds these bytes ("already present"): pending, not a failure.
- * - `rejected`: an explicit refusal: the node's `ok: false` with its `err` text (any text but "already present"),
- *   or HTTP 400, 413 or 429, read as refused from any sender. cairn-substrate.com answers 400 (its body cap) and 429
+ * - `rejected`: an explicit refusal: the node's `ok: false` with its `err` text (any text but "already present" and
+ *   "submit validation did not finish"), or HTTP 400, 413 or 429, read as refused from any sender. cairn-substrate.com answers 400 (its body cap) and 429
  *   (its rate limit) before it forwards a submit, and nginx or Cloudflare answer a body cap with 413. Behind a front
  *   of your own that can answer one of them after forwarding, treat a `rejected` verdict that carries `status` as
  *   `inflight`.
  * - `inflight`: no verdict; the node may hold the transaction (no answer, a timeout, a 5xx, any other status, a
- *   2xx body without the node's own boolean `ok`, an `ok: false` without the node's `err` text).
+ *   2xx body without the node's own boolean `ok`, an `ok: false` without the node's `err` text, the node's "submit
+ *   validation did not finish").
  */
 export type SubmitVerdict =
   | { verdict: "accepted" }
@@ -25,6 +26,10 @@ export type SubmitVerdict =
 // Answered before forwarding: cairn-substrate.com's body cap (400) and rate limit (429), a body cap at nginx or
 // Cloudflare (413). Any other front is assumed to do the same; SubmitVerdict's doc says what to do when it does not.
 const REFUSED_BEFORE_FORWARD = new Set([400, 413, 429]);
+
+// The node's text when the task that checks and admits a submit panicked or was cancelled: admission may have run.
+// The wallet's NOT_FINISHED (cairn-wallet src/core/submitverdict.ts) is the same rule.
+const NOT_FINISHED = /^submit validation did not finish/i;
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -100,6 +105,7 @@ export function classifySubmit(outcome: SubmitOutcome): SubmitVerdict {
     const err = ok === false && Object.hasOwn(a, "err") ? a.err : undefined;
     // The wallet's isSubmitDuplicateErr (cairn-wallet src/core/node.ts) is the rule's home; this matches it.
     if (ok === false && /already present/i.test(text(err ?? ""))) return { verdict: "duplicate", detail: text(err) };
+    if (ok === false && typeof err === "string" && NOT_FINISHED.test(err)) return { verdict: "inflight", detail: err };
     // The node writes its reason in `err` on every refusal; an ok:false without it is not the node's answer.
     if (ok === false && typeof err === "string" && err) return { verdict: "rejected", detail: err };
   }

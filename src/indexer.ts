@@ -59,13 +59,19 @@ function cursorAfter(a: string, b: string): boolean {
   if (ta!.toLowerCase() !== tb!.toLowerCase()) return ta!.toLowerCase() > tb!.toLowerCase();
   return Number(va) > Number(vb);
 }
+// csd-codec's verifyMerkleProof folds pos as a 32-bit integer and reads one bit of it per branch level, so a pos at
+// or above 2^levels folds like its low bits; the bound keeps pos below 2^levels (31 levels: the deepest branch the
+// 32-bit fold reads exactly). It does not make pos the transaction's position: where a level pads an odd count by
+// duplicating its last node, a position in that padding folds too (tx 4 of a 6-tx block also folds as pos 6), and
+// telling them apart needs the block's transaction count, which the proof does not carry.
+const MAX_PROOF_LEVELS = 31;
 function isValidMerkleProof(p: unknown): p is MerkleProof {
   if (!p || typeof p !== "object") return false;
   const m = p as Record<string, unknown>;
-  return Number.isInteger(m.block_height) && (m.block_height as number) >= 0
-    && Number.isInteger(m.pos) && (m.pos as number) >= 0
+  return Number.isSafeInteger(m.block_height) && (m.block_height as number) >= 0
     && typeof m.merkle_root === "string" && HEX64.test(m.merkle_root)
-    && Array.isArray(m.merkle) && m.merkle.every((x) => typeof x === "string" && HEX64.test(x));
+    && Array.isArray(m.merkle) && m.merkle.length <= MAX_PROOF_LEVELS && m.merkle.every((x) => typeof x === "string" && HEX64.test(x))
+    && Number.isSafeInteger(m.pos) && (m.pos as number) >= 0 && (m.pos as number) < 2 ** m.merkle.length;
 }
 
 /** A live index event ({ kind: "block" | "proposal" | "attestation" | "reorg", ... }). */
@@ -150,11 +156,13 @@ export class IndexerClient {
 
   /** Every unspent output of an address. The indexer answers in pages of at most 1,000 rows; this follows its
    *  `?after=` cursor until a short page, reading at most 100 pages: when the 100th is full (100,000 or more
-   *  outputs) it throws HttpError instead. An indexer that predates paging answers the whole set at once. */
+   *  outputs) it throws HttpError instead, as it does for a page that is not an array. An indexer that predates paging
+   *  answers the whole set at once. */
   async addressUtxo(a: string): Promise<unknown[]> {
     const path = `/address/${encodeURIComponent(a)}/utxo`;
     const first = await this.http.getJson<unknown[]>(path);
-    if (!Array.isArray(first) || first.length !== UTXO_PAGE) return first;
+    if (!Array.isArray(first)) throw new HttpError(200, this.http.url(path), "malformed response: a utxo page is not an array");
+    if (first.length !== UTXO_PAGE) return first;
     const out = [...first];
     let page: unknown[] = first;
     let prev: string | null = null;

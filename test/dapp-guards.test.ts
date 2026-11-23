@@ -27,7 +27,15 @@ console.log("ContentClient (one origin, typed get error):");
 {
   ok("an origin serving mismatching bytes throws ContentVerificationError", (await caught(() => new ContentClient({ cairn: src(bad) }).getBytes(h))) instanceof ContentVerificationError);
   ok("a 404 reads as null", (await new ContentClient({ cairn: src(null) }).getBytes(h)) === null);
-  ok("an unreachable origin reads as null, as 0.6.0 did when every source failed", (await new ContentClient({ cairn: src("down") }).getBytes(h)) === null);
+  // null means the origin does not hold the content; a failed read is not an answer about the content.
+  const down = await caught(() => new ContentClient({ cairn: src("down") }).get(h));
+  ok("an unreachable origin rejects with the fetch error, not null", down instanceof TypeError && /fetch failed/.test((down as Error).message));
+  for (const status of [429, 500, 502, 503]) {
+    const at = new Http({ baseUrl: "https://s.test", fetch: (async () => new Response("busy", { status })) as unknown as typeof fetch });
+    const e = await caught(() => new ContentClient({ cairn: at }).get(h));
+    ok(`HTTP ${status} from the origin throws HttpError ${status} (code HTTP_ERROR), not null`, e instanceof HttpError && e.status === status && errorCode(e) === "HTTP_ERROR");
+  }
+  ok("honest: a 404 still reads as null through get()", (await new ContentClient({ cairn: src(null) }).get(h)) === null);
   const one = new ContentClient({ cairn: src(good) });
   ok("honest: the origin's verified bytes parse to the object", (await one.get<typeof obj>(h))?.title === "t");
 

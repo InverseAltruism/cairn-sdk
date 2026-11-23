@@ -2,7 +2,7 @@
 // DESER-4 (response size cap), CONTENT-HASH-PATH-1 (id path-injection rejected), CAIRN-SPV-3 (equivocation
 // discriminant). Pure unit tests with a routing mock fetch — no network.
 import { Http, IndexerClient, ContentClient } from "../src/index.js";
-import { merkleRoot, merkleBranch } from "../src/chain.js";
+import { merkleRoot, merkleBranch, sha256d } from "../src/chain.js";
 
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { c ? pass++ : fail++; console.log(`  ${c ? "✅" : "❌"} ${n}`); };
@@ -24,6 +24,61 @@ for (const bad of [{ merkle: "notarray" }, { pos: "x", merkle: [123], merkle_roo
   let threw = false, r: any = null;
   try { r = await ix.verifyInclusion("0x" + "1".repeat(64)); } catch { threw = true; }
   ok(`malformed proof ${JSON.stringify(bad).slice(0, 28)} → not-found (no throw)`, !threw && r?.trustLevel === "not-found");
+}
+
+console.log("=== verifyInclusion: a position the branch cannot hold, or a height that is not a safe integer, is not-found ===");
+{
+  // csd-codec's fold reads only the low bits of pos that the branch has levels for, so a tx at position 0 of a
+  // two-transaction block folds as well with pos 2, 2^32 or 2^53; the header matches the root, so the forged pos
+  // came back as verified-inclusion.
+  const txids = ["0x" + "10".repeat(32), "0x" + "20".repeat(32)];
+  const root = merkleRoot(txids), branch = merkleBranch(txids, 0);
+  const at = (proof: object) => new IndexerClient(
+    new Http({ baseUrl: "https://c.com", fetch: routerFetch([(u) => u.pathname.endsWith("/merkle-proof") ? json(proof) : undefined]) }),
+    { headerMerkleAt: async () => root });
+  const bad: string[] = [];
+  for (const pos of [2, 3, 2 ** 32, 2 ** 53]) {
+    const r: any = await at({ block_height: 145_600, pos, merkle: branch, merkle_root: root }).verifyInclusion(txids[0]!);
+    if (!(r.included === false && r.trustLevel === "not-found" && /malformed merkle proof/.test(r.reason ?? ""))) bad.push(`pos ${pos}: ${r.trustLevel} pos=${r.pos}`);
+  }
+  for (const block_height of [1e21, 2 ** 53]) {
+    const r: any = await at({ block_height, pos: 0, merkle: branch, merkle_root: root }).verifyInclusion(txids[0]!);
+    if (!(r.included === false && r.trustLevel === "not-found")) bad.push(`height ${block_height}: ${r.trustLevel}`);
+  }
+  ok("a forged pos (2, 3, 2^32, 2^53) for position 0 of a two-transaction block, or a height of 1e21 or 2^53, is not-found",
+    bad.length === 0 || (console.log(`    ${bad.join("; ")}`), false));
+  // Honest: every position of blocks of 1 to 9 transactions verifies with its real branch.
+  const misses: string[] = [];
+  let proofs = 0;
+  for (let n = 1; n <= 9; n++) {
+    const ids = Array.from({ length: n }, (_, i) => "0x" + (i + 1).toString(16).padStart(2, "0").repeat(32));
+    const r0 = merkleRoot(ids);
+    for (let pos = 0; pos < n; pos++) {
+      proofs++;
+      const proof = { block_height: 145_600, pos, merkle: merkleBranch(ids, pos), merkle_root: r0 };
+      const ix = new IndexerClient(new Http({ baseUrl: "https://c.com", fetch: routerFetch([(u) => u.pathname.endsWith("/merkle-proof") ? json(proof) : undefined]) }),
+        { headerMerkleAt: async () => r0 });
+      const r: any = await ix.verifyInclusion(ids[pos]!);
+      if (!(r.included === true && r.trustLevel === "verified-inclusion" && r.pos === pos)) misses.push(`n=${n} pos=${pos}: ${r.trustLevel}`);
+    }
+  }
+  ok(`honest: every position of blocks of 1 to 9 transactions is verified-inclusion at its own pos (${proofs} proofs)`,
+    proofs === 45 && (misses.length === 0 || (console.log(`    ${misses.join("; ")}`), false)));
+  // The depth cap: a branch of 31 levels (the most csd-codec's 32-bit fold reads exactly) folds; 32 is refused.
+  const deep = (levels: number) => {
+    const sibs = Array.from({ length: levels }, (_, i) => "0x" + (i % 250 + 3).toString(16).padStart(2, "0").repeat(32));
+    let cur = Buffer.from("aa".repeat(32), "hex");
+    for (const s of sibs) cur = Buffer.from(sha256d(new Uint8Array([...cur, ...Buffer.from(s.slice(2), "hex")])));
+    return { sibs, root: "0x" + cur.toString("hex") };
+  };
+  const out = await Promise.all([31, 32].map(async (levels) => {
+    const { sibs, root: r0 } = deep(levels);
+    const proof = { block_height: 145_600, pos: 0, merkle: sibs, merkle_root: r0 };
+    const ix = new IndexerClient(new Http({ baseUrl: "https://c.com", fetch: routerFetch([(u) => u.pathname.endsWith("/merkle-proof") ? json(proof) : undefined]) }),
+      { headerMerkleAt: async () => r0 });
+    return (await ix.verifyInclusion("0x" + "aa".repeat(32)) as any).trustLevel;
+  }));
+  ok("a 31-level branch at pos 0 is verified-inclusion; a 32-level one is not-found", out[0] === "verified-inclusion" && out[1] === "not-found");
 }
 
 console.log("=== CAIRN-SPV-3: chain-disagreement flagged as equivocation (distinct from absence) ===");

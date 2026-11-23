@@ -41,7 +41,8 @@ export interface CairnConfig {
   baseUrls?: CairnBaseUrls;
   /** Custom fetch (defaults to global fetch). */
   fetch?: FetchLike;
-  /** Per-request HTTP timeout in ms (default 15000). */
+  /** Per-request HTTP timeout in ms for the indexer, content and names reads (default 15000); chain reads
+   *  through csd-client use its own default, 10000, when this is unset. */
   timeoutMs?: number;
   /** A pre-connected wallet (otherwise call `cairn.connect()` in the browser). */
   wallet?: WalletConnection;
@@ -92,6 +93,10 @@ const spvIsTransient = (e: unknown): boolean => {
   const msg = String((e as Error)?.message || e);
   return SPV_TRANSIENT_RE.test(msg) || SPV_TRANSIENT_JSON_RE.test(msg);
 };
+// The failures that say the served chain moved under the cached headers, so a fresh sync from the checkpoint can pass:
+// csd-light's prev-link refusal past the cached tip, and recheckCachedHeader's own error. Any other failure (a refused
+// tx or block read, a header csd-light dates too far in the future of this device's clock) meets a fresh client too.
+const SPV_CHAIN_MOVED_RE = /broken prev link|no longer on the served chain/;
 const spvSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 // Own backoff ladder (0.7, 1.4, 2.1, 2.8 s). A server Retry-After wins when longer, because retrying inside the
 // server's window spends an attempt it will refuse again, but only while it fits SPV_RETRY_WAIT_BUDGET_MS.
@@ -207,12 +212,13 @@ export class Cairn {
     });
   }
 
-  // MF-03: run an SPV read; on a STRUCTURAL failure (a reorg orphaned our cached tip: broken
-  // prev-link / bad PoW / hash mismatch) reseed ONCE from the pinned checkpoint into a LOCAL fresh
+  // MF-03: run an SPV read; on a failure that says the chain moved (SPV_CHAIN_MOVED_RE: a reorg orphaned our cached
+  // tip) reseed ONCE from the pinned checkpoint into a LOCAL fresh
   // client, retry the read on it, and commit the fresh client ONLY when both succeed (never null
   // this._spvLight first - the wallet G8 lesson, same shape as the MF-14 seed). A TRANSIENT failure
   // (rate limit / gateway / timeout / non-dense / CF 200-HTML) keeps the cache and rethrows: wiping
-  // on those turns one /api/headers 429 into a reseed storm (DOS-HDR-3). A second structural
+  // on those turns one /api/headers 429 into a reseed storm (DOS-HDR-3); every other failure is rethrown the same
+  // way, since a fresh client meets it again. A second structural
   // failure propagates fail-closed; there is no loop. recheckCachedHeader feeds this path: a near-tip
   // cached header that the served chain no longer carries is a structural failure. Callers whose failures overlap
   // (waiters on one shared sync) share one reseed.
@@ -220,7 +226,7 @@ export class Cairn {
     const lc = await this.seededSpvLight();
     try { return await op(lc); }
     catch (e) {
-      if (spvIsTransient(e)) throw e;
+      if (spvIsTransient(e) || !SPV_CHAIN_MOVED_RE.test(String((e as Error)?.message ?? e))) throw e;
       this._spvReseedInflight ??= this.seedFreshSpvLight().finally(() => { this._spvReseedInflight = null; });
       const fresh = await this._spvReseedInflight;
       const out = await op(fresh);

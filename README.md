@@ -14,6 +14,12 @@ The **Compute Substrate dApp kit:** one cohesive toolkit for building apps on CS
 npm i @inversealtruism/cairn-sdk
 ```
 
+The CairnX replica (`/replica`) is an optional peer dependency pinned to one exact version, 0.2.0 for this release, so
+that a process loads one cairnx-core. An app that installs another cairnx-replica version beside this SDK, for its
+`./server` entry too, is refused by npm with `ERESOLVE` (`peerOptional @inversealtruism/cairnx-replica@"0.2.0"`),
+and pnpm warns of an unmet peer. Install the version this release names; a newer replica comes with an SDK release
+that pins it. `--force` or `--legacy-peer-deps` installs the pair but can load two cairnx-core copies.
+
 ## Quick start
 
 ```ts
@@ -68,7 +74,7 @@ front door without the read API (a 404) they answer from the legacy list, and a 
 `at: null`, a `total` the SDK counted); every other refusal is thrown. The guide has the walk and the fallback rule
 ("Names: pages and lookups").
 
-**`cairn.content`:** `prepare(obj)`/`put(obj)` → `{ payloadHash, canonical, bytes }`; `get(hash)` / `getBytes(hash)` (fetch **and verify** `sha256(bytes) === hash`, throws `ContentVerificationError` on tamper); `hash(obj)`.
+**`cairn.content`:** `prepare(obj)`/`put(obj)` → `{ payloadHash, canonical, bytes }`; `get(hash)` / `getBytes(hash)` (fetch **and verify** `sha256(bytes) === hash`, throws `ContentVerificationError` on tamper, resolves `null` when the origin answers 404 and throws `HttpError` on any other status); `hash(obj)`.
 
 **`cairn.chain`:** `tip()`, `utxos(addr)`, `submit(nodeJsonTx)`, `.client` (full `CsdClient`), `.light()` (a `LightClient` over the same RPC with no checkpoint and no batch header source: it proves nothing until seeded, and a sync from it reads one block per height through the RPC; for verified reads use `cairn.index.verifyInclusion()` and `cairn.verifyOfferForFill()`, which run the facade's light client seeded from `DEFAULT_SPV_CHECKPOINT`, or build your own `new LightClient({ client, checkpoints, headersBatchProvider })` from a pinned checkpoint). The package also re-exports the primitives under the `/chain` subpath: `buildSendVerified/buildProposeVerified/buildAttestVerified` (they check each input's value against its source transaction; use them over the bare `buildSend/buildPropose/buildAttest` with any RPC you do not run), `signTx`, `keygen`, `payloadHash`, `verifyMerkleProof`, `LightClient`, etc.
 
@@ -114,7 +120,7 @@ new Cairn({
     rpc:     "https://cairn-substrate.com/api/rpc", // node RPC (proxy)
     indexer: "https://cairn-substrate.com/explorer/api",
   },
-  fetch,            // custom fetch (Node <18, tests)
+  fetch,            // custom fetch (tests, a proxy agent)
   timeoutMs: 15000,
   WebSocketImpl,    // for index.subscribe() in environments without global WebSocket
 });

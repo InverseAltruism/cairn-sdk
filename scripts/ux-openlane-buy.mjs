@@ -9,7 +9,8 @@ const CHROME = process.env.CHROME_BIN || undefined;
 const EXT = "/opt/cairn_substrate/cairn-wallet/dist";
 const SITE = process.env.SITE || "https://cairn-substrate.com";
 const PROXY = "http://127.0.0.1:7777/trade/api";
-const GATE_PW = process.env.GATE_PW || "ohyesdaddy";
+const GATE_PW = process.env.GATE_PW || "";
+if (!GATE_PW) { console.error("GATE_PW is unset: pass the alpha-gate passphrase in the environment"); process.exit(1); }
 const WALLET_PW = "e2e-test-pw-9931";
 const TOKEN = process.env.TOKEN || "CAIRN";
 const KEYFILE = process.env.KEY || `${homedir()}/.config/cairn/cairnx-treasury.json`;

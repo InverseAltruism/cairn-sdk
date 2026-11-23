@@ -95,6 +95,14 @@ console.log("indexer address reads:");
       calls[1] === `/explorer/api/address/${A}/utxo?after=${encodeURIComponent(key(all[999]!))}` && calls[2] === `/explorer/api/address/${A}/utxo?after=${encodeURIComponent(key(all[1999]!))}`);
   }
   {
+    // A first page that is not an array (a 200 {ok:false}) is no list of outputs; page 2 already throws on it.
+    const bodies: unknown[] = [{ ok: false, error: "indexer down" }, null, "rows", 7];
+    const out = await Promise.all(bodies.map((b) => grab(() => new Cairn({ baseUrls: { cairn: "https://x.test" }, fetch: (async () => jsonRes(b)) as unknown as typeof globalThis.fetch }).index.addressUtxo(A))));
+    ok("a first page that is not an array ({ok:false}, null, a string, a number) throws HttpError, not the body as rows",
+      out.every((e) => e instanceof HttpError && /not an array/.test(String((e as Error).message))));
+    ok("honest: an empty first page is no outputs", (await server([], "paged").cairn.index.addressUtxo(A)).length === 0);
+  }
+  {
     const { cairn, calls } = server(rows(12), "paged");
     const got = await cairn.index.addressUtxo(A);
     ok("happy: a short first page is the whole set, one request with no cursor", got.length === 12 && calls.length === 1 && calls[0] === `/explorer/api/address/${A}/utxo`);

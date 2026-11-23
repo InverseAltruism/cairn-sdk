@@ -111,6 +111,15 @@ const j200 = (text: string) => () => new Response(text, { status: 200, headers: 
   ok("\"missing utxo\" resolves ok:false with the node's answer, not in flight", !(r instanceof Error) && r.ok === false && r.submitResult?.err === "missing utxo");
 }
 {
+  // The node's check panicked, possibly after admission: the signed bytes come back for a resend, never ok:false.
+  const { chain } = rpc(REAL, j200(JSON.stringify({ ok: false, txid: "x", err: "submit validation did not finish: task 12 panicked" })));
+  const signed = await chain.send({ priv: PRIV, outputs: [{ to: TO, value: 100_000_000 }], fee: 1_000_000, broadcast: false });
+  const e = await grab(() => send(chain));
+  ok("\"submit validation did not finish\" throws SubmitInFlightError SUBMIT_MAYBE_INFLIGHT with the signed txid and nodeJson",
+    e instanceof SubmitInFlightError && e.code === "SUBMIT_MAYBE_INFLIGHT" && e.maybeSent === true && e.txid === signed.txid
+    && JSON.stringify(e.nodeJson) === JSON.stringify(signed.nodeJson));
+}
+{
   const bodies = ["{}", "[]", "\"ok\"", "null", "{\"ok\":\"true\"}", "{\"ok\":\"maybe\",\"n\":9007199254740993}", "{\"ok\":false}",
     "{\"ok\":false,\"error\":\"node unreachable\"}"];
   const out = await Promise.all(bodies.map(async (b) => ({ b, e: await grab(() => send(rpc(REAL, j200(b)).chain)) })));

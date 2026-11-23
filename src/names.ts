@@ -142,6 +142,15 @@ export interface NamesWalkOptions {
   restarts?: number;
 }
 
+// A walk bound as a number: a non-negative safe integer, or the same written in digits (a JavaScript caller's "5",
+// which 0.9.0 took). NaN or an infinity would make every comparison against it false and leave the walk unbounded.
+function walkBound(k: string, v: unknown): number {
+  const n = typeof v === "string" && /^(0|[1-9]\d*)$/.test(v) ? Number(v) : v;
+  if (typeof n !== "number" || !Number.isSafeInteger(n) || n < 0)
+    throw new CairnError(`invalid names walk: ${k} must be a whole number of 0 or more`, { code: "INVALID_QUERY" });
+  return n;
+}
+
 /** Every row of the names list from one state (`source: "v1"`, `at` that state), or the legacy list of a front door
  *  without the read API (`source: "legacy"`, `at` null, one read of the whole list). */
 export interface NamesWalk {
@@ -351,12 +360,16 @@ export class NamesClient {
    * longer holds that state) starts the walk again from page 1 under the newest state, at most `restarts` times, then
    * throws a `CairnError` `WALK_RESTARTS`. A page with an empty `rows` and a `next`, a `next` equal to the cursor just
    * sent or to an earlier cursor of the walk, or a later page naming another `at` throws an `HttpError` (malformed
-   * response). More than `maxPages` pages or `maxRows` rows throws `WALK_LIMIT`. A page 1 whose `at` the SDK cannot
+   * response). More than `maxPages` pages or `maxRows` rows throws `WALK_LIMIT`; a `maxPages`, `maxRows` or `restarts`
+   * that is not a whole number of 0 or more (or one written in digits) throws `INVALID_QUERY` before any request. A
+   * page 1 whose `at` the SDK cannot
    * send back throws `SNAPSHOT_UNPINNED`. A front door without the read API (a 404) answers from one read of the legacy
    * list, `source: "legacy"` and `at` null; a read with `owner` or `status` has no legacy answer and throws the 404.
    */
   async allNames(opts: NamesWalkOptions = {}): Promise<NamesWalk> {
-    const { maxPages = WALK_MAX_PAGES, maxRows = WALK_MAX_ROWS, restarts = WALK_RESTARTS_MAX } = opts;
+    const maxPages = walkBound("maxPages", opts.maxPages ?? WALK_MAX_PAGES);
+    const maxRows = walkBound("maxRows", opts.maxRows ?? WALK_MAX_ROWS);
+    const restarts = walkBound("restarts", opts.restarts ?? WALK_RESTARTS_MAX);
     const base: NamesPageOptions = { limit: opts.limit ?? 200 };
     if (opts.order !== undefined) base.order = opts.order;
     if (opts.owner !== undefined) base.owner = opts.owner;

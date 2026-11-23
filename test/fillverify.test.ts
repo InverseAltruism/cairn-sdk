@@ -6,7 +6,7 @@
 // unprovable-author view fails SOFT (transient), never a hard decline. Pure unit test, no network.
 import { readFileSync } from "node:fs";
 import { addrFromPriv, signDigest, buildScriptSig } from "@inversealtruism/csd-crypto";
-import { provenOfferTerms, epochOf } from "@inversealtruism/cairnx-core";
+import { provenOfferTerms, epochOf, LEGACY_HOLD_SUNSET_HEIGHT } from "@inversealtruism/cairnx-core";
 import { txid, sighash, canonicalJson, payloadHash, rpcTxToTx, merkleRoot } from "../src/chain.js";
 import {
   Cairn,
@@ -220,6 +220,13 @@ await ok("fillEndorsement: a token want is NOT-ENDORSABLE (honest non-endorsemen
   await ok("[not merkle-proven] a below-checkpoint/rpc-trusted view fails SOFT (transient), not a hard decline", async () => {
     const r = await preverifyOffer({ light: mockLight(tx.json, tx.phash, H, "rpc-trusted", false), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }) });
     return r.ok === false && r.transient === true && r.trust === "unverified";
+  });
+  // preverifyOffer takes any light client: an inclusion it answers as included but not PoW-verified must not read
+  // trust "verified" (csd-light does not answer that shape; a custom light client may).
+  await ok("[included, not verified] included:true at rpc-trusted or proof-consistent is ok:false, trust unverified, transient", async () => {
+    const rs = await Promise.all(["rpc-trusted", "proof-consistent"].map((level) =>
+      preverifyOffer({ light: mockLight(tx.json, tx.phash, H, level, true), client: mockClient, offerId: tx.id, servedOffer: servedFor({ id: tx.id }) })));
+    return rs.every((r) => r.ok === false && r.trust === "unverified" && r.transient === true);
   });
   await ok("[unprovable author] a chain that can't return the funding source tx fails SOFT (transient)", async () => {
     const noSrc = { async tx() { return { ok: false }; } };
@@ -503,6 +510,61 @@ console.log("\nP75-5 fill-surface guards:");
   await ok("[V28 reservation honest] attesting the fclaim txid is endorsed", async () => {
     const r = await run(open22, { servedOffer: held, me: BUYER, tip: 60_100, fillTargetId: FCLAIM }, 41_300);
     return r.ok === true && r.endorsement?.verdict === "endorsed" && r.fillTarget === FCLAIM;
+  });
+  // From LEGACY_HOLD_SUNSET_HEIGHT no legacy (pre-V28) hold is live, so CairnX rejects every fill of an open CSD offer
+  // that attests the offer id (FILL_NO_LIVE_CLAIM, or FILL_WRONG_TARGET under a reservation): the CSD moves, the give
+  // does not. A served legacy hold shape (no claimTxid, a claimTxid equal to the offer id, an unbounded claim end)
+  // would route the fill to the offer id; the refusal reads only the proven offer, the tip and the target.
+  const SUNSET_TIPS = [LEGACY_HOLD_SUNSET_HEIGHT, 148_252];
+  const legacyShapes = (tip: number) => [
+    ["no claimTxid", { claimedBy: BUYER, claimUntilHeight: tip + 15 }],
+    ["claimTxid equal to the offer id", { claimedBy: BUYER, claimUntilHeight: tip + 15, claimTxid: open22.id }],
+    ["claimTxid equal to the offer id in upper case", { claimedBy: BUYER, claimUntilHeight: tip + 15, claimTxid: "0x" + open22.id.slice(2).toUpperCase() }],
+    ["claimUntilHeight Infinity", { claimedBy: BUYER, claimUntilHeight: Number.POSITIVE_INFINITY }],
+  ] as const;
+  await ok("[sunset] at and past the legacy-hold sunset an offer-id fill of an open CSD offer is REFUSED (ok false, a reason, no plan) whatever hold the resolver serves; endorsement stays the core's own endorsed", async () => {
+    const out: string[] = [];
+    for (const tip of SUNSET_TIPS) for (const [label, hold] of legacyShapes(tip)) {
+      const r = await run(open22, { servedOffer: servedFor({ id: open22.id, height: 41_300, ...hold }), me: BUYER, tip }, 41_300);
+      if (!(r.ok === false && r.trust === "verified" && /from block 60044 .* pass the reservation's fclaim txid as fillTargetId/.test(r.reason ?? "") && r.fillTarget?.toLowerCase() === open22.id
+        && r.outputPlan === undefined && r.sized === false && r.endorsement?.verdict === "endorsed")) out.push(`${tip} ${label}: ok=${r.ok} target=${r.fillTarget?.toLowerCase() === open22.id ? "offer" : r.fillTarget} ${r.reason}`);
+    }
+    return out.length === 0 || (console.log(`      ${out.join("\n      ")}`), false);
+  });
+  await ok("[sunset honest] one block below the sunset the last legacy hold (claim end 60,039) still fills the offer id", async () => {
+    const r = await run(open22, { servedOffer: servedFor({ id: open22.id, height: 41_300, claimedBy: BUYER, claimUntilHeight: 60_039 }), me: BUYER, tip: LEGACY_HOLD_SUNSET_HEIGHT - 1 }, 41_300);
+    return r.ok === true && r.endorsement?.verdict === "endorsed" && r.fillTarget === open22.id && r.sized === true;
+  });
+  await ok("[sunset honest] past the sunset my reservation with its own fclaim txid is endorsed at the fclaim target, the plan sized", async () => {
+    const out: boolean[] = [];
+    for (const tip of SUNSET_TIPS) {
+      const r = await run(open22, { servedOffer: servedFor({ id: open22.id, height: 41_300, claimedBy: BUYER, claimUntilHeight: tip + 30, claimTxid: FCLAIM }), me: BUYER, tip, fillTargetId: FCLAIM }, 41_300);
+      out.push(r.ok === true && r.endorsement?.verdict === "endorsed" && r.fillTarget === FCLAIM && r.sized === true);
+    }
+    return out.every(Boolean);
+  });
+  const bound22 = proposeTx(SELLER_KEY, boundRec, 27);
+  const tok22 = proposeTx(SELLER_KEY, tokRec, 28);
+  const partRec22 = { v: 1, t: "offer", give: { ticker: "AAA", amount: "10" }, want: { value: "500000000", payto: SELLER }, min: "100000000" };
+  const part22 = proposeTx(SELLER_KEY, partRec22, 29);
+  await ok("[sunset honest] past the sunset a taker-bound offer fills the offer id, a token offer is not-endorsable, a partial offer fills through its reservation", async () => {
+    const tip = 148_252;
+    const b = await run(bound22, { servedOffer: servedFor({ id: bound22.id, height: 41_300, taker: ATTACKER }), me: ATTACKER, tip }, 41_300);
+    const t = await run(tok22, { servedOffer: { id: tok22.id, seller: SELLER, feeBps: 150, height: 41_300, status: "open", give: { ticker: "AAA", amount: "10" }, want: { ticker: "BBB", amount: "5", payto: SELLER } }, pay: "5", me: BUYER, tip }, 41_300);
+    const p = await run(part22, { servedOffer: servedFor({ id: part22.id, height: 41_300, min: "100000000", paid: "0", delivered: "0", claimedBy: BUYER, claimUntilHeight: tip + 30, claimTxid: FCLAIM }), me: BUYER, tip, fillTargetId: FCLAIM }, 41_300);
+    return b.ok === true && b.endorsement?.verdict === "endorsed" && b.fillTarget === bound22.id && b.sized === true
+      && t.ok === true && t.endorsement?.verdict === "not-endorsable"
+      && p.ok === true && p.endorsement?.verdict === "endorsed" && p.fillTarget === FCLAIM;
+  });
+  await ok("[sunset] the same refusal and its honest pair through Cairn.verifyOfferForFill", async () => {
+    const cairn = new Cairn({ baseUrls: { cairn: "https://example.test" } });
+    (cairn as unknown as { seededSpvLight: unknown }).seededSpvLight = async () => ({ ...mockLight(open22.json, open22.phash, 41_300), baseHeight: 41_300, chain: [] });
+    (cairn as unknown as { chain: unknown }).chain = { client: mockClient };
+    const tip = 148_252;
+    const lie = await cairn.verifyOfferForFill(open22.id, servedFor({ id: open22.id, height: 41_300, claimedBy: BUYER, claimUntilHeight: tip + 15 }), { pay: "500000000", me: BUYER, tip });
+    const honest = await cairn.verifyOfferForFill(open22.id, servedFor({ id: open22.id, height: 41_300, claimedBy: BUYER, claimUntilHeight: tip + 30, claimTxid: FCLAIM }), { pay: "500000000", me: BUYER, tip, fillTargetId: FCLAIM });
+    return lie.ok === false && /from block 60044 .* pass the reservation's fclaim txid as fillTargetId/.test(lie.reason ?? "") && lie.outputPlan === undefined
+      && honest.ok === true && honest.fillTarget === FCLAIM && Array.isArray(honest.outputPlan);
   });
   await ok("[token] a token-priced want is not-endorsable, never a refusal", async () => {
     const r = await run(tok, { servedOffer: { id: tok.id, seller: SELLER, feeBps: 150, height: H, status: "open", give: { ticker: "AAA", amount: "10" }, want: { ticker: "BBB", amount: "5", payto: SELLER } }, pay: "5", me: BUYER, tip: H + 10 });

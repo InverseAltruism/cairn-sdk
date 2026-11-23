@@ -31,7 +31,8 @@ const jsonRes = (obj: unknown, status = 200) => new Response(JSON.stringify(obj)
 // A routing stub. `onHeaders(from,count)` may return a Response to inject a fault, or undefined for a normal
 // dense batch. Serves the merkle-proof (single-tx block: empty branch folds to the txid itself), rpc/tip, and
 // (for the fill path) rpc/tx + rpc/block/height. Records every URL in `seen`.
-function mkStub(opts: { tip: number; seen: string[]; onHeaders?: (from: number, count: number) => Response | undefined; txHeight?: number }): typeof fetch {
+function mkStub(opts: { tip: number; seen: string[]; onHeaders?: (from: number, count: number) => Response | undefined; txHeight?: number;
+  proofHeight?: number; tx?: () => Response; block?: () => Response }): typeof fetch {
   return (async (input: RequestInfo | URL) => {
     const url = String(typeof input === "string" ? input : (input as Request).url ?? input);
     opts.seen.push(url);
@@ -43,9 +44,12 @@ function mkStub(opts: { tip: number; seen: string[]; onHeaders?: (from: number, 
       return jsonRes({ ok: true, headers: sliceRows(from, count) });
     }
     if (/\/api\/rpc\/tip$/.test(url)) return jsonRes({ height: opts.tip });
-    if (/\/merkle-proof$/.test(url)) return jsonRes({ block_height: 145572, pos: 0, merkle: [], merkle_root: M });
-    if (/\/api\/rpc\/block\/height\/(\d+)$/.test(url)) return jsonRes({ ok: true, txs: [] });
-    if (/\/api\/rpc\/tx\//.test(url)) return jsonRes({ ok: true, height: opts.txHeight ?? 145572 });
+    if (/\/merkle-proof$/.test(url)) {
+      const h = opts.proofHeight ?? 145572;
+      return jsonRes({ block_height: h, pos: 0, merkle: [], merkle_root: ROWS.find((r) => r.height === h)!.header.merkle });
+    }
+    if (/\/api\/rpc\/block\/height\/(\d+)$/.test(url)) return opts.block?.() ?? jsonRes({ ok: true, txs: [] });
+    if (/\/api\/rpc\/tx\//.test(url)) return opts.tx?.() ?? jsonRes({ ok: true, height: opts.txHeight ?? 145572 });
     return new Response("not found", { status: 404 });
   }) as unknown as typeof fetch;
 }
@@ -195,6 +199,45 @@ console.log("P75-5 SPV fault tolerance (MF-14 seed + MF-03 reseed):");
   const [a, b] = await Promise.all([cairn.index.verifyInclusion(M), cairn.index.verifyInclusion(M)]);
   ok("C5: two concurrent reads over one structural break both reach verified-inclusion", a.trustLevel === "verified-inclusion" && b.trustLevel === "verified-inclusion");
   ok("C5: one shared reseed - seed count (145519/46) == 2", seedCount(seen) === 2);
+}
+
+// C6: a failure that is not the chain moving keeps the cache and surfaces as itself: a reseed from the checkpoint
+// meets the same failure, so reseeding on it repeats a whole cold sync on every call. A device clock 2 h 1 s behind
+// block 145,590: csd-light refuses that header as too far in the future.
+{
+  const badTime = ROWS.find((r) => r.height === 145590)!.header.time;
+  const realNow = Date.now;
+  Date.now = () => (badTime - 7200 - 1) * 1000;
+  try {
+    const seen: string[] = [];
+    const stub = { tip: 145598, seen, proofHeight: 145595 };
+    const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: mkStub(stub) });
+    const rs = [];
+    for (let i = 0; i < 3; i++) rs.push(await cairn.index.verifyInclusion(ROWS.find((r) => r.height === 145595)!.header.merkle));
+    ok("C6: a clock behind the newest header: three reads stay proof-consistent with the clock fault as the reason",
+      rs.every((r) => r.trustLevel === "proof-consistent" && /time too far in future/.test(r.reason ?? "")));
+    ok(`C6: one checkpoint seed across the three reads, no reseed (seed count ${seedCount(seen)})`, seedCount(seen) === 1);
+    stub.proofHeight = 145572;
+    const deep = await cairn.index.verifyInclusion(M);
+    ok("C6 honest: a tx more than 12 blocks below the refused header still verifies on the kept cache", deep.trustLevel === "verified-inclusion" && seedCount(seen) === 1);
+  } finally { Date.now = realNow; }
+}
+
+// C7: the RPC refuses the reads the fill check needs (a 404 or 403 on /tx, the node's {ok:false} on the block read):
+// each call costs no header request after the first sync and answers transient.
+for (const [label, tx, block] of [
+  ["HTTP 404 on /tx", () => new Response("nf", { status: 404 }), undefined],
+  ["HTTP 403 on /tx", () => new Response("no", { status: 403 }), undefined],
+  ["the node's {ok:false} on the block read", undefined, () => jsonRes({ ok: false, err: "not found" })],
+] as const) {
+  const seen: string[] = [];
+  const cairn = new Cairn({ baseUrls: { cairn: "https://stub.test" }, fetch: mkStub({ tip: 145598, seen, tx, block }) });
+  const first = await cairn.verifyOfferForFill("0x" + "ab".repeat(32));
+  const afterFirst = seen.filter((u) => /\/api\/headers\//.test(u)).length;
+  const later = [await cairn.verifyOfferForFill("0x" + "ab".repeat(32)), await cairn.verifyOfferForFill("0x" + "ab".repeat(32))];
+  const added = seen.filter((u) => /\/api\/headers\//.test(u)).length - afterFirst;
+  ok(`C7 (${label}): every call answers transient, and after the first sync the next two add no header request (added ${added}, seeds ${seedCount(seen)})`,
+    [first, ...later].every((r) => r.ok === false && r.transient === true) && added === 0 && seedCount(seen) === 1);
 }
 
 console.log(`\nspv-fault-tolerance: ${pass} passed, ${fail} failed`);
