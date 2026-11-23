@@ -265,6 +265,11 @@ async function main() {
       const e = await grab(() => names.allNames());
       check(`${label}: a malformed answer (HttpError 200) after ${calls.length} reads, never a loop`, e instanceof HttpError && e.status === 200 && /malformed v1 walk/.test(e.message) && calls.length <= 3);
     }
+    let n = 0;
+    const advancing = client((u) => (v1Path(u.pathname) ? json(200, { ok: true, level: 1, at: p1.at, rows: n === 0 ? r1 : [], next: `c${n++}` }) : undefined));
+    const ea = await grab(() => advancing.names.allNames());
+    check("empty pages whose next advances (c0, c1, ...): a malformed answer after 2 reads, never a walk to maxPages",
+      ea instanceof HttpError && ea.status === 200 && /an empty page/.test(ea.message) && advancing.calls.length === 2);
     const otherAt = client((u) => (v1Path(u.pathname) ? json(200, { ok: true, level: 1, at: u.searchParams.has("at") ? { ...p1.at, rev: "ffffffffffffffff" } : p1.at, rows: r1, next: u.searchParams.has("at") ? null : "a" }) : undefined));
     const oa = await grab(() => otherAt.names.allNames());
     check("a pinned page naming another at is malformed", oa instanceof HttpError && oa.status === 200 && /another snapshot/.test(oa.message));
