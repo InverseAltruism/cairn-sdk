@@ -15,13 +15,16 @@ Wallet contract: as in 0.9.0 (the snapshot files are unchanged). Dependencies ar
 - `preverifyOffer` and `cairn.verifyOfferForFill`, with `me` and `tip` at or above cairnx-core's
   `LEGACY_HOLD_SUNSET_HEIGHT` (60,044), refuse a fill of an open CSD offer whose target is the offer id (`ok: false`,
   no `outputPlan`), whatever claim the resolver serves: CairnX rejects that fill after the payment moved. 0.9.0
-  endorsed it when the served offer had no `claimTxid`, a `claimTxid` equal to the offer id, or an unbounded
-  `claimUntilHeight`. A reservation's fclaim target, taker-bound and token offers, and tips below that height answer
-  as before.
+  endorsed it when the served offer had no `claimTxid`, a `claimTxid` equal to the offer id (in either case), or an
+  unbounded `claimUntilHeight`. The reason tells the dApp to reserve the offer and pass the reservation's fclaim
+  txid as `fillTargetId`. Such a result keeps `endorsement` as cairnx-core returned it (`endorsed`: the core's
+  opinion of the served hold alone); `ok` and `reason` are the SDK's verdict, so branch on `ok`. A reservation's
+  fclaim target, taker-bound and token offers, and tips below that height answer as before.
 - `IndexerClient.verifyInclusion` answers `not-found` ("malformed merkle proof") for a proof whose `pos` is not
   below 2 to the power of its branch length, whose branch is longer than 31 levels, or whose `pos` or `block_height`
   is not a safe integer. 0.9.0 returned a forged `pos` (2, 2^32, 2^53 for position 0 of a two-transaction block) as
-  `verified-inclusion`.
+  `verified-inclusion`. The bound limits `pos` to the proof's depth; it is not an order proof: where a level pads an
+  odd count, a position in the padding still folds (transaction 4 of a 6-transaction block as position 6).
 - `content.get` and `content.getBytes` resolve `null` only on a 404. A 429, a 5xx or another status throws
   `HttpError` (code `HTTP_ERROR`) and an unreachable origin rejects with the fetch error, as the guide said; 0.9.0
   returned `null` for all of them, so a feed past the origin's rate limit showed content as missing. A caller that
@@ -32,12 +35,16 @@ Wallet contract: as in 0.9.0 (the snapshot files are unchanged). Dependencies ar
 - `IndexerClient.addressUtxo` throws `HttpError` when the first page is not an array (a 200 `{ ok: false }`), as a
   later page already did; 0.9.0 returned that body as the rows.
 - `NamesClient.allNames` throws `INVALID_QUERY` before any request for a `maxPages`, `maxRows` or `restarts` that is
-  not a finite number; with `NaN` or `Infinity` 0.9.0's walk had no bound.
+  not a whole number of 0 or more: `NaN` or `Infinity` left 0.9.0's walk without a bound, and a negative or
+  fractional value is refused with them. A string of digits (`"5"`, from a JavaScript caller) is read as that
+  number, as 0.9.0 took it; any other string (`"05"`, `"1e3"`) is refused.
 
 ### Docs and internal
 
 - `test/fixtures/submit-classify-parity.vectors.json`: 91 submit answer shapes with this SDK's verdict and the
-  wallet's, pinned by sha256 in `test/submit-classify-parity.test.ts` for the wallet to keep the same file. The 12
+  wallet's, pinned in `test/submit-classify-parity.test.ts` by sha256
+  `003f8fb28cc5dfece3f540c55789409153a203ec3b216351fc0f981cc76f93fc`; a wallet change can pin the same bytes (wallet
+  master does not yet). The 12
   shapes where the two differ are non-2xx answers whose body csd-client does not hand the SDK, and an `err` that is
   not a string; each carries a note.
 - A test pins `preverifyOffer`'s trust-level condition (an inclusion answered as included but not PoW-verified).
