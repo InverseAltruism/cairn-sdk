@@ -8,7 +8,8 @@ import { homedir } from "node:os";
 const CHROME = process.env.CHROME_BIN || undefined;
 const EXT = "/opt/cairn_substrate/cairn-wallet/dist";
 const SITE = process.env.SITE || "https://cairn-substrate.com";
-const GATE_PW = process.env.GATE_PW || "ohyesdaddy";
+const GATE_PW = process.env.GATE_PW || "";
+if (!GATE_PW) { console.error("GATE_PW is unset: pass the alpha-gate passphrase in the environment"); process.exit(1); }
 const WALLET_PW = "e2e-test-pw-9931";
 const KEYFILE = process.env.KEY || `${homedir()}/.config/cairn/cairnx-treasury.json`;
 const tk = JSON.parse(readFileSync(KEYFILE, "utf8"));

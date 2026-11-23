@@ -12,7 +12,8 @@ const EXT   = process.env.WALLET_EXT || "/opt/cairn_substrate/cairn-wallet/dist"
 const SITE  = process.env.SITE  || "https://cairn-substrate.com";
 const PROXY = process.env.PROXY || "http://127.0.0.1:7777/trade/api";
 const CXSTATE = "http://127.0.0.1:8794";          // direct cairnx for on-chain truth
-const GATE_PW   = process.env.GATE_PW || "ohyesdaddy";
+const GATE_PW   = process.env.GATE_PW || "";
+if (!GATE_PW) { console.error("GATE_PW is unset: pass the alpha-gate passphrase in the environment"); process.exit(1); }
 const WALLET_PW = process.env.WALLET_PW || "e2e-test-pw-9931";
 const TARGET = process.env.TARGET || "swap";       // name to buy
 const MAX_PRICE = BigInt(process.env.MAX_PRICE || "250000000"); // 2.5 CSD budget cap (base units)
