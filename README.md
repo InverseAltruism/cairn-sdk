@@ -14,6 +14,12 @@ The **Compute Substrate dApp kit:** one cohesive toolkit for building apps on CS
 npm i @inversealtruism/cairn-sdk
 ```
 
+The CairnX replica (`/replica`) is an optional peer dependency pinned to one exact version, 0.2.0 for this release, so
+that a process loads one cairnx-core. An app that installs another cairnx-replica version beside this SDK, for its
+`./server` entry too, is refused by npm with `ERESOLVE` (`peerOptional @inversealtruism/cairnx-replica@"0.2.0"`),
+and pnpm warns of an unmet peer. Install the version this release names; a newer replica comes with an SDK release
+that pins it. `--force` or `--legacy-peer-deps` installs the pair but can load two cairnx-core copies.
+
 ## Quick start
 
 ```ts
