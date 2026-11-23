@@ -61,24 +61,19 @@ export class ContentClient {
 
   /**
    * Fetch content by hash and VERIFY it self-certifies (sha256(bytes) == hash).
-   * Returns the verified bytes, or null when the origin does not hold the content
-   * or cannot be reached (as 0.6.0 did when every source failed). Throws
-   * ContentVerificationError when the origin serves bytes that don't match the hash.
+   * Returns the verified bytes, or null when the origin answers 404 (it does not hold the content). Any other
+   * HTTP status throws HttpError, an origin that cannot be reached rejects with the fetch error, and bytes that
+   * don't match the hash throw ContentVerificationError.
    */
   async getBytes(hash: string): Promise<Uint8Array | null> {
     const h = normalizeHash(hash);
-    let got: { bytes: Uint8Array; headers: Headers } | null = null;
-    try {
-      got = await this.cairn.getBytes(`/content/${h}`);
-    } catch {
-      return null; // origin unreachable: not found, as 0.6.0 reported it when every source failed
-    }
+    const got = await this.cairn.getBytes(`/content/${h}`);
     if (!got) return null; // 404
     if (!verifyContentBytes(got.bytes, h)) throw new ContentVerificationError(h);
     return got.bytes;
   }
 
-  /** Fetch + verify + parse as UTF-8 JSON. Returns null if not found. Throws a CairnError with code
+  /** Fetch + verify + parse as UTF-8 JSON. Returns null on a 404, throws as getBytes does otherwise, and throws a CairnError with code
    *  CONTENT_NOT_JSON when the verified bytes are not JSON. */
   async get<T = unknown>(hash: string): Promise<T | null> {
     const bytes = await this.getBytes(hash);
