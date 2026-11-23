@@ -177,7 +177,8 @@ try {
   `restarts` times, then throws a `CairnError` `WALK_RESTARTS`. A page that makes no progress ends the walk with an
   `HttpError` (a malformed response): an empty page with a `next`, a `next` equal to the cursor just sent or to an
   earlier cursor of the walk, or a later page naming another `at`. Over `maxPages` or `maxRows`: `WALK_LIMIT`. A page
-  1 whose `at` the SDK cannot send back: `SNAPSHOT_UNPINNED`.
+  1 whose `at` the SDK cannot send back: `SNAPSHOT_UNPINNED`. A `maxPages`, `maxRows` or `restarts` that is not a
+  finite number: `INVALID_QUERY`, before any request.
 - `namesPage` options: `keys` (1 to 32 names; excludes every other option but `at`), `after` (a page's `next`), `limit` (1 to
   200; the server's default is 100), `at` (a page's `at`), `owner`, `status` (`held`, `pending`, `lapsed`), `order`
   (`name`, bytewise, the default; `newest`; `length`, shortest first). An option outside that grammar throws a `CairnError` with code
@@ -262,7 +263,8 @@ locally and the user clear-signs every signature**; a bad RPC can mislead *displ
   `rpc-trusted` and never hides that. Verify what matters; treat balances as a hint.
   `cairn.index.addressUtxo(addr)` reads an address's unspent outputs from the indexer in pages of 1,000 and
   stops at 100 pages: when the 100th page is full (100,000 or more outputs, or an indexer whose pages never
-  end) it throws `HttpError` (`too many unspent outputs: ...`) instead of reading on.
+  end) it throws `HttpError` (`too many unspent outputs: ...`) instead of reading on. A page that is not an
+  array throws `HttpError` too, the first one included.
 - **Indexer = untrusted derived view:** the `IndexerClient` re-folds Merkle proofs
   (`verifyInclusion`). `verifyInclusion()` folds the proof and checks its root against a header from
   `headerMerkleAt`. What it proves is that a 32-byte value is a node of that block's merkle tree, not that

@@ -154,11 +154,13 @@ export class IndexerClient {
 
   /** Every unspent output of an address. The indexer answers in pages of at most 1,000 rows; this follows its
    *  `?after=` cursor until a short page, reading at most 100 pages: when the 100th is full (100,000 or more
-   *  outputs) it throws HttpError instead. An indexer that predates paging answers the whole set at once. */
+   *  outputs) it throws HttpError instead, as it does for a page that is not an array. An indexer that predates paging
+   *  answers the whole set at once. */
   async addressUtxo(a: string): Promise<unknown[]> {
     const path = `/address/${encodeURIComponent(a)}/utxo`;
     const first = await this.http.getJson<unknown[]>(path);
-    if (!Array.isArray(first) || first.length !== UTXO_PAGE) return first;
+    if (!Array.isArray(first)) throw new HttpError(200, this.http.url(path), "malformed response: a utxo page is not an array");
+    if (first.length !== UTXO_PAGE) return first;
     const out = [...first];
     let page: unknown[] = first;
     let prev: string | null = null;

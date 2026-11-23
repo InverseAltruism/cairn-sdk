@@ -308,6 +308,16 @@ async function main() {
     const er = await grab(() => rowsCap.names.allNames({ limit: 50, maxRows: 60 }));
     check("over maxRows: WALK_LIMIT before a third page", er instanceof CairnError && er.code === "WALK_LIMIT" && /60 rows/.test(er.message) && rowsCap.calls.length === 2);
     check(`the defaults: ${WALK_MAX_PAGES} pages, ${WALK_MAX_ROWS} rows`, WALK_MAX_PAGES === 1000 && WALK_MAX_ROWS === 100000);
+    // NaN or an infinity turns every bound comparison false: the walk would read pages and restart without end.
+    const bounds: [string, number][] = [["maxPages", Number.NaN], ["maxPages", Number.POSITIVE_INFINITY], ["maxRows", Number.NaN],
+      ["maxRows", Number.POSITIVE_INFINITY], ["restarts", Number.NaN], ["restarts", Number.POSITIVE_INFINITY]];
+    const badBound = await Promise.all(bounds.map(async ([k, v]) => { const c = client(handler()); return { k, v, e: await grab(() => c.names.allNames({ limit: 10, [k]: v })), calls: c.calls.length }; }));
+    check("a maxPages, maxRows or restarts that is NaN or infinite is refused as INVALID_QUERY before any request",
+      badBound.every(({ e, calls }) => e instanceof CairnError && e.code === "INVALID_QUERY" && calls === 0)
+      || (console.log(`    ${badBound.map(({ k, v, e, calls }) => `${k}=${v}: ${(e as CairnError)?.code ?? "resolved"} after ${calls}`).join("; ")}`), false));
+    const honestBounds = client(handler());
+    const hb = await honestBounds.names.allNames({ limit: 50, maxPages: 1000, maxRows: 100000, restarts: 0 });
+    check("honest: finite bounds (restarts 0 included) walk the list whole", hb.source === "v1" && hb.rows.length === legacyRows.length);
     const legacyOnly = client((u) => (v1Path(u.pathname) ? json(404, {}) : u.pathname === LEGACY ? json(200, legacyRows) : undefined));
     const lw = await legacyOnly.names.allNames({ order: "newest", limit: 50 });
     const wantNewest = (answer([view], "names", new URLSearchParams({ order: "newest", limit: "200" })).body as { rows: NameRow[] }).rows;
