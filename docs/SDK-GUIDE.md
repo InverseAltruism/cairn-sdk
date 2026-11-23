@@ -330,7 +330,10 @@ while a live V28 reservation routes the offer). A `refused` verdict answers `ok:
 token-priced want, whose delivery depends on your token balance) is not a refusal. The claim fields the
 endorsement reads (`claimedBy`, `claimUntilHeight`, `claimTxid`) are served by the resolver too, like `paid`, and
 `fillTarget` is derived from them: a resolver that serves `claimedBy` as your address turns `refused` into
-`endorsed` and `ok: true`, so rely on the Cairn Wallet's own fill preflight for the claim as well. Every result that carries
+`endorsed` and `ok: true`, so rely on the Cairn Wallet's own fill preflight for the claim as well. From block 60,044
+(cairnx-core's `LEGACY_HOLD_SUNSET_HEIGHT`) no claim made before V28 is live and an open CSD offer fills only
+through a reservation's fclaim txid, so with `me` and `tip` a fill whose target is the offer id answers `ok: false`
+with no `outputPlan`, whatever claim is served. Every result that carries
 the proven `terms` also carries the proven expiry: `expiresEpoch` and `expiresAt`, the first block height at
 which CairnX treats the offer as expired. A fill must be mined below `expiresAt`. With `me` and `tip`, a fill
 whose offer's last live block (`expiresAt - 1`) is fewer than 4 blocks above your tip (cairnx-core's

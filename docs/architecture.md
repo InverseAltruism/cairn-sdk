@@ -90,12 +90,14 @@ self-hosted setups. The chain is the only source of truth; every read carries an
 
 - `src/fillverify.ts` imports `feeBpsAt`, `bindOfferTerms`, `provenOfferTerms`, `provenOfferRefusal` (the resolver's
   creation rules for a proven offer, both activation gates included), `previewFill`, `fillEndorsement`,
-  `fillTargetId`, `offerExpiryHeightOf` and `offerFillTooLate` from cairnx-core, with no local copies. The
+  `fillTargetId`, `isOpenClaimLane`, `LEGACY_HOLD_SUNSET_HEIGHT`, `offerExpiryHeightOf` and `offerFillTooLate` from
+  cairnx-core, with no local copies. The
   ProvenOfferTerms interface and producer are single-sourced and corpus-equivalence-pinned by
   `test/proven-terms-corpus.test.ts`.
 - `preverifyOffer` judges a fill over the proven record plus the served running state (status, a partial offer's paid
   and delivered, the claim or reservation). A served status other than open refuses; a partial offer is never sized,
-  but a pay `previewFill` says delivers nothing refuses; `me` and `tip` add `fillEndorsement` and `offerFillTooLate`.
+  but a pay `previewFill` says delivers nothing refuses; `me` and `tip` add `fillEndorsement`, `offerFillTooLate` and
+  the legacy-hold sunset (an open CSD offer's fill that attests the offer id is refused from that height).
   Without them `ok` is a verdict on the record, not on the caller's fill.
 - fillverify exports the `preverifyOffer` helper and the throw-on-nested-refusal write wrapper.
 - The give and want-type binds are on: `bindOfferTerms` over the branded `MintedProvenOfferTerms` checks them by

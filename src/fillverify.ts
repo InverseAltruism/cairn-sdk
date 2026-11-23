@@ -31,7 +31,7 @@ import { authorOf } from "@inversealtruism/csd-crypto";
 import {
   parseRecord, feeBpsAt, bindOfferTerms, provenOfferTerms, provenOfferRefusal, fillOutputPlan, isTokenWant,
   fillEndorsement, fillIsSafe, requiredFillOutputs, previewFill, offerExpiryHeightOf, offerFillTooLate, FILL_TIP_MARGIN,
-  fillTargetId as fillTargetOf, type MintedProvenOfferTerms, type OfferState,
+  fillTargetId as fillTargetOf, isOpenClaimLane, LEGACY_HOLD_SUNSET_HEIGHT, type MintedProvenOfferTerms, type OfferState,
 } from "@inversealtruism/cairnx-core";
 import type { InclusionResult } from "@inversealtruism/csd-light";
 
@@ -167,6 +167,11 @@ interface FillInputs {
 
 const has = <T>(v: T): v is NonNullable<T> => v !== undefined && v !== null;
 
+// From LEGACY_HOLD_SUNSET_HEIGHT no legacy (pre-V28) hold is live, so CairnX rejects a fill of an open CSD offer that
+// attests the offer id, whatever claim the resolver serves; only a reservation's fclaim target fills it.
+const legacySunsetFill = (state: OfferState, target: string, tip: number): boolean =>
+  tip >= LEGACY_HOLD_SUNSET_HEIGHT && isOpenClaimLane(state, tip) && target.toLowerCase() === state.id.toLowerCase();
+
 // Validated at the boundary, before any chain read: `me`, `tip` and `pay` go together.
 function fillInputs(o: FillInputs): FillInputs | string {
   const base = { pay: o.pay, plannedOutputs: o.plannedOutputs };
@@ -268,6 +273,10 @@ function judgeFill(
         j.endorsement = { verdict: e.verdict, reason: e.reason };
         j.fillTarget = fillTargetOf(state, f.tip);
         if (e.verdict === "refused") { j.refusal ??= `CairnX would refuse this fill (${e.reason}) - do not sign it`; unplan(); }
+        else if (legacySunsetFill(state, j.fillTarget, f.tip)) {
+          j.refusal ??= `past block ${LEGACY_HOLD_SUNSET_HEIGHT} an open CSD offer is filled only through its reservation (fclaim) target: CairnX rejects a fill that attests the offer id after the payment moved - ask the marketplace for the reservation id, do not sign it`;
+          unplan();
+        }
       } catch (e) { j.refusal ??= `couldn't judge the fill against the offer (${err(e)}) - refusing`; unplan(); }
     }
   }
@@ -300,7 +309,8 @@ export async function preverifyOffer(opts: {
   /** Your address, the one that signs the fill. With `tip` (and `pay`), the result carries cairnx-core's
    *  `fillEndorsement` over the served state: a taker bound to another address, an open CSD offer you hold no
    *  live claim or reservation on, or an attest target the offer's routing rejects is refused, and so is a fill
-   *  that cairnx-core's `offerFillTooLate` says is too close to the offer's expiry. */
+   *  that cairnx-core's `offerFillTooLate` says is too close to the offer's expiry, and, from cairnx-core's
+   *  `LEGACY_HOLD_SUNSET_HEIGHT`, a fill of an open CSD offer that attests the offer id. */
   me?: string;
   /** The chain tip height you sign at (for example `(await cairn.chain.tip()).height`). Goes with `me`. */
   tip?: number;
