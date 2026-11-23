@@ -519,14 +519,15 @@ console.log("\nP75-5 fill-surface guards:");
   const legacyShapes = (tip: number) => [
     ["no claimTxid", { claimedBy: BUYER, claimUntilHeight: tip + 15 }],
     ["claimTxid equal to the offer id", { claimedBy: BUYER, claimUntilHeight: tip + 15, claimTxid: open22.id }],
+    ["claimTxid equal to the offer id in upper case", { claimedBy: BUYER, claimUntilHeight: tip + 15, claimTxid: "0x" + open22.id.slice(2).toUpperCase() }],
     ["claimUntilHeight Infinity", { claimedBy: BUYER, claimUntilHeight: Number.POSITIVE_INFINITY }],
   ] as const;
   await ok("[sunset] at and past the legacy-hold sunset an offer-id fill of an open CSD offer is REFUSED, with no plan, whatever hold the resolver serves", async () => {
     const out: string[] = [];
     for (const tip of SUNSET_TIPS) for (const [label, hold] of legacyShapes(tip)) {
       const r = await run(open22, { servedOffer: servedFor({ id: open22.id, height: 41_300, ...hold }), me: BUYER, tip }, 41_300);
-      if (!(r.ok === false && r.trust === "verified" && /reservation \(fclaim\) target/.test(r.reason ?? "") && r.fillTarget === open22.id
-        && r.outputPlan === undefined && r.sized === false)) out.push(`${tip} ${label}: ok=${r.ok} target=${r.fillTarget === open22.id ? "offer" : r.fillTarget} ${r.reason}`);
+      if (!(r.ok === false && r.trust === "verified" && /reservation \(fclaim\) target/.test(r.reason ?? "") && r.fillTarget?.toLowerCase() === open22.id
+        && r.outputPlan === undefined && r.sized === false)) out.push(`${tip} ${label}: ok=${r.ok} target=${r.fillTarget?.toLowerCase() === open22.id ? "offer" : r.fillTarget} ${r.reason}`);
     }
     return out.length === 0 || (console.log(`      ${out.join("\n      ")}`), false);
   });
