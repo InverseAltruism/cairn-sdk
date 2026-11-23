@@ -136,7 +136,8 @@ export class Chain {
    * answers 400 and 429 before it forwards; behind a front that can answer them after forwarding, use
    * `broadcast: false`, `submit` and `classifySubmit` to keep the signed bytes). Every other outcome throws a `SubmitInFlightError` carrying the signed `txid` and
    * `nodeJson`: code `SUBMIT_DUPLICATE` when a node already holds these bytes, `SUBMIT_MAYBE_INFLIGHT` when no
-   * verdict came (no answer, a timeout, a 5xx, another status, a 2xx body without the node's `ok`). Check the
+   * verdict came (no answer, a timeout, a 5xx, another status, a 2xx body without the node's `ok`, the node's
+   * "submit validation did not finish", whose check may have admitted the transaction). Check the
    * txid before resending, and resend that `nodeJson` with `submit` rather than a new send.
    */
   async send(p: { priv: string; outputs: { to: string; value: number }[]; fee: number; maxFee?: number; broadcast?: boolean }): Promise<BuildResult & { submitResult?: RpcSubmit }> {

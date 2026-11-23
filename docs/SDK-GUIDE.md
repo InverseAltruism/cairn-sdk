@@ -437,7 +437,9 @@ codes of [Links](#links-webcsd), and every wallet code below.
 > resend sends twice. The key-backed `cairn.chain.send` reads its submit with the exported `classifySubmit`
 > and throws the same error, carrying the signed transaction as `nodeJson`, when
 > no verdict came (code `SUBMIT_MAYBE_INFLIGHT`: no answer, a timeout, a 5xx or any status other than 400, 413
-> and 429, a 2xx body without the node's own `ok`, or an `ok: false` without the node's `err` text) and when the
+> and 429, a 2xx body without the node's own `ok`, an `ok: false` without the node's `err` text, or the node's
+> "submit validation did not finish", which it answers when its check of the submit panicked, possibly after the
+> mempool took the transaction) and when the
 > node answers "already present" (code
 > `SUBMIT_DUPLICATE`: a node holds these bytes). Once the chain shows it did not land, resend it with
 > `cairn.chain.submit(e.nodeJson)` (the same coins under the same txid, so it cannot pay twice) rather than a new

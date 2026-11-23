@@ -34,6 +34,16 @@ for (const err of ["fee below the relay floor", "missing utxo", "mempool conflic
   const v = classifySubmit(await viaClient(body(200, JSON.stringify({ ok: false, txid: "0xab", err }))));
   ok(`the node's refusal "${err}" is rejected (not duplicate)`, v.verdict === "rejected" && v.detail === err);
 }
+// The node answers this text at HTTP 200 when the task that checks and admits a submit panics or is cancelled, which
+// can happen after the mempool took the transaction: read as a refusal, a caller's resend from other coins pays twice.
+{
+  const err = "submit validation did not finish: task 12 panicked";
+  const v = classifySubmit(await viaClient(body(200, JSON.stringify({ ok: false, txid: "0xab", err }))));
+  ok("the node's \"submit validation did not finish\" is in flight with the node's text, not rejected", v.verdict === "inflight" && v.detail === err);
+  ok("the match ignores case and needs the text at the start, as the wallet's does",
+    classifySubmit({ answer: { ok: false, err: "Submit Validation Did Not Finish: x" } }).verdict === "inflight"
+    && classifySubmit({ answer: { ok: false, err: "fee too low; submit validation did not finish" } }).verdict === "rejected");
+}
 // The node writes `err` on every refusal; an ok:false without that string is someone else's body, so no verdict.
 for (const answer of [{ ok: false }, { ok: false, err: null }, { ok: false, err: "" }, { ok: false, err: { code: 1 } }, { ok: false, err: 12345678901234567890n }]) {
   ok(`an ok:false without the node's err text is in flight, not rejected (${Object.keys(answer).join(",")}: ${typeof answer.err})`, classifySubmit({ answer }).verdict === "inflight");
