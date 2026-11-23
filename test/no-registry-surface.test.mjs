@@ -22,7 +22,7 @@ const ADDED = {
   chain: ["buildProposeVerified", "buildAttestVerified", "classifySubmit", "SubmitOutcome", "SubmitVerdict"],
   index: ["classifySubmit", "SubmitOutcome", "SubmitVerdict",
     "parseCsdLink", "formatCsdLink", "csdLinkToHttps", "CsdLink", "CsdLinkCode", "CsdLinkParse",
-    "NamesPage", "NamesPageOptions", "NameLookup"],
+    "NamesPage", "NamesPageOptions", "NameLookup", "NameRow"],
   testing: ["mockCairnProvider", "installMockCairn", "MockCairnProvider", "MockCairnOptions", "MockAnswer", "MockMethod", "MockCall",
     "MockCapabilities", "MockCairnTarget", "DisconnectReason"],
 };
@@ -91,6 +91,11 @@ try {
   }
   const runtime = {};
   for (const e of entries) runtime[e] = await import(pathToFileURL(join(out, `${e}.js`)).href);
+  // ./replica is the replica's browser entry re-exported whole: its names are exactly that entry's.
+  const peerDts = join(root, "node_modules/@inversealtruism/cairnx-replica/dist/browser.d.ts");
+  const peer = ts.createProgram([peerDts], { module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, skipLibCheck: true, noEmit: true, types: [] });
+  const peerChecker = peer.getTypeChecker();
+  pinned.replica = peerChecker.getExportsOfModule(peerChecker.getSymbolAtLocation(peer.getSourceFile(peerDts))).map((x) => x.name);
 
   ok("no entry exports a registry name, as a value or as a type", () => {
     for (const e of entries) {
@@ -113,16 +118,19 @@ try {
     assert.deepEqual(Object.keys(pinned).sort(), entries);
     for (const e of entries) assert.deepEqual([...typeExports[e]].sort(), [...pinned[e]].sort(), e);
   });
-  // cairnx-api is pre-1.0: its types appear in the SDK's signatures, and no entry re-exports one of its names, as a
-  // value or a type, so none reads as part of this package's own surface.
-  ok("no entry exports a name that @inversealtruism/cairnx-api exports", () => {
+  // cairnx-api's types appear in the SDK's signatures; the root re-exports NameRow alone (as a type), and no other entry
+  // but ./replica, whose names are the replica's own (checked below), uses one of its names.
+  ok("of @inversealtruism/cairnx-api's names, the root entry exports NameRow alone and the other entries none", () => {
     const api = ts.createProgram([join(root, "node_modules/@inversealtruism/cairnx-api/dist/index.d.ts")], {
       module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, skipLibCheck: true, noEmit: true, types: [],
     });
     const apiChecker = api.getTypeChecker();
     const apiNames = apiChecker.getExportsOfModule(apiChecker.getSymbolAtLocation(api.getSourceFile(join(root, "node_modules/@inversealtruism/cairnx-api/dist/index.d.ts")))).map((x) => x.name);
     assert.ok(apiNames.includes("NameRow") && apiNames.includes("Page") && apiNames.length > 40, `cairnx-api exports read: ${apiNames.length}`);
-    for (const e of entries) assert.deepEqual(typeExports[e].filter((n) => apiNames.includes(n)), [], e);
+    for (const e of entries.filter((x) => x !== "replica")) {
+      assert.deepEqual(typeExports[e].filter((n) => apiNames.includes(n)), e === "index" ? ["NameRow"] : [], e);
+    }
+    assert.equal(runtime.index.NameRow, undefined, "NameRow is a type only");
   });
   ok("NamesClient keeps every 0.8.8 method and adds namesPage and lookup", () => {
     const have = Object.getOwnPropertyNames(runtime.index.NamesClient.prototype).filter((n) => n !== "constructor").sort();

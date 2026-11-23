@@ -425,7 +425,7 @@ export { Chain, classifySubmit } from "./chain.js";
 export type { SubmitOutcome, SubmitVerdict } from "./chain.js";
 export { NamesClient } from "./names.js";
 export type { NameResolution, NameDetail, TokenInfo, PrimaryName, NameHistory, NameHistoryEntry, NamesPage, NamesPageOptions, NameLookup } from "./names.js";
-export type { At, NameRow } from "@inversealtruism/cairnx-api";
+export type { NameRow } from "@inversealtruism/cairnx-api";
 export { parseCsdLink, formatCsdLink, csdLinkToHttps } from "./csdlink.js";
 export type { CsdLink, CsdLinkCode, CsdLinkParse } from "./csdlink.js";
 export { IndexerClient } from "./indexer.js";

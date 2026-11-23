@@ -4,7 +4,8 @@
 // host without the v1 mount (404), a 5xx, a body that is not JSON, a timeout, a network error or `ok: false`. Only a
 // read the legacy route can answer falls back: one without `at` (the legacy route names no snapshot) and without a
 // filter (filters are the v1 handler's, which this SDK does not copy). Any other read throws the v1 read's error.
-// Row and envelope types are cairnx-api's 1.0 contract; the root entry re-exports `NameRow` and `At` as types.
+// Row and envelope types are cairnx-api's 1.0 contract; the root entry re-exports `NameRow` as a type
+// (not `At`: the `./replica` entry exports the replica's own `At`).
 import { parseQuery, type At, type Query, type Route } from "@inversealtruism/cairnx-api";
 import { CairnError, HttpError } from "./errors.js";
 import type { Http } from "./http.js";

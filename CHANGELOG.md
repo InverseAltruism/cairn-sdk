@@ -1,8 +1,37 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
 
 ### Added
+
+- `@inversealtruism/cairn-sdk/replica`: `@inversealtruism/cairnx-replica` 0.1.0's browser entry, re-exported whole
+  (`export *`), so an app reads one vocabulary: `open`, `hosted`, `hostedBlocks`, `idbStore`, the witnesses, the
+  verdict codes `NOT_VERIFIED_CODES` and `NOTE_CODES`, `levelOf`, `proofOf` and the answer types, the replica's own
+  objects. cairnx-replica is an optional peer dependency (exact, `peerDependenciesMeta.optional`): an app that does
+  not import `./replica` installs and loads nothing of it, and no other entry imports it. ES module only, as the
+  replica is: `require()` loads it on Node 22.12 and later. The guide has an example ("A replica").
+- The root entry re-exports cairnx-api's `NameRow` as a type, now that cairnx-api 1.0 is the read API's contract.
+  Not its `At`: `./replica` exports the replica's own `At`, another type.
+
+### Changed
+
+- `@inversealtruism/cairnx-api` 0.1.2 to 1.0.0 and `@inversealtruism/cairnx-core` 0.2.9 to 0.2.10 (cairnx-api 1.0.0
+  and cairnx-replica 0.1.0 peer on 0.2.10 exactly). For a 0.8.8 user cairnx-core moves from 0.2.8 to 0.2.10; an app
+  that pins its own cairnx-core moves with it or installs a second copy. No export of this SDK was removed or
+  renamed, and the minimum Node stays 22.
+- `namesPage` takes `order: "length"` (shortest first, then bytewise), the order cairnx-api 1.0.0 adds; the legacy
+  fallback pages it with the same codec.
+- A page's `at` keeps any `rev` in cairnx-api 1.0.0's token grammar (1 to 64 ASCII letters, digits, `.`, `_` and
+  `-`) and sends it back unchanged on the next read. Under 0.1.2's parser only 16 lowercase hex digits were kept, so a
+  server that emits another token would have given every page `at: null` and no pinned walk.
+
+### Docs and internal
+
+- `scripts/check-consumer-types.mjs` runs a fourth consumer, node20 CommonJS, over every subpath; node16 CommonJS
+  leaves out `./replica`, which TypeScript refuses there (TS1479) because the replica is ESM only.
+  `test/packed-replica.test.mjs` installs the packed package with and without the peer.
+
+### Added in 0.9.0 from the unreleased work after 0.8.8
 
 - `cairn.names.namesPage(opts)`: a typed page of the names list from the CairnX read API, version 1
   (`/api/cairnx/v1/names`), with `keys`, `after`, `limit`, `at`, `owner`, `status` and `order`; it returns
@@ -18,16 +47,11 @@
   of `rev` this release does not parse, say) gives the page `at: null`. A walk of more than one page holds one state
   only when every page carries the same non-null `at`: a page with `at: null` or another `at` means start again. The
   guide's example, `readAllNames`, does so with a bounded number of restarts.
-- Types: `NamesPage`, `NamesPageOptions`, `NameLookup` from the root entry. No type of cairnx-api is re-exported:
-  it is pre-1.0, and these two calls follow it until its 1.0.0.
+- Types: `NamesPage`, `NamesPageOptions`, `NameLookup` from the root entry.
+- New dependency `@inversealtruism/cairnx-api` (exact). Every 0.8.8 call is unchanged: `names()`, `resolve()`,
+  `name()` and the rest read the legacy routes as before.
 
-### Changed
-
-- New dependency `@inversealtruism/cairnx-api` 0.1.2 (exact), whose exact peer is cairnx-core 0.2.9, so
-  `@inversealtruism/cairnx-core` moves from 0.2.8 to 0.2.9 (no export changed between them). Every 0.8.8 call is
-  unchanged: `names()`, `resolve()`, `name()` and the rest read the legacy routes as before.
-
-### Docs and internal
+### Docs and internal, from the unreleased work after 0.8.8
 
 - `test/names-v1.test.ts` runs both calls on answers of the live front door recorded on 2026-11-22
   (`test/fixtures/apiv1-names-2026-11-22.json`), each fallback cause, the reads without fallback, and every page of

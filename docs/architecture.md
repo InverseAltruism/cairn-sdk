@@ -6,7 +6,7 @@ contract couplings and the integration notes. `AGENTS.md` keeps the rules; this 
 
 ## Modules
 
-`src/` is built by tsup to esm+cjs+dts with 8 entry points (the `build` script in `package.json` lists them).
+`src/` is built by tsup to esm+cjs+dts with 9 entry points (the `build` script in `package.json` lists them).
 
 - `index.ts`: Cairn facade, CairnConfig, DEFAULT_SPV_CHECKPOINT (height and hash are in the source), and the lazy
   PoW-verified header wiring into the indexer via `seededSpvLight`. See "SPV header sync" below.
@@ -22,8 +22,13 @@ contract couplings and the integration notes. `AGENTS.md` keeps the rules; this 
   and paged with cairnx-api's cursor codec; `lookup` resolves with cairnx-core's `resolveNameIn`.
 - `apiv1.ts`: page reads of the CairnX read API, version 1: the query checked with cairnx-api's `parseQuery` before a
   request, the page shape check, and the fallback rule (the site's, cairn `public/trade/apiv1.js`; the guide states
-  it). Types come from `@inversealtruism/cairnx-api` (pre-1.0); no entry re-exports one
-  (`test/no-registry-surface.test.mjs`).
+  it). Types come from `@inversealtruism/cairnx-api` 1.0; the root entry re-exports `NameRow` as a type
+  (`test/no-registry-surface.test.mjs`), not `At`, a name the `./replica` entry uses for the replica's own type.
+- `replica.ts`: the `./replica` entry, `export *` from `@inversealtruism/cairnx-replica/browser`, an optional peer
+  (`peerDependenciesMeta`) and an exact dev dependency. No other entry imports it, so an app that does not import
+  `./replica` installs and loads nothing of the replica (`test/packed-replica.test.mjs`). The replica is ESM only:
+  `scripts/check-consumer-types.mjs` leaves `./replica` out of the node16 CommonJS consumer (TS1479 by TypeScript's
+  rule) and checks it under node20 CommonJS, Node 22.12's `require()` of ES modules.
 - `csdlink.ts`: `web+csd:` links (parse, format, the https page beside a link); names checked with cairnx-core `isName`, no I/O.
 - `chain.ts`: tip/utxos/submit/light(); Chain.send() = key-backed send via buildSendVerified + verifyInputValues
   (fail-closed). It reads the submit with `classifySubmit` and throws SubmitInFlightError with the signed txid and

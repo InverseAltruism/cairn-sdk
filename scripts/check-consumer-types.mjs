@@ -43,8 +43,9 @@ export function installPackage(packageDir, work, repo = here, { peers = false } 
   }
 }
 
-// `./replica` re-exports @inversealtruism/cairnx-replica, which is ESM only. Under node16 a CommonJS file cannot
-// import an ES module (TS1479), so node16-cjs leaves that subpath out; node20-cjs models Node 22.12 and later, whose
+// `./replica` re-exports @inversealtruism/cairnx-replica, which is ESM only. Under node16 TypeScript refuses an ES
+// module imported from a CommonJS file (TS1479 in dist/replica.d.cts with TypeScript 5.9.3), so node16-cjs leaves that
+// subpath out; node20-cjs models Node 22.12 and later, whose
 // require() loads ES modules, and imports every subpath.
 const ESM_PEER_SUBPATHS = new Set(["./replica"]);
 const MODES = [

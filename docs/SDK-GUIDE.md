@@ -142,14 +142,17 @@ is compared with the wallet by hand at each wallet release.
 | `…/chain` | `CsdClient`, tx builders, the verifying `LightClient` |
 | `…/indexer`, `…/content` | service clients |
 | `…/testing` | `mockCairnProvider`, `installMockCairn`: a mock of the wallet's provider for your tests (no key, signs nothing) |
+| `…/replica` | the CairnX replica (`@inversealtruism/cairnx-replica/browser`, an optional peer you install yourself): "A replica" below |
 | `@inversealtruism/csd-siwc` | **server-side** SIWC verify (`verifySiwc`, `generateNonce`) |
 
 ## Names: pages and lookups
 
 `cairn.names.namesPage(opts)` reads one page of the names list from the CairnX read API, version 1
 (`/api/cairnx/v1/names`). Rows are `NameRow` from `@inversealtruism/cairnx-api` (cairnx-core's `NameState`: `name`,
-`owner`, `addr`, `profile`, `viaFill`, the lease fields). That package is pre-1.0, and these calls follow it: a
-release before its 1.0.0 may change a parameter or a field, and this SDK's changelog names it.
+`owner`, `addr`, `profile`, `viaFill`, the lease fields); the root entry re-exports `NameRow` as a type.
+cairnx-api 1.0 is the read API's contract: its README states what is promised (routes, parameters, rows, the
+envelope, the error codes and their statuses) and what is not. A refusal code this SDK does not know is read by its
+HTTP status, which is how `HttpError.status` reports every refusal.
 
 ```ts
 // Every row of the names list from one state; starts again when a page comes from another state.
@@ -177,7 +180,7 @@ const all = await readAllNames(cairn.names);
 
 - Options: `keys` (1 to 32 names; excludes every other option but `at`), `after` (a page's `next`), `limit` (1 to
   200; the server's default is 100), `at` (a page's `at`), `owner`, `status` (`held`, `pending`, `lapsed`), `order`
-  (`name`, bytewise, the default; `newest`). An option outside that grammar throws a `CairnError` with code
+  (`name`, bytewise, the default; `newest`; `length`, shortest first). An option outside that grammar throws a `CairnError` with code
   `INVALID_QUERY` before any request (the check is cairnx-api's `parseQuery`).
 - `at` is the snapshot a page describes. A walk of more than one page holds one state only when every page carries the
   same non-null `at`. Pass page 1's `at` on every later page and compare each page's `at` with it: a page with
@@ -185,8 +188,9 @@ const all = await readAllNames(cairn.names);
   again without `at`. So does a 409 (an `HttpError` whose body names `SNAPSHOT_NOT_HELD`), the answer of a server that
   no longer holds the state. `readAllNames` above does this, with a bounded number of restarts. A front door without
   the read API answers every page with `at: null`, so a walk there of more than one page cannot be pinned; `names()`
-  reads that list in one request. A page whose `at` the SDK could not send back as the next read's `at` (a form of
-  `rev` that cairnx-api's parser does not take) also has `at: null`. A walk ends on `next === null`; `total`, when present, is a count and does not end
+  reads that list in one request. The `rev` in a page's `at` is an opaque token, sent back unchanged; a page whose `at` the SDK
+  could not send back as the next read's `at` (a `rev` outside the token grammar of 1 to 64 letters, digits, `.`, `_`
+  and `-`) also has `at: null`. A walk ends on `next === null`; `total`, when present, is a count and does not end
   a walk.
 - `cairn.names.lookup(name)` reads one name over `names?keys=<name>` and returns `{ name, row, resolved, at }`:
   `resolved` is cairnx-core's `resolveNameIn` over the row (the `nset` address, else the owner; null for no row or a
@@ -202,6 +206,35 @@ legacy list names no snapshot) or with `owner` or `status` (filters are the read
 well, its error is thrown.
 
 These are display reads like the rest of `cairn.names`: an answer is the server's word, never a payment target.
+
+## A replica
+
+`@inversealtruism/cairn-sdk/replica` is `@inversealtruism/cairnx-replica`'s browser entry, re-exported whole, so an
+app reads one vocabulary: each answer's `level`, `proof` and `vouch`, and the codes of `NOT_VERIFIED_CODES` and
+`NOTE_CODES` in `why` and `notes`. Nothing in it is restated by this SDK; the replica's README is the reference
+(https://github.com/InverseAltruism/csd-sdk/tree/master/packages/replica). The replica is an optional peer
+dependency, installed by an app that imports this entry, with the cairnx-core this SDK pins:
+
+```bash
+npm i @inversealtruism/cairn-sdk @inversealtruism/cairnx-replica@0.1.0 @inversealtruism/cairnx-pin
+```
+
+A name at level 3 from the release's pin and the hosted blocks above it, in a page:
+
+```ts
+import { PIN } from "@inversealtruism/cairnx-pin";
+import { hosted, open } from "@inversealtruism/cairn-sdk/replica";
+
+const replica = await open(hosted({ pin: PIN, origin: "https://cairn-substrate.com" }));
+await replica.advance();
+const a = await replica.name("m");
+// a.verified: act on a.value; else a.shown is for display and a.why lists the codes (NOT_WITNESSED without a witness)
+console.log(a.level, a.proof, a.verified, a.why.map((w) => w.code), a.verified ? a.value : a.shown);
+await replica.close();
+```
+
+Without a witness on another origin no answer is verified (`NOT_WITNESSED`): pass `witness`, one's own node through
+`nodeWitness`, to `hosted`. A server uses the replica's `./server` entry directly (`diskStore`, `ownNode`).
 
 ## What the SDK verifies vs trusts (read this)
 

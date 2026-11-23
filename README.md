@@ -63,8 +63,8 @@ try {
 **`cairn.names`:** `resolve(name)` (display-path name to address), `name(name)`/`nameHistory(name)`, `primary(addr)` (reverse lookup)/`namesOf(addr)`, `names()` (the whole list, untyped), `namesPage(opts)` (a typed page of the read API, below), `lookup(name)` (one name for display, with its address by cairnx-core's `resolveNameIn`), `tokens()/token(ticker)`, `offers()`/`bids()` (open rows by default; pass `{ status }` for another status, or `{ status: "all" }` for every row), `state()` (the canonical CairnX state). Reads go through the public `/trade/api/cairnx/*` proxy; for payment-grade name resolution verify through the wallet or a replaying resolver, not a bare read (see `src/names.ts` header).
 
 `namesPage` and `lookup` read the CairnX read API (`/api/cairnx/v1/names`); their rows are `NameRow` from
-`@inversealtruism/cairnx-api`, a pre-1.0 package, so these two calls may change with it until its 1.0.0. On a front
-door without the read API they answer from the legacy list (`at: null`). The guide has the walk and the fallback rule
+`@inversealtruism/cairnx-api` 1.0, the API's contract, and the root entry re-exports `NameRow` as a type. On a
+front door without the read API they answer from the legacy list (`at: null`). The guide has the walk and the fallback rule
 ("Names: pages and lookups").
 
 **`cairn.content`:** `prepare(obj)`/`put(obj)` → `{ payloadHash, canonical, bytes }`; `get(hash)` / `getBytes(hash)` (fetch **and verify** `sha256(bytes) === hash`, throws `ContentVerificationError` on tamper); `hash(obj)`.
@@ -74,6 +74,12 @@ door without the read API they answer from the legacy list (`at: null`). The gui
 **Links:** `parseCsdLink(input)`, `formatCsdLink({ name, path })` and `csdLinkToHttps(link, origin)` read and write `web+csd:<name>[/<path>]` links. A link opens a name page and authorizes nothing; the grammar and the refusal codes are in the [guide](docs/SDK-GUIDE.md#links-webcsd).
 
 Subpath imports are available for tree-shaking: `@inversealtruism/cairn-sdk/{connect,indexer,content,chain,controller,react,testing}`.
+
+**`/replica`:** the CairnX replica, `@inversealtruism/cairnx-replica`'s browser entry re-exported whole: `open`, the
+sources, the verdict codes (`NOT_VERIFIED_CODES`, `NOTE_CODES`) and the levels. The replica is an optional peer
+dependency: install it (`npm i @inversealtruism/cairnx-replica@0.1.0`) only if you import `/replica`; no other entry
+loads it. ES module only, like the replica: `require()` loads it on Node 22.12 and later. The guide has an example
+("A replica").
 
 ## Examples
 

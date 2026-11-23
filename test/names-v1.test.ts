@@ -10,7 +10,7 @@ import type { CairnXState, NameState } from "@inversealtruism/cairnx-core";
 import { NamesClient, type NameLookup, type NamesPage } from "../src/names.js";
 import { Http } from "../src/http.js";
 import { CairnError, HttpError } from "../src/errors.js";
-import type { At as RootAt, NameRow as RootNameRow } from "../src/index.js";
+import type { NameRow as RootNameRow } from "../src/index.js";
 
 let pass = 0, fail = 0;
 const check = (n: string, c: boolean) => { c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n)); };
@@ -21,14 +21,14 @@ type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 const rowIsNameRow: Exact<NamesPage["rows"][number], NameRow> = true;
 const rowIsNotUnknown: Exact<NamesPage["rows"][number], unknown> = false;
 const lookupRow: Exact<NonNullable<NameLookup["row"]>, NameRow> = true;
-const rootTypes: Exact<RootNameRow, NameRow> & Exact<RootAt, At> = true;
+const rootTypes: Exact<RootNameRow, NameRow> = true;
 const full: NameRow = {
   name: "alice", owner: `0x${"11".repeat(20)}`, claimId: `0x${"22".repeat(32)}`, height: 1, effectiveHeight: 1, locked: false,
   addr: `0x${"33".repeat(20)}`, profile: { display: "Alice" }, viaFill: true,
 };
 const asState: NameState = full;
 const typed: NamesPage = { rows: [full], next: null, at: null };
-check("type proof: a row with addr, profile and viaFill is a NameRow and a page row; the root entry's NameRow and At are cairnx-api's (compiled by pnpm typecheck)",
+check("type proof: a row with addr, profile and viaFill is a NameRow and a page row; the root entry's NameRow is cairnx-api's (compiled by pnpm typecheck)",
   rowIsNameRow && !rowIsNotUnknown && lookupRow && rootTypes && asState === full && typed.rows[0] === full);
 
 interface Recorded { status: number; contentType: string; body: string }
