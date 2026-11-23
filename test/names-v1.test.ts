@@ -318,6 +318,22 @@ async function main() {
     const honestBounds = client(handler());
     const hb = await honestBounds.names.allNames({ limit: 50, maxPages: 1000, maxRows: 100000, restarts: 0 });
     check("honest: finite bounds (restarts 0 included) walk the list whole", hb.source === "v1" && hb.rows.length === legacyRows.length);
+    // A JavaScript caller may pass a bound as a string of digits, as 0.9.0 took it; it is read as that number.
+    const asText = client(handler());
+    const tw = await grab(() => asText.names.allNames({ limit: 50, maxPages: "5", maxRows: "100000", restarts: "0" } as never)) as { source?: string; rows?: unknown[] };
+    check("a bound written in digits (\"5\") walks as the number", tw?.source === "v1" && tw.rows?.length === legacyRows.length);
+    const capText = client(handler());
+    const ct = await grab(() => capText.names.allNames({ limit: 10, maxPages: "3" } as never));
+    check("maxPages \"3\" stops with WALK_LIMIT after 3 reads", ct instanceof CairnError && ct.code === "WALK_LIMIT" && /3 pages/.test(ct.message) && capText.calls.length === 3);
+    const r409 = always409();
+    const e409 = await grab(() => r409.names.allNames({ restarts: "0" } as never));
+    check("restarts \"0\" is the number 0: one attempt, and the message counts 1 (not \"01\")",
+      e409 instanceof CairnError && e409.code === "WALK_RESTARTS" && /dropped the snapshot 1 times/.test(e409.message) && r409.calls.length === 2);
+    const refusedBounds: unknown[] = ["05", "-1", -1, 1.5, "1.5", "", " 5", "1e3", "0x10", Number.NaN, Number.POSITIVE_INFINITY, "9007199254740993"];
+    const rb = await Promise.all(refusedBounds.map(async (v) => { const c = client(handler()); return { v, e: await grab(() => c.names.allNames({ maxPages: v } as never)), calls: c.calls.length }; }));
+    check("\"05\", -1, \"-1\", 1.5, \"1.5\", \"\", \" 5\", \"1e3\", \"0x10\", NaN, Infinity and a string past 2^53 are INVALID_QUERY before any request",
+      rb.every(({ e, calls }) => e instanceof CairnError && e.code === "INVALID_QUERY" && calls === 0)
+      || (console.log(`    ${rb.filter(({ e }) => !(e instanceof CairnError && e.code === "INVALID_QUERY")).map(({ v }) => JSON.stringify(v)).join(", ")}`), false));
     const legacyOnly = client((u) => (v1Path(u.pathname) ? json(404, {}) : u.pathname === LEGACY ? json(200, legacyRows) : undefined));
     const lw = await legacyOnly.names.allNames({ order: "newest", limit: 50 });
     const wantNewest = (answer([view], "names", new URLSearchParams({ order: "newest", limit: "200" })).body as { rows: NameRow[] }).rows;

@@ -180,7 +180,8 @@ try {
   `HttpError` (a malformed response): an empty page with a `next`, a `next` equal to the cursor just sent or to an
   earlier cursor of the walk, or a later page naming another `at`. Over `maxPages` or `maxRows`: `WALK_LIMIT`. A page
   1 whose `at` the SDK cannot send back: `SNAPSHOT_UNPINNED`. A `maxPages`, `maxRows` or `restarts` that is not a
-  finite number: `INVALID_QUERY`, before any request.
+  whole number of 0 or more (a string of digits such as `"5"` is read as that number): `INVALID_QUERY`, before any
+  request.
 - `namesPage` options: `keys` (1 to 32 names; excludes every other option but `at`), `after` (a page's `next`), `limit` (1 to
   200; the server's default is 100), `at` (a page's `at`), `owner`, `status` (`held`, `pending`, `lapsed`), `order`
   (`name`, bytewise, the default; `newest`; `length`, shortest first). An option outside that grammar throws a `CairnError` with code
